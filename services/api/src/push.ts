@@ -28,7 +28,7 @@ export type PushData = Record<string, string>
 export async function sendPush(address: string, title: string, body: string, data: PushData = {}) {
   const addr = address.toLowerCase()
   const set = tokens.get(addr)
-  if (!set || set.size === 0) return { sent: 0, reason: 'no tokens' }
+  if (!set || set.size === 0) { console.log('push skipped, no tokens for', addr.slice(0, 8), 'known:', [...tokens.keys()].map(k => k.slice(0, 8)).join(',')); return { sent: 0, reason: 'no tokens' } }
   if (!pushReady) { console.log('push (dry run)', addr.slice(0, 8), title, body); return { sent: 0, reason: 'no service account' } }
   const messaging = getMessaging()
   let sent = 0
@@ -41,6 +41,7 @@ export async function sendPush(address: string, title: string, body: string, dat
         android: { priority: 'high', notification: { channelId: 'guard', sound: 'default', priority: 'max', clickAction: 'OPEN_GUARD' } },
       })
       sent++
+      console.log('push sent', addr.slice(0, 8), title)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       if (/not-registered|invalid-argument|invalid-registration/i.test(msg)) { set.delete(token); console.log('dropped dead push token', msg) }

@@ -21,7 +21,7 @@ the one file that says where the build is. updated every session. this folder is
 | t5 | passkey create, sign, verify, forget storage, sign in, same address | pass | research/brand-refs/screens/t5-*.png, 5.5s create, 0.9s sign |
 | t6 | phone does t1 to t3, stopwatched | pass | 26.2s cold on the phone at first, 5.3 to 7.4s cold after hardening (harness), 1.5s returning user on the phone with the socket live, account 653 |
 | t7 | the guard, server side session delegated by the passkey, adds margin | pass, no push yet | services/api/scripts/guard-drill.ts, phone: enroll 1.1s, trade via guard 1.1s tap to fill, status 46ms |
-| t7b | push notification with add margin action | next | needs firebase |
+| t7b | push notification with add margin action | pass | firebase project pehra-ae5c6, fcm from the server, "pehra added margin" landed on the phone with the app in the background |
 | t8 | funding sheet (agora pair) | | |
 | t9 | envio history | | |
 | t10 | offline flatten all | | |
@@ -45,7 +45,7 @@ rule from the user: before any new feature, test what exists extensively, keep t
 
 reading the phone without screenshots: every line the app logs on screen is also posted to the drip server (`POST /log`) and printed as `[pehra]` in logcat. so `grep phone ../tmp/claude/api.log` or `adb logcat -v time ReactNativeJS:V '*:S' | grep pehra`. the bench button in the app prints network and crypto timings for the device it runs on.
 
-native modules: react-native-quick-crypto (nitro) for the bip39 seed, 7ms native against 1.7s in javascript on hermes. any change to native deps needs `npx expo run:android` again (about 3.5 minutes, cached).
+native modules: react-native-quick-crypto (nitro) for the bip39 seed, 7ms native against 1.7s in javascript on hermes, and expo-notifications with firebase (google-services.json in apps/mobile, the service account key in services/api/data, gitignored). any change to native deps needs `npx expo run:android` again (about 3.5 minutes, cached).
 node 26 breaks expo cli, use `source ~/.nvm/nvm.sh; nvm use 24` first. all toolchain quirks are in research/build-plan.md under "results log".
 
 ## open questions to people
@@ -56,7 +56,7 @@ node 26 breaks expo cli, use `source ~/.nvm/nvm.sh; nvm use 24` first. all toolc
 
 ## next
 
-push for the guard (expo notifications need firebase on the android dev client, google-services.json), then the real screens: markets with live prices, the ticket, the position card with the guard state and its events, funding (t8), envio history (t9), flatten all (t10). the guard's pending enrollments and keys live in services/api/data (gitignored), a database comes when there is a second server.
+the real screens: markets with live prices, the ticket, the position card with the guard state and its events, funding (t8), envio history (t9), flatten all (t10). the guard's pending enrollments and keys live in services/api/data (gitignored), a database comes when there is a second server.
 
 layout: apps/mobile (expo app), packages/perpl (typed perpl client, smoke test in scripts/), services/api (bun, drip today, guard next), web/passkeys (the rpId host on vercel), spikes (the probes the plan rests on), scripts (android env).
 
