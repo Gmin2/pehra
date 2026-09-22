@@ -1,4 +1,4 @@
-import { enrollApiKey, getContext, getPerplAccount, marketBySymbol, publicClient, setupPerplAccount, toLeverage, fromPrice, fromSize, fromCns, Reason } from '@pehra/perpl'
+import { enrollApiKey, feeCaps, getContext, getPerplAccount, marketBySymbol, publicClient, setupPerplAccount, toLeverage, fromPrice, fromSize, fromCns, Reason } from '@pehra/perpl'
 import { parseEther } from 'viem'
 import { tradingSocket } from './warm'
 import { loadApiKey, saveApiKey } from './keys'
@@ -12,6 +12,24 @@ export const API = 'http://localhost:8787'
 export type Step = (label: string) => void
 
 type DripResponse = { mon?: string; ausd?: string; block?: string; error?: string }
+
+// onboarding: fund the address and open the perpl account, nothing else. the guard delegation comes after.
+export async function prepareAccount(s: Session, say: Step) {
+  const pub = publicClient('testnet')
+  void feeCaps(pub)
+  const [existing, gas] = await Promise.all([getPerplAccount(pub, s.address), pub.getBalance({ address: s.address })])
+  if (existing) { say('account ready'); return existing }
+  let drip: DripResponse = {}
+  if (gas < parseEther('0.01')) {
+    say('funding your account')
+    const r = await fetch(`${API}/drip`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ address: s.address }) })
+    drip = (await r.json()) as DripResponse
+    if (!r.ok && drip.error !== 'cooldown') throw new Error(`drip: ${drip.error}`)
+  }
+  say('opening your perpl account')
+  const setup = await setupPerplAccount(pub, s.account, { depositCns: 100_000_000n, fundedAt: drip.block ? BigInt(drip.block) : undefined })
+  return setup.info
+}
 
 // the whole t6: fund, open the perpl account, enroll a key, place one market order. every step logs its time.
 // enrollment answers 404 until the account exists on chain, so it waits for the setup block.

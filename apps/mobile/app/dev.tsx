@@ -1,19 +1,19 @@
-import './src/polyfills'
 import { useEffect, useState } from 'react'
 import { StatusBar } from 'expo-status-bar'
+import { router } from 'expo-router'
 import { Pressable, ScrollView, Text, View } from 'react-native'
 import { verifyMessage } from 'viem'
-import { createAccount, signIn, loadStored, forgetStored, type Session, type StoredAccount } from './src/account'
-import { firstTrade, closeAll } from './src/trade'
-import { bench } from './src/bench'
-import { warmChain, warmTrading, setWarmLog } from './src/warm'
-import { API } from './src/trade'
-import { enrollGuard, guardState, relayOrder, relayCloseAll, type GuardState } from './src/guard'
-import { registerPush, onPushTap, testPush, addFromPush } from './src/push'
+import { createAccount, signIn, loadStored, forgetStored, type Session, type StoredAccount } from '../src/account'
+import { firstTrade, closeAll } from '../src/trade'
+import { bench } from '../src/bench'
+import { warmChain, warmTrading, setWarmLog } from '../src/warm'
+import { API } from '../src/trade'
+import { enrollGuard, guardState, relayOrder, relayCloseAll, type GuardState } from '../src/guard'
+import { registerPush, onPushTap, testPush, addFromPush } from '../src/push'
 
 const bg = '#12091f', ink = '#f4efff', dim = '#a898d6', purple = '#8b5cf6'
 
-export default function App() {
+export default function Dev() {
   const [stored, setStored] = useState<StoredAccount | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [log, setLog] = useState<string[]>([])
@@ -117,7 +117,7 @@ export default function App() {
 
   return (
     <View style={{ flex: 1, backgroundColor: bg, paddingTop: 64, paddingHorizontal: 20 }}>
-      <Text style={{ color: ink, fontSize: 32, fontWeight: '600' }}>pehra</Text>
+      <Pressable onPress={() => router.back()}><Text style={{ color: ink, fontSize: 32, fontWeight: '600' }}>pehra ‹</Text></Pressable>
       <Text style={{ color: dim, marginTop: 4 }}>t5 t6 spike · rp {`pehra-passkeys.vercel.app`}</Text>
       <Text style={{ color: ink, marginTop: 20, fontFamily: 'monospace', fontSize: 12 }}>
         stored: {stored ? stored.address : 'none'}{'\n'}session: {session ? 'open' : 'closed'}

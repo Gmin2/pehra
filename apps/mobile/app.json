@@ -5,7 +5,7 @@
     "version": "0.1.0",
     "orientation": "portrait",
     "scheme": "pehra",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "ios": {
       "bundleIdentifier": "trade.pehra.app",
@@ -16,6 +16,7 @@
       "googleServicesFile": "./google-services.json"
     },
     "plugins": [
+      "expo-router",
       "expo-secure-store",
       "expo-build-properties",
       [
