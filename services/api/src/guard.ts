@@ -3,8 +3,9 @@
 // for now, events in memory. the same session relays the phone's own orders.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import type { Hex } from 'viem'
+import { sendPush } from './push'
 import {
-  decide, defaultGuardSettings, getContext, MarketDataSocket, positionHealth, TradingSocket, fromCns, toLeverage,
+  decide, defaultGuardSettings, getContext, MarketDataSocket, positionHealth, TradingSocket, fromCns, toCns, toLeverage,
   type Context, type Decision, type Enrolled, type GuardSettings, type Health, type Market, type Position,
 } from '@pehra/perpl'
 
@@ -67,6 +68,10 @@ export class Guard {
     list.unshift({ at: Date.now(), ...e })
     this.events.set(addr, list.slice(0, 200))
     this.log(`guard ${addr.slice(0, 8)} ${e.kind} ${e.text}`)
+    // the phone hears about warnings and margin adds, sessions and attempts stay in the log
+    if (e.kind === 'warn') void sendPush(addr, 'pehra: close to liquidation', e.text, { kind: e.kind, pid: String(e.pid ?? ''), action: 'add' })
+    if (e.kind === 'added') void sendPush(addr, 'pehra added margin', e.text, { kind: e.kind, pid: String(e.pid ?? '') })
+    if (e.kind === 'failed') void sendPush(addr, 'pehra could not add margin', e.text, { kind: e.kind, pid: String(e.pid ?? ''), action: 'add' })
   }
 
   recent(address: string, n = 50) { return (this.events.get(address.toLowerCase()) ?? []).slice(0, n) }
@@ -145,6 +150,20 @@ export class Guard {
     const m = this.ctx.markets.find(x => x.symbol === symbol)
     if (!m) throw new Error('no market ' + symbol)
     return { market: m, result: await ts.openMarket({ mkt: m.id, side, size, leverage: toLeverage(leverage) }) }
+  }
+
+  // a manual add from the phone, the push's "add" action lands here
+  async addMargin(address: string, pid: number, ausd: number) {
+    const ts = this.sessions.get(address.toLowerCase())
+    if (!ts || !this.ctx) throw new Error('no live session')
+    const pos = ts.positions.get(pid)
+    if (!pos) throw new Error('no such position')
+    const m = this.ctx.markets.find(x => x.id === pos.mkt)
+    if (!m) throw new Error('no market')
+    const r = await ts.addMargin(pos, toCns(ausd))
+    const after = r.position ? positionHealth(r.position, m, this.market.states.get(pos.mkt)?.mrk ?? pos.ep) : null
+    this.emit(address.toLowerCase(), { kind: 'added', pid, text: `you added ${ausd.toFixed(2)} AUSD, collateral now ${after ? after.collateral.toFixed(4) : '?'} AUSD, ${after ? (after.distance * 100).toFixed(2) : '?'}% from liquidation`, addAusd: ausd, distancePct: after ? after.distance * 100 : undefined })
+    return after
   }
 
   async closeAll(address: string) {

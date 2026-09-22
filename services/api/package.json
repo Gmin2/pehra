@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@pehra/perpl": "workspace:*",
+    "firebase-admin": "^14.4.0",
     "viem": "^2.56.8"
   },
   "devDependencies": {

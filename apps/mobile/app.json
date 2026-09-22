@@ -12,11 +12,18 @@
       "supportsTablet": false
     },
     "android": {
-      "package": "trade.pehra.app"
+      "package": "trade.pehra.app",
+      "googleServicesFile": "./google-services.json"
     },
     "plugins": [
       "expo-secure-store",
-      "expo-build-properties"
+      "expo-build-properties",
+      [
+        "expo-notifications",
+        {
+          "color": "#8b5cf6"
+        }
+      ]
     ]
   }
 }

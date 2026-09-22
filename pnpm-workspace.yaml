@@ -3,3 +3,6 @@ packages:
   - packages/*
   - services/*
   - spikes
+allowBuilds:
+  '@firebase/util': set this to true or false
+  protobufjs: set this to true or false

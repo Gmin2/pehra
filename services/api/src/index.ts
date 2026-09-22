@@ -4,6 +4,7 @@ import { encodeFunctionData, formatEther, formatUnits, isAddress, parseEther, ty
 import { privateKeyToAccount } from 'viem/accounts'
 import { publicClient, erc20Abi, faucetAbi, AUSD_FAUCET, NETWORKS, GAS, sendBatch, nextNonce, feeCaps, enrollPayload, enrollFinish, fromCns, fromPrice, fromSize, Reason, type Call, type EnrollPayload, type GuardSettings } from '@pehra/perpl'
 import { Guard } from './guard'
+import { pushReady, registerToken, sendPush } from './push'
 
 const key = process.env.DEV_PRIVATE_KEY
 if (!key) throw new Error('DEV_PRIVATE_KEY missing')
@@ -134,6 +135,22 @@ const server = Bun.serve({
       const body = await req.json().catch(() => ({})) as Partial<GuardSettings>
       try { return json({ settings: guard.updateSettings(m[1], body) }) } catch (e) { return json({ error: e instanceof Error ? e.message : 'failed' }, 400) }
     }
+    // push tokens from the phone, one address can have several devices
+    if (url.pathname === '/push/register' && req.method === 'POST') {
+      const body = await req.json().catch(() => ({})) as { address?: string; token?: string }
+      if (!body.address || !isAddress(body.address) || !body.token) return json({ error: 'bad request' }, 400)
+      return json({ devices: registerToken(body.address, body.token), pushReady })
+    }
+    if (url.pathname === '/push/test' && req.method === 'POST') {
+      const body = await req.json().catch(() => ({})) as { address?: string }
+      if (!body.address) return json({ error: 'bad request' }, 400)
+      return json(await sendPush(body.address, 'pehra is watching', 'test push from the guard server', { kind: 'test' }))
+    }
+    if (url.pathname === '/guard/add' && req.method === 'POST') {
+      const body = await req.json().catch(() => ({})) as { address?: string; pid?: number; ausd?: number }
+      if (!body.address || !body.pid || !body.ausd) return json({ error: 'bad request' }, 400)
+      try { return json({ health: await guard.addMargin(body.address, body.pid, body.ausd) }) } catch (e) { return json({ error: e instanceof Error ? e.message : 'failed' }, 500) }
+    }
     // orders relayed on the delegated session
     if (url.pathname === '/order' && req.method === 'POST') {
       const body = await req.json().catch(() => ({})) as { address?: string; symbol?: string; side?: 'long' | 'short'; size?: number; leverage?: number }
@@ -157,4 +174,4 @@ const server = Bun.serve({
 void guard.start().catch(e => console.error('guard failed to start', e instanceof Error ? e.message : e))
 void refill()
 void feeCaps(pub)
-console.log(`pehra api on :${server.port}, paying from ${payer.address}`)
+console.log(`pehra api on :${server.port}, paying from ${payer.address}, push ${pushReady ? 'ready' : 'dry run, no service account'}`)

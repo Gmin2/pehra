@@ -9,6 +9,7 @@ import { bench } from './src/bench'
 import { warmChain, warmTrading, setWarmLog } from './src/warm'
 import { API } from './src/trade'
 import { enrollGuard, guardState, relayOrder, relayCloseAll, type GuardState } from './src/guard'
+import { registerPush, onPushTap, testPush, addFromPush } from './src/push'
 
 const bg = '#12091f', ink = '#f4efff', dim = '#a898d6', purple = '#8b5cf6'
 
@@ -25,6 +26,15 @@ export default function App() {
   useEffect(() => {
     setWarmLog(say)
     warmChain()
+    return onPushTap(data => {
+      say(`push tapped: ${data.kind ?? ''} ${data.action ?? ''} pid ${data.pid ?? ''}`)
+      const address = stored?.address
+      if (data.action === 'add' && data.pid && address) {
+        addFromPush(address, Number(data.pid), 10).then(r => say(r.health ? `added 10 AUSD, now ${(r.health.distance * 100).toFixed(2)}% away` : `add failed: ${r.error}`))
+      }
+    })
+  }, [stored?.address])
+  useEffect(() => {
     loadStored().then(async st => {
       setStored(st)
       if (!st) return
@@ -94,6 +104,13 @@ export default function App() {
     const r = await relayCloseAll(address)
     say(`closed ${r.closed}`)
   })
+  const onPush = () => run('register push', async () => {
+    const address = session?.address ?? stored?.address
+    if (!address) throw new Error('no account')
+    await registerPush(address, say)
+    const r = await testPush(address)
+    say(`test push: ${r.sent} sent ${r.reason ?? ''}`)
+  })
   const onForget = () => run('forget storage', async () => {
     session?.session.end(); setSession(null); setStored(null); await forgetStored()
   })
@@ -117,6 +134,7 @@ export default function App() {
         <Btn label="guard status" onPress={onGuardStatus} disabled={!session && !stored} />
         <Btn label="trade via guard" onPress={onRelayTrade} disabled={!session && !stored} />
         <Btn label="close via guard" onPress={onRelayClose} disabled={!session && !stored} />
+        <Btn label="push (t7b)" onPress={onPush} disabled={!session && !stored} />
       </View>
       <ScrollView style={{ marginTop: 20 }}>
         {log.map((l, i) => <Text key={i} style={{ color: dim, fontFamily: 'monospace', fontSize: 11, marginBottom: 6 }}>{l}</Text>)}
