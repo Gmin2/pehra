@@ -13,18 +13,32 @@
     },
     "android": {
       "package": "trade.pehra.app",
-      "googleServicesFile": "./google-services.json"
+      "googleServicesFile": "./google-services.json",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-foreground.png",
+        "backgroundColor": "#9E4DFD"
+      }
     },
     "plugins": [
       "expo-router",
       "expo-secure-store",
       "expo-build-properties",
       [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#9E4DFD",
+          "image": "./assets/splash-mark.png",
+          "imageWidth": 140
+        }
+      ],
+      [
         "expo-notifications",
         {
-          "color": "#8b5cf6"
+          "color": "#9E4DFD",
+          "icon": "./assets/notification.png"
         }
       ]
-    ]
+    ],
+    "icon": "./assets/icon.png"
   }
 }
