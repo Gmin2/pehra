@@ -93,7 +93,7 @@ export default function Onboarding() {
     if (preview) next(preview);
     if (trayPage) setTray(true);
     else if (!["choose", "terms", "creating", "ready", "delegating", "done"].includes(step)) next("choose");
-  }, [preview]);
+  }, [preview, trayPage]);
   const fail = (e: unknown) => {
     const msg = e instanceof Error ? e.message : String(e);
     log(`onboarding ${step} failed: ${msg.slice(0, 200)}`);

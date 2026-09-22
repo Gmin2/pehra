@@ -410,7 +410,7 @@ function Art({ kind, width }: { kind: Lesson["art"]; width: number }) {
         <G>
           <Rect x={cx - pw / 2 + 8} y={-20} width={pw - 16} height={H + 60} rx={30} fill="#ffffff0c" stroke="#ffffff30" strokeWidth={4} />
           <Circle cx={cx} cy={84} r={68} fill="none" stroke="#ffffff30" strokeWidth={1.5} />
-          <Coin cx={cx - 120} cy={84} r={14} o={0.35} label="₿" />
+          <Coin cx={cx - 120} cy={84} r={14} o={0.35} label="B" />
           <Coin cx={cx - 78} cy={84} r={19} o={0.7} label="$" />
           <Coin cx={cx + 78} cy={84} r={19} o={0.7} label="M" />
           <Coin cx={cx + 120} cy={84} r={14} o={0.35} label="Ξ" />
@@ -452,7 +452,7 @@ function Art({ kind, width }: { kind: Lesson["art"]; width: number }) {
 
 // a word in the title underlined with a soft purple brush stroke, like family's "crypto"
 export function Underlined({ children }: { children: ReactNode }) {
-  return <Text style={{ textDecorationLine: "underline", textDecorationColor: dusk, textDecorationStyle: "solid", color: ink }}>{children}</Text>;
+  return <Text style={{ textDecorationLine: "underline", textDecorationColor: "#8C74F0", textDecorationStyle: "solid", color: accent }}>{children}</Text>;
 }
 
 export function LessonTray({
