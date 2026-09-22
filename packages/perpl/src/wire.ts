@@ -82,7 +82,24 @@ export type OrderRequest = {
   bf?: number
 }
 
-export type Account = { id: number; fw: boolean; fr: boolean; ft: number; lfr: number; b: string; lb: string; h?: any[] }
+export type AccountEvent = { et: number; a?: string; txid?: string }
+export type Account = { id: number; fw: boolean; fr: boolean; ft: number; lfr: number; b: string; lb: string; h?: AccountEvent[] }
+export type Wallet = { addr: string; n: number; fl: number; as: Account[]; sn: number }
+
+// frames the trading socket delivers, narrowed by mt
+export type StatusFrame = { mt: 3; sid: number; sn: number; cid: number; rq?: number; status: { code: number; msg?: string } }
+export type HeartbeatFrame = { mt: 100; sn: number; h: number }
+export type WalletSnapshotFrame = { mt: 19; sn: number; addr: string; n: number; fl: number; as: Account[] }
+export type AccountUpdateFrame = { mt: 21; id: number; b: string; lb: string; lfr?: number; h?: AccountEvent[] }
+export type OrdersFrame = { mt: 23 | 24; d: Order[] }
+export type PositionsFrame = { mt: 26 | 27; d: Position[] }
+export type FillsFrame = { mt: 25; d: unknown[] }
+export type OtherFrame = { mt: number; [k: string]: unknown }
+export type TradingFrame = StatusFrame | HeartbeatFrame | WalletSnapshotFrame | AccountUpdateFrame | OrdersFrame | PositionsFrame | FillsFrame | OtherFrame
+
+export type MarketStateFrame = { mt: 9; sid: number; sn: number; d: Record<string, MarketState> }
+export type SubscribedFrame = { mt: 6; sn: number; subs: { stream: string; sid: number; status: { code: number } }[] }
+export type MarketDataFrame = MarketStateFrame | SubscribedFrame | HeartbeatFrame | OtherFrame
 export type Position = { pid: number; mkt: number; sd: number; s: number; ep: number; c: string; lv: number; st?: number; sr?: number; cpnl?: string }
 export type Order = { oid: number; rq: number; mkt: number; t: number; st: number; sr: number; fr?: number; p: number; s: number; fs?: number; fp?: number; tp?: number; tpc?: number; lp?: number; r?: boolean }
 export type MarketState = { orl: number; mrk: number; lst: number; mid: number; bid: number; ask: number; prv: number; dv: number; dva: string; oi: number; tvl: string }

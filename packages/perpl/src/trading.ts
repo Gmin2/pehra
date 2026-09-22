@@ -1,12 +1,12 @@
 import type { Hex } from 'viem'
 import { NETWORKS, type Network } from './config'
 import { signInFrame } from './crypto'
-import { MT, OrderType, Flag, Trigger, type Account, type Order, type OrderRequest, type Position } from './wire'
+import { MT, OrderType, Flag, Trigger, type Account, type Order, type OrderRequest, type Position, type OrdersFrame, type PositionsFrame, type StatusFrame, type TradingFrame, type Wallet } from './wire'
 
-type Listener = (frame: any) => void
-type Pending = { resolve: (r: OrderResult) => void; reject: (e: Error) => void; status?: any; timer: ReturnType<typeof setTimeout> }
+type Listener = (frame: TradingFrame) => void
+type Pending = { sn: number; rq: number; pid?: number; status?: StatusFrame; resolve: (r: OrderResult) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }
 
-export type OrderResult = { rq: number; status: any; order?: Order; position?: Position }
+export type OrderResult = { rq: number; status?: StatusFrame; order?: Order; position?: Position }
 
 export type TradingOptions = {
   net?: Network
@@ -32,7 +32,7 @@ export class TradingSocket {
   private ready?: Promise<void>
 
   account?: Account
-  wallet?: any
+  wallet?: Wallet
   orders = new Map<number, Order>()
   positions = new Map<number, Position>()
   head = 0
@@ -48,7 +48,7 @@ export class TradingSocket {
       this.ws = ws
       const guard = setTimeout(() => reject(new Error('sign in timed out')), this.net.signInTimeoutMs + 2000)
       ws.onopen = () => ws.send(JSON.stringify(signInFrame(this.net.chainId, this.opts.apiKey, this.opts.secret)))
-      ws.onerror = e => reject(new Error('ws error ' + String((e as any).message ?? '')))
+      ws.onerror = () => reject(new Error('trading socket error'))
       ws.onclose = e => {
         clearInterval(this.pingTimer)
         this.ready = undefined
@@ -59,7 +59,7 @@ export class TradingSocket {
       // the server sends wallet, orders and positions snapshots back to back after sign in
       const seen = new Set<number>()
       ws.onmessage = e => {
-        const m = JSON.parse(String(e.data))
+        const m = JSON.parse(String(e.data)) as TradingFrame
         this.handle(m)
         if (m.mt === MT.walletSnapshot || m.mt === MT.ordersSnapshot || m.mt === MT.positionsSnapshot) seen.add(m.mt)
         if (seen.size === 3) {
@@ -76,30 +76,36 @@ export class TradingSocket {
 
   onFrame(fn: Listener) { this.listeners.add(fn); return () => this.listeners.delete(fn) }
 
-  private handle(m: any) {
+  private handle(m: TradingFrame) {
     this.opts.onFrame?.(m)
     for (const l of this.listeners) l(m)
     switch (m.mt) {
-      case MT.walletSnapshot:
-        this.wallet = m
-        this.account = m.as?.[0]
+      case MT.walletSnapshot: {
+        const w = m as Extract<TradingFrame, { mt: 19 }>
+        this.wallet = { addr: w.addr, n: w.n, fl: w.fl, as: w.as, sn: w.sn }
+        this.account = w.as[0]
         this.rq = Math.max(this.rq, this.account?.lfr ?? 0)
-        this.lastHeartbeat = m.sn
+        this.lastHeartbeat = w.sn
         break
-      case MT.heartbeat:
-        this.head = m.h
-        if (this.lastHeartbeat >= 0 && m.sn !== this.lastHeartbeat + 1) this.gap(m.sn)
-        this.lastHeartbeat = m.sn
+      }
+      case MT.heartbeat: {
+        const h = m as Extract<TradingFrame, { mt: 100 }>
+        this.head = h.h
+        if (this.lastHeartbeat >= 0 && h.sn !== this.lastHeartbeat + 1) this.gap(h.sn)
+        this.lastHeartbeat = h.sn
         break
-      case MT.accountUpdate:
-        if (this.account && m.id === this.account.id) Object.assign(this.account, { b: m.b, lb: m.lb, lfr: m.lfr ?? this.account.lfr })
+      }
+      case MT.accountUpdate: {
+        const a = m as Extract<TradingFrame, { mt: 21 }>
+        if (this.account && a.id === this.account.id) Object.assign(this.account, { b: a.b, lb: a.lb, lfr: a.lfr ?? this.account.lfr })
         break
+      }
       case MT.ordersSnapshot:
         this.orders.clear()
-        for (const o of m.d ?? []) this.orders.set(o.oid, o)
+        for (const o of (m as OrdersFrame).d) this.orders.set(o.oid, o)
         break
       case MT.ordersUpdate:
-        for (const o of m.d ?? []) {
+        for (const o of (m as OrdersFrame).d) {
           this.orders.set(o.oid, o)
           const p = this.pending.get(o.rq)
           // a margin add echoes a failed order frame on the same rq, the position update is the real answer
@@ -108,19 +114,20 @@ export class TradingSocket {
         break
       case MT.positionsSnapshot:
         this.positions.clear()
-        for (const p of m.d ?? []) this.positions.set(p.pid, p)
+        for (const p of (m as PositionsFrame).d) this.positions.set(p.pid, p)
         break
       case MT.positionsUpdate:
-        for (const p of m.d ?? []) {
+        for (const p of (m as PositionsFrame).d) {
           if (p.st === 2) this.positions.delete(p.pid); else this.positions.set(p.pid, p)
-          for (const [rq, pend] of this.pending) if ((pend as any).pid === p.pid) this.settle(rq, { rq, status: pend.status, position: p })
+          for (const [rq, pend] of this.pending) if (pend.pid === p.pid) this.settle(rq, { rq, status: pend.status, position: p })
         }
         break
       case MT.status: {
-        const p = this.pending.get(m.rq ?? -1) ?? [...this.pending.values()].find(x => (x as any).sn === m.cid)
+        const st = m as StatusFrame
+        const p = (st.rq !== undefined && this.pending.get(st.rq)) || [...this.pending.values()].find(x => x.sn === st.cid)
         if (!p) break
-        p.status = m
-        if ((m.status?.code ?? m.code) !== 0) this.settle((p as any).rq, { rq: (p as any).rq, status: m })
+        p.status = st
+        if (st.status.code !== 0) this.settle(p.rq, { rq: p.rq, status: st })
         break
       }
     }
@@ -147,7 +154,7 @@ export class TradingSocket {
     const frame: OrderRequest = { mt: 22, sn, rq, lb: 0, ...fields, acc: fields.acc ?? this.account.id }
     const p = new Promise<OrderResult>((resolve, reject) => {
       const timer = setTimeout(() => { this.pending.delete(rq); reject(new Error(`order ${rq} timed out`)) }, this.opts.orderTimeoutMs ?? 15_000)
-      this.pending.set(rq, { resolve, reject, timer, sn, rq, pid: opts.pid } as any)
+      this.pending.set(rq, { sn, rq, pid: opts.pid, resolve, reject, timer })
     })
     this.ws.send(JSON.stringify(frame))
     return p

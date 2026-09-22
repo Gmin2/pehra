@@ -2,6 +2,8 @@
   "name": "monad-metropolis",
   "private": true,
   "scripts": {
-    "typecheck": "pnpm -r --filter './packages/*' --filter './services/*' run typecheck"
+    "typecheck": "pnpm -r --filter './packages/*' --filter './services/*' run typecheck",
+    "test": "pnpm --filter @pehra/perpl test",
+    "cold-start": "pnpm --filter @pehra/perpl exec bun run scripts/cold-start.ts"
   }
 }

@@ -19,7 +19,7 @@ export default function App() {
   const run = async (label: string, fn: () => Promise<void>) => {
     const t0 = Date.now()
     try { await fn(); say(`${label} ok in ${Date.now() - t0}ms`) }
-    catch (e: any) { say(`${label} failed: ${e?.code ?? ''} ${e?.message ?? String(e)} ${e?.cause ? JSON.stringify(e.cause).slice(0, 200) : ''}`) }
+    catch (e) { say(`${label} failed: ${describe(e)}`) }
   }
 
   const onCreate = () => run('create passkey', async () => {
@@ -73,6 +73,13 @@ export default function App() {
       <StatusBar style="light" />
     </View>
   )
+}
+
+function describe(e: unknown) {
+  if (!(e instanceof Error)) return String(e)
+  const code = 'code' in e && typeof e.code === 'string' ? e.code + ' ' : ''
+  const cause = e.cause ? ' ' + JSON.stringify(e.cause).slice(0, 200) : ''
+  return `${code}${e.message}${cause}`
 }
 
 function Btn({ label, onPress, disabled }: { label: string; onPress: () => void; disabled?: boolean }) {

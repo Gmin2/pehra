@@ -1,37 +1,67 @@
 // the pehra server. for now one job: put testnet gas and AUSD into a fresh mera address so the phone
 // can do the perpl setup itself. the dev key pays. later: enrollment proxy, the guard, push.
-import { createWalletClient, formatEther, formatUnits, http, isAddress, parseEther, type Address } from 'viem'
+import { encodeFunctionData, formatEther, formatUnits, isAddress, parseEther, type Address } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
-import { monadChain, publicClient, erc20Abi, faucetAbi, AUSD_FAUCET, NETWORKS } from '@pehra/perpl'
+import { publicClient, erc20Abi, faucetAbi, AUSD_FAUCET, NETWORKS, GAS, sendBatch, nextNonce, feeCaps, type Call } from '@pehra/perpl'
 
 const key = process.env.DEV_PRIVATE_KEY
 if (!key) throw new Error('DEV_PRIVATE_KEY missing')
-const chain = monadChain('testnet')
 const pub = publicClient('testnet')
-const wallet = createWalletClient({ account: privateKeyToAccount(key as `0x${string}`), chain, transport: http() })
+const payer = privateKeyToAccount(key as `0x${string}`)
 const AUSD = NETWORKS.testnet.ausd
 
-const DRIP_MON = parseEther('0.08')
+const DRIP_MON = parseEther('0.07')
+const DRIP_AUSD = 200_000_000n
 const MIN_AUSD = 100_000_000n
+const REFILL_BELOW = 2_000_000_000n
 const cooldown = new Map<string, number>()
+let refilling = false
+
+// the agora faucet has a cooldown, so the payer keeps its own AUSD stock and tops up in the background
+async function refill() {
+  if (refilling) return
+  refilling = true
+  try {
+    const bal = await pub.readContract({ address: AUSD, abi: erc20Abi, functionName: 'balanceOf', args: [payer.address] })
+    if (bal < REFILL_BELOW) {
+      const nonce = payerNonce ?? await nextNonce(pub, payer.address)
+      payerNonce = nonce + 1
+      await sendBatch(pub, payer, [{ to: AUSD_FAUCET, gas: GAS.faucet, data: encodeFunctionData({ abi: faucetAbi, functionName: 'requestFunds', args: [payer.address] }) }], { nonce })
+      console.log('refilled payer from the faucet')
+    }
+  } catch (e) {
+    payerNonce = null
+    console.error('refill failed', e instanceof Error ? e.message : e)
+  } finally {
+    refilling = false
+  }
+}
+
+// the payer's nonce is tracked here so back to back drips never race on eth_getTransactionCount
+let payerNonce: number | null = null
 
 async function drip(address: Address) {
-  const out: Record<string, string> = {}
-  const mon = await pub.getBalance({ address })
-  if (mon < DRIP_MON) {
-    const hash = await wallet.sendTransaction({ to: address, value: DRIP_MON - mon })
-    await pub.waitForTransactionReceipt({ hash })
-    out.mon = hash
+  const [mon, ausd, nonce] = await Promise.all([
+    pub.getBalance({ address }),
+    pub.readContract({ address: AUSD, abi: erc20Abi, functionName: 'balanceOf', args: [address] }),
+    payerNonce ?? nextNonce(pub, payer.address),
+  ])
+  const calls: Call[] = []
+  const monOut = mon < DRIP_MON ? DRIP_MON - mon : 0n
+  const ausdOut = ausd < MIN_AUSD ? DRIP_AUSD : 0n
+  if (monOut > 0n) calls.push({ to: address, value: monOut, gas: GAS.transfer })
+  if (ausdOut > 0n) calls.push({ to: AUSD, gas: GAS.erc20Transfer, data: encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [address, ausdOut] }) })
+  payerNonce = nonce + calls.length
+  try {
+    const sent = await sendBatch(pub, payer, calls, { nonce })
+    const block = sent.reduce((b, s) => s.receipt.blockNumber > b ? s.receipt.blockNumber : b, 0n)
+    return { txs: sent.map(s => s.hash), block, mon: mon + monOut, ausd: ausd + ausdOut }
+  } catch (e) {
+    payerNonce = null
+    throw e
+  } finally {
+    void refill()
   }
-  const ausd = await pub.readContract({ address: AUSD, abi: erc20Abi, functionName: 'balanceOf', args: [address] })
-  if (ausd < MIN_AUSD) {
-    const gas = await pub.estimateContractGas({ address: AUSD_FAUCET, abi: faucetAbi, functionName: 'requestFunds', args: [address], account: wallet.account })
-    const hash = await wallet.writeContract({ address: AUSD_FAUCET, abi: faucetAbi, functionName: 'requestFunds', args: [address], gas: gas + gas / 13n })
-    const r = await pub.waitForTransactionReceipt({ hash })
-    if (r.status !== 'success') throw new Error('faucet reverted')
-    out.ausd = hash
-  }
-  return out
 }
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -41,25 +71,29 @@ const server = Bun.serve({
   port: Number(process.env.PORT ?? 8787),
   async fetch(req) {
     const url = new URL(req.url)
-    if (url.pathname === '/health') return json({ ok: true, payer: wallet.account.address })
+    if (url.pathname === '/health') return json({ ok: true, payer: payer.address })
     if (url.pathname === '/drip' && req.method === 'POST') {
-      const { address } = await req.json().catch(() => ({}))
-      if (!isAddress(address)) return json({ error: 'bad address' }, 400)
+      const body = await req.json().catch(() => ({})) as { address?: string }
+      const address = body.address
+      if (!address || !isAddress(address)) return json({ error: 'bad address' }, 400)
       const last = cooldown.get(address.toLowerCase()) ?? 0
       if (Date.now() - last < 10 * 60_000) return json({ error: 'cooldown' }, 429)
       try {
         const t0 = Date.now()
-        const txs = await drip(address)
+        const { txs, block, mon, ausd } = await drip(address)
         cooldown.set(address.toLowerCase(), Date.now())
-        const [mon, ausd] = await Promise.all([pub.getBalance({ address }), pub.readContract({ address: AUSD, abi: erc20Abi, functionName: 'balanceOf', args: [address] })])
-        console.log('drip', address, txs, `${Date.now() - t0}ms`)
-        return json({ txs, mon: formatEther(mon), ausd: formatUnits(ausd, 6), ms: Date.now() - t0 })
-      } catch (e: any) {
-        console.error('drip failed', address, e?.shortMessage ?? e?.message)
-        return json({ error: e?.shortMessage ?? e?.message ?? 'drip failed' }, 500)
+        console.log('drip', address, txs.length, 'txs in block', block.toString(), `${Date.now() - t0}ms`)
+        // block is where the funds landed, the client must wait three more before it can spend them
+        return json({ txs, block: block.toString(), mon: formatEther(mon), ausd: formatUnits(ausd, 6), ms: Date.now() - t0 })
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'drip failed'
+        console.error('drip failed', address, msg)
+        return json({ error: msg }, 500)
       }
     }
     return json({ error: 'not found' }, 404)
   },
 })
-console.log(`pehra api on :${server.port}, paying from ${wallet.account.address}`)
+void refill()
+void feeCaps(pub)
+console.log(`pehra api on :${server.port}, paying from ${payer.address}`)
