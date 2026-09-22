@@ -2,7 +2,8 @@
 // can do the perpl setup itself. the dev key pays. later: enrollment proxy, the guard, push.
 import { encodeFunctionData, formatEther, formatUnits, isAddress, parseEther, type Address } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
-import { publicClient, erc20Abi, faucetAbi, AUSD_FAUCET, NETWORKS, GAS, sendBatch, nextNonce, feeCaps, type Call } from '@pehra/perpl'
+import { publicClient, erc20Abi, faucetAbi, AUSD_FAUCET, NETWORKS, GAS, sendBatch, nextNonce, feeCaps, enrollPayload, enrollFinish, fromCns, fromPrice, fromSize, Reason, type Call, type EnrollPayload, type GuardSettings } from '@pehra/perpl'
+import { Guard } from './guard'
 
 const key = process.env.DEV_PRIVATE_KEY
 if (!key) throw new Error('DEV_PRIVATE_KEY missing')
@@ -64,6 +65,9 @@ async function drip(address: Address) {
   }
 }
 
+const guard = new Guard()
+const pendingEnroll = new Map<string, EnrollPayload>()
+
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
 const server = Bun.serve({
@@ -97,9 +101,60 @@ const server = Bun.serve({
         return json({ error: msg }, 500)
       }
     }
+    // guard enrollment: the server makes the key, the passkey signs the delegation, the server keeps the key
+    if (url.pathname === '/guard/start' && req.method === 'POST') {
+      const body = await req.json().catch(() => ({})) as { address?: string }
+      if (!body.address || !isAddress(body.address)) return json({ error: 'bad address' }, 400)
+      const payload = await enrollPayload(body.address, { label: 'pehra guard' })
+      pendingEnroll.set(body.address.toLowerCase(), payload)
+      return json({ typed_data: payload.typed_data, publicKey: payload.pair.publicKey })
+    }
+    if (url.pathname === '/guard/finish' && req.method === 'POST') {
+      const body = await req.json().catch(() => ({})) as { address?: string; signature?: string }
+      if (!body.address || !isAddress(body.address) || !body.signature) return json({ error: 'bad request' }, 400)
+      const payload = pendingEnroll.get(body.address.toLowerCase())
+      if (!payload) return json({ error: 'no pending enrollment' }, 400)
+      try {
+        const key = await enrollFinish(body.address, payload, body.signature as `0x${string}`)
+        pendingEnroll.delete(body.address.toLowerCase())
+        const ts = await guard.register(body.address, key)
+        return json({ ok: true, account: ts.account?.id, settings: guard.settings(body.address) })
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : 'enroll failed' }, 500)
+      }
+    }
+    const m = url.pathname.match(/^\/guard\/(0x[0-9a-fA-F]{40})$/)
+    if (m && req.method === 'GET') {
+      const address = m[1]
+      if (!guard.has(address)) return json({ enrolled: false })
+      const ts = guard.session(address)
+      return json({ enrolled: true, live: !!ts, settings: guard.settings(address), balance: ts ? fromCns(ts.account?.b ?? '0') : null, health: guard.health(address), events: guard.recent(address) })
+    }
+    if (m && req.method === 'POST') {
+      const body = await req.json().catch(() => ({})) as Partial<GuardSettings>
+      try { return json({ settings: guard.updateSettings(m[1], body) }) } catch (e) { return json({ error: e instanceof Error ? e.message : 'failed' }, 400) }
+    }
+    // orders relayed on the delegated session
+    if (url.pathname === '/order' && req.method === 'POST') {
+      const body = await req.json().catch(() => ({})) as { address?: string; symbol?: string; side?: 'long' | 'short'; size?: number; leverage?: number }
+      if (!body.address || !body.symbol || !body.side || !body.size || !body.leverage) return json({ error: 'bad request' }, 400)
+      try {
+        const { market, result } = await guard.openMarket(body.address, body.symbol, body.side, body.size, body.leverage)
+        const o = result.order
+        return json({ filled: o?.st === 4, status: o?.st, reason: o ? Reason[o.sr] ?? o.sr : result.status?.status, size: o ? fromSize(market, o.fs ?? 0) : 0, price: o ? fromPrice(market, o.fp ?? 0) : 0 })
+      } catch (e) {
+        return json({ error: e instanceof Error ? e.message : 'order failed' }, 500)
+      }
+    }
+    if (url.pathname === '/close-all' && req.method === 'POST') {
+      const body = await req.json().catch(() => ({})) as { address?: string }
+      if (!body.address) return json({ error: 'bad request' }, 400)
+      try { const r = await guard.closeAll(body.address); return json({ closed: r.length }) } catch (e) { return json({ error: e instanceof Error ? e.message : 'close failed' }, 500) }
+    }
     return json({ error: 'not found' }, 404)
   },
 })
+void guard.start().catch(e => console.error('guard failed to start', e instanceof Error ? e.message : e))
 void refill()
 void feeCaps(pub)
 console.log(`pehra api on :${server.port}, paying from ${payer.address}`)

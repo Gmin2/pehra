@@ -1,6 +1,6 @@
 import { hashTypedData, hexToBytes, toHex, type Hex, type TypedDataDefinition } from 'viem'
 import { NETWORKS, type Network } from './config'
-import { newApiKeyPair, signBytes } from './crypto'
+import { newApiKeyPair, signBytes, type ApiKeyPair } from './crypto'
 
 export type Market = {
   id: number; symbol: string; name: string; size_units: string
@@ -52,26 +52,38 @@ type EnrollResponse = { api_key: string; expires_at?: string; scope_mask: number
 
 export type Enrolled = { apiKey: string; secret: Hex; publicKey: Hex; expiresAt?: string; scope: number; builderId?: number }
 
-export async function enrollApiKey(signer: TypedDataSigner, opts: { net?: Network; label?: string; scopeMask?: number } = {}): Promise<Enrolled> {
-  const net = opts.net ?? 'testnet'
-  const cfg = NETWORKS[net]
-  const pair = newApiKeyPair()
-  const headers = { 'content-type': 'application/json' }
-  const body = { chain_id: cfg.chainId, address: signer.address, public_key: pair.publicKey, scope_mask: opts.scopeMask ?? 3, label: opts.label ?? 'pehra' }
-  const r1 = await fetch(`${cfg.rest}/v1/api-key/payload`, { method: 'POST', headers, body: JSON.stringify(body) })
+export type EnrollPayload = { typed_data: EnrollTypedData; mac: string; td: TypedDataDefinition; pair: ApiKeyPair }
+
+// step one: perpl hands back the typed data the account owner has to sign for this public key
+export async function enrollPayload(address: Hex, opts: { net?: Network; label?: string; scopeMask?: number; pair?: ApiKeyPair } = {}): Promise<EnrollPayload> {
+  const cfg = NETWORKS[opts.net ?? 'testnet']
+  const pair = opts.pair ?? newApiKeyPair()
+  const body = { chain_id: cfg.chainId, address, public_key: pair.publicKey, scope_mask: opts.scopeMask ?? 3, label: opts.label ?? 'pehra' }
+  const r1 = await fetch(`${cfg.rest}/v1/api-key/payload`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
   if (!r1.ok) throw new Error(`enroll payload ${r1.status} ${await r1.text()}`)
   const { typed_data, mac } = await r1.json() as { typed_data: EnrollTypedData; mac: string }
   const { EIP712Domain: _domain, ...types } = typed_data.types
   // chainId arrives as a hex string and viem hashes that wrong, so widen it first
   const td: TypedDataDefinition = { domain: { ...typed_data.domain, chainId: BigInt(typed_data.domain.chainId) }, types: types as unknown as TypedDataDefinition['types'], primaryType: typed_data.primaryType, message: typed_data.message }
-  const signature = await signer.signTypedData(td)
-  const pop = signBytes(pair.secret, hexToBytes(hashTypedData(td)))
+  return { typed_data, mac, td, pair }
+}
+
+// step two: the owner's signature plus the key's own proof of possession over the same digest
+export async function enrollFinish(address: Hex, payload: EnrollPayload, signature: Hex, net: Network = 'testnet'): Promise<Enrolled> {
+  const cfg = NETWORKS[net]
+  const pop = signBytes(payload.pair.secret, hexToBytes(hashTypedData(payload.td)))
   const r2 = await fetch(`${cfg.rest}/v1/api-key/enroll`, {
-    method: 'POST', headers,
-    body: JSON.stringify({ chain_id: cfg.chainId, address: signer.address, typed_data, mac, signature, pop_signature: toHex(pop) }),
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ chain_id: cfg.chainId, address, typed_data: payload.typed_data, mac: payload.mac, signature, pop_signature: toHex(pop) }),
   })
   if (!r2.ok) throw new Error(`enroll ${r2.status} ${await r2.text()}`)
   const res = await r2.json() as EnrollResponse | { api_key: EnrollResponse }
   const info = typeof res.api_key === 'object' ? res.api_key : res as EnrollResponse
-  return { apiKey: info.api_key, secret: pair.secret, publicKey: pair.publicKey, expiresAt: info.expires_at, scope: info.scope_mask, builderId: info.builder_id }
+  return { apiKey: info.api_key, secret: payload.pair.secret, publicKey: payload.pair.publicKey, expiresAt: info.expires_at, scope: info.scope_mask, builderId: info.builder_id }
+}
+
+export async function enrollApiKey(signer: TypedDataSigner, opts: { net?: Network; label?: string; scopeMask?: number } = {}): Promise<Enrolled> {
+  const payload = await enrollPayload(signer.address, opts)
+  const signature = await signer.signTypedData(payload.td)
+  return enrollFinish(signer.address, payload, signature, opts.net)
 }

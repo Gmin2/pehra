@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { toPrice, fromPrice, toSize, fromSize, toCns, fromCns, toLeverage, liquidationPrice, marginFor } from '../src/units'
+import { toPrice, fromPrice, toSize, fromSize, toCns, fromCns, toLeverage, freshLiquidationPrice, marginFor } from '../src/units'
 import type { Market } from '../src/rest'
 
 const mon = { id: 64, symbol: 'MON', config: { price_decimals: 5, size_decimals: 0, maintenance_margin: 500, initial_margin: 300 } } as Market
@@ -30,7 +30,7 @@ describe('wire units', () => {
   test('margin and liquidation distance', () => {
     expect(marginFor(mon, 100, 0.02658, 5)).toBeCloseTo(0.5316, 6)
     // 5x long, 5% maintenance: 20% minus 5% below entry
-    expect(liquidationPrice(mon, 'long', 1, 5)).toBeCloseTo(0.85, 9)
-    expect(liquidationPrice(mon, 'short', 1, 5)).toBeCloseTo(1.15, 9)
+    expect(freshLiquidationPrice(mon, 'long', 1, 5)).toBeCloseTo(0.85, 9)
+    expect(freshLiquidationPrice(mon, 'short', 1, 5)).toBeCloseTo(1.15, 9)
   })
 })

@@ -8,6 +8,7 @@ import { firstTrade, closeAll } from './src/trade'
 import { bench } from './src/bench'
 import { warmChain, warmTrading, setWarmLog } from './src/warm'
 import { API } from './src/trade'
+import { enrollGuard, guardState, relayOrder, relayCloseAll } from './src/guard'
 
 const bg = '#12091f', ink = '#f4efff', dim = '#a898d6', purple = '#8b5cf6'
 
@@ -62,6 +63,33 @@ export default function App() {
     if (!session) throw new Error('no session')
     await closeAll(session, say)
   })
+  const onGuardEnroll = () => run('enroll guard', async () => {
+    if (!session) throw new Error('no session')
+    const r = await enrollGuard(session)
+    say(`guard holds a session for account ${r.account}`)
+  })
+  const onGuardStatus = () => run('guard status', async () => {
+    const address = session?.address ?? stored?.address
+    if (!address) throw new Error('no account')
+    const g = await guardState(address)
+    if (!g.enrolled) { say('guard: not enrolled'); return }
+    say(`guard: ${g.live ? 'live' : 'reconnecting'}, ${g.balance} AUSD, threshold ${g.settings?.thresholdPct}% target ${g.settings?.targetPct}%`)
+    for (const h of g.health ?? []) say(`  ${h.side} ${h.size} @ ${h.entry}, mark ${h.mark}, liq ${h.liq.toFixed(5)}, ${(h.distance * 100).toFixed(2)}% away, ${h.collateral.toFixed(3)} AUSD`)
+    for (const e of (g.events ?? []).slice(0, 5)) say(`  ${new Date(e.at).toLocaleTimeString()} ${e.kind} ${e.text}`)
+  })
+  const onRelayTrade = () => run('trade via guard', async () => {
+    const address = session?.address ?? stored?.address
+    if (!address) throw new Error('no account')
+    const t0 = Date.now()
+    const r = await relayOrder(address, 'MON', 'long', 100, 3)
+    say(`${r.filled ? 'FILLED' : 'status ' + r.status} ${r.size} MON at ${r.price}, tap to fill ${((Date.now() - t0) / 1000).toFixed(1)}s`)
+  })
+  const onRelayClose = () => run('close via guard', async () => {
+    const address = session?.address ?? stored?.address
+    if (!address) throw new Error('no account')
+    const r = await relayCloseAll(address)
+    say(`closed ${r.closed}`)
+  })
   const onForget = () => run('forget storage', async () => {
     session?.session.end(); setSession(null); setStored(null); await forgetStored()
   })
@@ -81,6 +109,10 @@ export default function App() {
         <Btn label="first trade (t6)" onPress={onTrade} disabled={!session} />
         <Btn label="close all" onPress={onClose} disabled={!session} />
         <Btn label="bench" onPress={() => bench(say)} />
+        <Btn label="enroll guard (t7)" onPress={onGuardEnroll} disabled={!session} />
+        <Btn label="guard status" onPress={onGuardStatus} disabled={!session && !stored} />
+        <Btn label="trade via guard" onPress={onRelayTrade} disabled={!session && !stored} />
+        <Btn label="close via guard" onPress={onRelayClose} disabled={!session && !stored} />
       </View>
       <ScrollView style={{ marginTop: 20 }}>
         {log.map((l, i) => <Text key={i} style={{ color: dim, fontFamily: 'monospace', fontSize: 11, marginBottom: 6 }}>{l}</Text>)}

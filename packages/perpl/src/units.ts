@@ -19,8 +19,8 @@ export function marginFor(m: Market, sizeHuman: number, priceHuman: number, leve
   return (sizeHuman * priceHuman) / leverage
 }
 
-// distance to liquidation as a fraction of entry, from the maintenance margin in bps
-export function liquidationPrice(m: Market, side: 'long' | 'short', entry: number, leverage: number) {
+// where a fresh position at this leverage liquidates, before any pnl. the full formula is in guard.ts
+export function freshLiquidationPrice(m: Market, side: 'long' | 'short', entry: number, leverage: number) {
   const mm = m.config.maintenance_margin / 10_000
   const move = 1 / leverage - mm
   return side === 'long' ? entry * (1 - move) : entry * (1 + move)
