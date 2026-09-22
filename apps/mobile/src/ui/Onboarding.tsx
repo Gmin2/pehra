@@ -28,6 +28,7 @@ import * as Haptics from "expo-haptics";
 import { Tap, Icon } from "./components";
 import { images } from "./assets";
 import logoData from "./logos.json";
+import { Rough, type RoughType } from "./Rough";
 
 // family's onboarding violet, shifted a little toward pehra dusk. measured off clip 36 at full size.
 export const ink = "#1a1a1a",
@@ -237,7 +238,7 @@ export function GradientText({ children, weight = "500" }: { children: string; w
     </Text>
   );
 }
-export const Em = ({ children }: { children: string }) => <GradientText>{children}</GradientText>;
+export const Em = ({ children }: { children: string }) => <Text style={{ color: ink, fontWeight: "600" }}>{children}</Text>;
 
 // the soft arc under a word, violet into pink, drawn left to right
 function Swash({ width, delay = 250 }: { width: number; delay?: number }) {
@@ -261,43 +262,65 @@ function Swash({ width, delay = 250 }: { width: number; delay?: number }) {
   );
 }
 
-// a heading that wraps word by word, with one phrase in the gradient and a swash under it
-export type Heading = (string | { u: string })[];
-export function HeadingText({ parts, size = 23, center = false }: { parts: Heading; size?: number; center?: boolean }) {
-  const words: { w: string; u: boolean }[] = [];
+// a heading that wraps word by word; one phrase gets a hand drawn mark (rough.js, see Rough.tsx)
+export type Heading = (string | { u: string; mark?: RoughType })[];
+export function HeadingText({ parts, size = 23, center = false, markDelay = 350 }: { parts: Heading; size?: number; center?: boolean; markDelay?: number }) {
+  const words: { w: string; mark?: RoughType }[] = [];
   for (const p of parts) {
-    if (typeof p === "string") p.split(" ").filter(Boolean).forEach((w) => words.push({ w, u: false }));
-    else words.push({ w: p.u, u: true });
+    if (typeof p === "string") p.split(" ").filter(Boolean).forEach((w) => words.push({ w }));
+    else words.push({ w: p.u, mark: p.mark ?? "underline" });
   }
+  const style = { fontSize: size, lineHeight: size * 1.27, fontWeight: "600" as const, letterSpacing: -0.4, color: ink };
   return (
     <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: center ? "center" : "flex-start", columnGap: size * 0.26 }}>
-      {words.map((x, i) => (
-        <Underlinable key={i} word={x.w} underline={x.u} size={size} />
-      ))}
-    </View>
-  );
-}
-function Underlinable({ word, underline, size }: { word: string; underline: boolean; size: number }) {
-  const [w, setW] = useState(0);
-  const style = { fontSize: size, lineHeight: size * 1.27, fontWeight: "600" as const, letterSpacing: -0.4, color: ink };
-  if (!underline) return <Text style={style}>{word}</Text>;
-  const trail = /[.,!?…]$/.test(word) ? word.slice(-1) : "";
-  const core = trail ? word.slice(0, -1) : word;
-  return (
-    <View style={{ flexDirection: "row" }}>
-      <View onLayout={(e) => setW(e.nativeEvent.layout.width)}>
-        <Text style={style}>
-          <GradientText weight="600">{core}</GradientText>
-        </Text>
-        {w > 0 && <Swash width={w} />}
-      </View>
-      {!!trail && <Text style={style}>{trail}</Text>}
+      {words.map((x, i) => {
+        if (!x.mark) return <Text key={i} style={style}>{x.w}</Text>;
+        const trail = /[.,!?…]$/.test(x.w) ? x.w.slice(-1) : "";
+        const core = trail ? x.w.slice(0, -1) : x.w;
+        return (
+          <View key={i} style={{ flexDirection: "row", marginHorizontal: x.mark === "circle" ? 10 : 0 }}>
+            <Rough type={x.mark} color={x.mark === "highlight" ? "#C4B5FD" : violet} padding={x.mark === "circle" ? 6 : 3} paddingX={x.mark === "circle" ? 13 : 3} strokeWidth={x.mark === "circle" ? 2.2 : 2.6} iterations={2} delay={markDelay}>
+              <Text style={style}>{core}</Text>
+            </Rough>
+            {!!trail && <Text style={style}>{trail}</Text>}
+          </View>
+        );
+      })}
     </View>
   );
 }
 
 // the account card from clip 36 at 5.2s: vivid violet, a soft diagonal sheen, the glyph, the
 // address with its copy mark, name and balance, and the double ringed white pill
+export const night = { top: "#2B2157", bottom: "#1B1636", star: "#ffffff", line: "#ffffff14" };
+const STARS = [[0.12, 0.2, 1.4], [0.3, 0.12, 1], [0.46, 0.3, 1.2], [0.63, 0.16, 0.9], [0.84, 0.36, 1.3], [0.22, 0.46, 0.8], [0.72, 0.54, 1], [0.9, 0.12, 0.8], [0.55, 0.62, 0.7], [0.08, 0.66, 1]];
+export function NightSky({ w, h, id }: { w: number; h: number; id: string }) {
+  return (
+    <Svg width={w} height={h} style={StyleSheet.absoluteFill}>
+      <Defs>
+        <LinearGradient id={id + "sky"} x1="0" y1="0" x2="0.4" y2="1">
+          <Stop offset="0" stopColor={night.top} />
+          <Stop offset="1" stopColor={night.bottom} />
+        </LinearGradient>
+        <LinearGradient id={id + "glow"} x1="1" y1="0" x2="0.2" y2="0.9">
+          <Stop offset="0" stopColor="#8B5CF6" stopOpacity={0.55} />
+          <Stop offset="0.55" stopColor="#8B5CF6" stopOpacity={0} />
+        </LinearGradient>
+      </Defs>
+      <Rect x={0} y={0} width={w} height={h} fill={`url(#${id}sky)`} />
+      <Rect x={0} y={0} width={w} height={h} fill={`url(#${id}glow)`} />
+      {[0.25, 0.5, 0.75].map((f) => (
+        <Line key={f} x1={0} x2={w} y1={h * f} y2={h * f} stroke={night.line} strokeWidth={1} />
+      ))}
+      {STARS.map(([x, y, r], i) => (
+        <Circle key={i} cx={x * w} cy={y * h} r={r} fill={night.star} opacity={0.55} />
+      ))}
+    </Svg>
+  );
+}
+
+// the account card, pehra's own: a night sky with a violet glow in the corner, the mascot keeping
+// watch, the balance large, the address in small type, and a violet pill to turn on the guard
 export function AccountCard({
   address,
   name = "pehra",
@@ -320,27 +343,14 @@ export function AccountCard({
   const w = Math.round(width * 0.876),
     h = Math.round(w * 0.62);
   return (
-    <View style={{ width: w, height: h, alignSelf: "center", borderRadius: 26, backgroundColor: violet, boxShadow: "0 14px 30px #8b5cf633", overflow: "hidden" }}>
-      <Svg width={w} height={h} style={StyleSheet.absoluteFill}>
-        <Defs>
-          <LinearGradient id="sheen" x1="0" y1="0" x2="1" y2="0.55">
-            <Stop offset="0" stopColor="#ffffff" stopOpacity={0} />
-            <Stop offset="0.2" stopColor="#ffffff" stopOpacity={0.02} />
-            <Stop offset="0.3" stopColor="#ffffff" stopOpacity={0.16} />
-            <Stop offset="0.38" stopColor="#ffffff" stopOpacity={0.04} />
-            <Stop offset="0.5" stopColor="#ffffff" stopOpacity={0} />
-          </LinearGradient>
-          <LinearGradient id="edge" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor="#ffffff" stopOpacity={0.12} />
-            <Stop offset="0.25" stopColor="#ffffff" stopOpacity={0} />
-          </LinearGradient>
-        </Defs>
-        <Rect x={0} y={0} width={w} height={h} fill="url(#sheen)" />
-        <Rect x={0} y={0} width={w} height={h} fill="url(#edge)" />
-      </Svg>
-      <View style={{ flex: 1, padding: 20, paddingTop: 22, justifyContent: "space-between" }}>
-        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <Image source={images[glyph] || images["pehra-mark-paper"]} style={{ width: 38, height: 38 }} />
+    <View style={{ width: w, height: h, alignSelf: "center", borderRadius: 26, overflow: "hidden", boxShadow: "0 16px 32px #1b163640" }}>
+      <NightSky w={w} h={h} id="acct" />
+      <View style={{ flex: 1, padding: 20, justifyContent: "space-between" }}>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <Image source={images[glyph] || images["pehra-mark-paper"]} style={{ width: 34, height: 34 }} />
+            <Text style={{ color: "white", fontSize: 17, fontWeight: "600", letterSpacing: -0.3 }}>{name}</Text>
+          </View>
           {!!address && (
             <Tap
               accessibilityLabel="Copy address"
@@ -348,31 +358,28 @@ export function AccountCard({
                 await Clipboard.setStringAsync(address);
                 Haptics.selectionAsync();
               }}
-              innerStyle={{ flexDirection: "row", alignItems: "center", gap: 8, paddingTop: 4 }}
+              innerStyle={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#ffffff12", borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6 }}
             >
-              <Text style={{ color: "white", fontSize: 16, fontWeight: "600", fontVariant: ["tabular-nums"], letterSpacing: -0.2 }}>{short(address)}</Text>
-              <Icon name="copy" size={15} color="#ffffffcc" />
+              <Text style={{ color: "#ffffffcc", fontSize: 12.5, fontWeight: "600", fontVariant: ["tabular-nums"] }}>{short(address)}</Text>
+              <Icon name="copy" size={12} color="#ffffff99" />
             </Tap>
           )}
         </View>
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" }}>
-          <View style={{ gap: 3 }}>
-            <Text style={{ color: "white", fontSize: 18, fontWeight: "600", letterSpacing: -0.3 }}>{name}</Text>
-            <Text style={{ color: "#ffffff99", fontSize: 16, fontWeight: "500" }}>{balance}</Text>
+          <View style={{ gap: 2 }}>
+            <Text style={{ color: "#ffffff80", fontSize: 12, fontWeight: "600", letterSpacing: 0.6 }}>BALANCE</Text>
+            <Text style={{ color: "white", fontSize: 26, fontWeight: "700", letterSpacing: -0.6, fontVariant: ["tabular-nums"] }}>{balance}</Text>
           </View>
           {!!pill && (
-            <Tap onPress={onPill} accessibilityLabel={pill} innerStyle={{ borderRadius: 24, borderWidth: 2, borderColor: "#ffffffcc", padding: 3 }}>
-              <View style={{ backgroundColor: "white", borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6 }}>
-                <Text style={{ color: violet, fontSize: 15, fontWeight: "600", letterSpacing: -0.2 }}>{pill}</Text>
-              </View>
+            <Tap onPress={onPill} accessibilityLabel={pill} innerStyle={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: violet, borderRadius: 18, paddingHorizontal: 13, paddingVertical: 9, boxShadow: "0 6px 14px #8b5cf655" }}>
+              <Icon name="shield" size={14} color="white" />
+              <Text style={{ color: "white", fontSize: 14, fontWeight: "600" }}>{pill}</Text>
             </Tap>
           )}
           {!!badge && (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#ffffff2e", borderRadius: 14, paddingHorizontal: 10, paddingVertical: 6 }}>
-              <View style={{ width: 16, height: 16, borderRadius: 8, backgroundColor: "white", alignItems: "center", justifyContent: "center" }}>
-                <Icon name="check" size={10} color={violet} />
-              </View>
-              <Text style={{ color: "white", fontSize: 13, fontWeight: "600" }}>{badge}</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#7EE2B026", borderRadius: 14, paddingHorizontal: 11, paddingVertical: 7 }}>
+              <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: "#7EE2B0" }} />
+              <Text style={{ color: "#CFF5E2", fontSize: 13, fontWeight: "600" }}>{badge}</Text>
             </View>
           )}
         </View>
@@ -405,7 +412,7 @@ export function Tooltip({ title, body, width }: { title: string; body: string; w
 export function HighlightTitle({ before, word, after = "" }: { before: string; word: string; after?: string }) {
   return (
     <View style={{ alignItems: "center" }}>
-      <HeadingText parts={[before, { u: word + after }]} size={21} center />
+      <HeadingText parts={[before, { u: word + after, mark: "circle" }]} size={22} center markDelay={300} />
     </View>
   );
 }
@@ -664,16 +671,17 @@ export function PositionStack({ width }: { width: number }) {
     h = w * 0.58;
   const fill = useAnimatedStyle(() => ({ width: `${72 * bar.get()}%` }));
   const back = (color: string, top: number, inset: number, label: string, tag: string) => (
-    <View style={{ position: "absolute", top, left: inset, right: inset, height: h, borderRadius: 20, backgroundColor: color, paddingHorizontal: 16, paddingTop: 4, flexDirection: "row", justifyContent: "space-between" }}>
+    <View style={{ position: "absolute", top, left: inset, right: inset, height: h, borderRadius: 20, backgroundColor: color, paddingHorizontal: 16, paddingTop: 5, flexDirection: "row", justifyContent: "space-between" }}>
       <Text style={{ color: "#ffffffd9", fontSize: 10, fontWeight: "700", letterSpacing: 0.4 }}>{label}</Text>
       <Text style={{ color: "#ffffffb3", fontSize: 10, fontWeight: "700" }}>{tag}</Text>
     </View>
   );
   return (
-    <View style={{ height: h + 30, width: w, alignSelf: "center" }}>
-      {back("#D9CCFD", 0, 28, "ETH LONG", "−1.2%")}
-      {back("#B79BFB", 14, 14, "BTC SHORT", "+0.8%")}
-      <Animated.View style={[{ position: "absolute", top: 28, left: 0, right: 0, height: h, borderRadius: 22, backgroundColor: violet, padding: 16, justifyContent: "space-between", overflow: "hidden", boxShadow: "0 10px 24px #8b5cf62e" }, front]}>
+    <View style={{ height: h + 44, width: w, alignSelf: "center" }}>
+      {back("#8C80B8", 0, 28, "ETH LONG", "−1.2%")}
+      {back("#5B4E8E", 21, 14, "BTC SHORT", "+0.8%")}
+      <Animated.View style={[{ position: "absolute", top: 42, left: 0, right: 0, height: h, borderRadius: 22, padding: 16, justifyContent: "space-between", overflow: "hidden", boxShadow: "0 14px 28px #1b163640" }, front]}>
+        <NightSky w={w} h={h} id="stack" />
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
           <MarketCoin logo="monad" />
           <View style={{ flex: 1 }}>
@@ -688,12 +696,12 @@ export function PositionStack({ width }: { width: number }) {
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
             <Text style={{ color: "#ffffffcc", fontSize: 12, fontWeight: "500" }}>28% from liquidation</Text>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-              <Icon name="shield" size={12} color="white" />
-              <Text style={{ color: "white", fontSize: 11, fontWeight: "700" }}>guarded</Text>
+              <Icon name="shield" size={12} color="#CFF5E2" />
+              <Text style={{ color: "#CFF5E2", fontSize: 11, fontWeight: "700" }}>guarded</Text>
             </View>
           </View>
           <View style={{ height: 6, borderRadius: 3, backgroundColor: "#ffffff2e", overflow: "hidden" }}>
-            <Animated.View style={[{ height: 6, borderRadius: 3, backgroundColor: "white" }, fill]} />
+            <Animated.View style={[{ height: 6, borderRadius: 3, backgroundColor: "#7EE2B0" }, fill]} />
           </View>
         </View>
       </Animated.View>

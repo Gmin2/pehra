@@ -40,7 +40,7 @@ const TERMS = [
 const LESSONS: Lesson[] = [
   {
     art: "shield",
-    title: ["Most liquidations happen while you’re", { u: "away." }],
+    title: ["Most liquidations happen while you’re", { u: "away.", mark: "circle" }],
     body: (
       <>
         When a position runs out of margin, perpl closes it for you, and it rarely waits for you to wake up. The guard
@@ -50,7 +50,7 @@ const LESSONS: Lesson[] = [
   },
   {
     art: "session",
-    title: ["One signature, and every trade fills in about a", { u: "second." }],
+    title: ["One signature, and every trade fills in about a", { u: "second.", mark: "underline" }],
     body: (
       <>
         Your passkey lets the guard keep a trading session for you. It adds margin and places your orders, no wallet
@@ -60,7 +60,7 @@ const LESSONS: Lesson[] = [
   },
   {
     art: "lock",
-    title: ["Your money stays yours."],
+    title: ["Your money stays", { u: "yours.", mark: "highlight" }],
     body: (
       <>
         The guard can add margin, but it can never withdraw. Only your passkey moves money out of your account, and it
