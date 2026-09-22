@@ -17,7 +17,6 @@ import {
   HighlightTitle,
   LessonTray,
   Em,
-  Underlined,
   accent,
   muted,
   ink,
@@ -41,35 +40,30 @@ const TERMS = [
 const LESSONS: Lesson[] = [
   {
     art: "shield",
-    title: <>Before you trade, there’s one thing you should know…</>,
+    title: ["Before you trade, there’s one thing you should know…"],
     body: (
       <>
-        On perpl a position closes by itself when it runs out of margin. That is a <Em>liquidation</Em>, and it usually
-        happens while you sleep. The <Em>guard</Em> watches every position and tops up the margin before it gets there.
+        On perpl a position closes by itself when its margin runs out. That is a <Em>liquidation</Em>, and it tends to
+        happen while you sleep. The guard watches and tops up the margin first.
       </>
     ),
   },
   {
     art: "session",
-    title: (
-      <>
-        The guard holds a <Underlined>trading session</Underlined> for you.
-      </>
-    ),
+    title: ["The guard keeps a trading session for you,", { u: "securely." }],
     body: (
       <>
-        One signature from your passkey lets it place margin adds and your own orders. It is what lets a trade fill in
-        about a second. You can turn it off any time.
+        One signature from your passkey lets it add margin and place your orders, which is why a trade fills in about a
+        second. You can turn it off any time.
       </>
     ),
   },
   {
     art: "lock",
-    title: <>One last important thing…</>,
+    title: ["One last important thing…"],
     body: (
       <>
-        The guard can never withdraw. Only your passkey can move money out of your account, and it
-        <Em> asks you every time</Em>.
+        The guard can never withdraw. Only your passkey can move money out of your account, and it <Em>asks you every time</Em>.
       </>
     ),
   },

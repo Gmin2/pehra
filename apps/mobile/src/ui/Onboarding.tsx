@@ -3,11 +3,12 @@
 // account is made, the account card with its pill and tooltip, the education trays, the done card.
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { View, Text, Image, Modal, Pressable, StyleSheet, useWindowDimensions } from "react-native";
-import Svg, { Rect, Path, Circle, G, Line, Defs, LinearGradient, RadialGradient, Stop, Text as SvgText } from "react-native-svg";
+import Svg, { Rect, Path, Circle, G, Line, Defs, LinearGradient, Stop, Mask, Text as SvgText } from "react-native-svg";
 import Animated, {
   FadeIn,
   FadeOut,
   ZoomIn,
+  LinearTransition,
   useSharedValue,
   useAnimatedStyle,
   useAnimatedProps,
@@ -26,11 +27,14 @@ import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { Tap, Icon } from "./components";
 import { images } from "./assets";
+import logoData from "./logos.json";
 
-export const ink = "#151515",
+// family's onboarding violet, shifted a little toward pehra dusk. measured off clip 36 at full size.
+export const ink = "#1a1a1a",
   muted = "#999",
-  dusk = "#7362CE",
-  accent = "#6553B9",
+  violet = "#8B5CF6",
+  dusk = violet,
+  accent = violet,
   mist = "#EFEAFB",
   paleGrid = "#ECE8F5";
 
@@ -60,8 +64,8 @@ export function CardStack({ width }: { width: number }) {
   );
   return (
     <View style={{ height: w * 0.52 + 36, width: w, alignSelf: "center" }}>
-      {card("#C9BEF0", 0, 26)}
-      {card("#A08EE3", 12, 13)}
+      {card("#D9CCFD", 0, 26)}
+      {card("#B79BFB", 12, 13)}
       <Animated.View
         style={[
           {
@@ -215,9 +219,85 @@ export function WorkingGrid({ width }: { width: number }) {
   );
 }
 
-const short = (a?: string) => (a ? `${a.slice(0, 6)}···${a.slice(-4)}` : "");
+const short = (a?: string) => (a ? `${a.slice(0, 6)}····${a.slice(-4)}` : "");
 
-// the account card from the "ready" frame: glyph, address with copy, name and balance, a pill
+// family's highlight: each letter takes a step of the violet to pink gradient
+const FROM = [124, 92, 255],
+  TO = [225, 71, 196];
+const mix = (t: number) => `rgb(${FROM.map((f, i) => Math.round(f + (TO[i] - f) * t)).join(",")})`;
+export function GradientText({ children, weight = "500" }: { children: string; weight?: "500" | "600" }) {
+  const chars = Array.from(children);
+  return (
+    <Text>
+      {chars.map((c, i) => (
+        <Text key={i} style={{ color: mix(chars.length > 1 ? i / (chars.length - 1) : 0), fontWeight: weight }}>
+          {c}
+        </Text>
+      ))}
+    </Text>
+  );
+}
+export const Em = ({ children }: { children: string }) => <GradientText>{children}</GradientText>;
+
+// the soft arc under a word, violet into pink, drawn left to right
+function Swash({ width, delay = 250 }: { width: number; delay?: number }) {
+  const draw = useSharedValue(0);
+  useEffect(() => {
+    draw.set(withDelay(delay, withTiming(1, { duration: 480, easing: Easing.out(Easing.cubic), reduceMotion: ReduceMotion.System })));
+  }, [draw, delay]);
+  const clip = useAnimatedStyle(() => ({ width: width * draw.get() }));
+  return (
+    <Animated.View style={[{ height: 8, overflow: "hidden", marginTop: -2 }, clip]}>
+      <Svg width={width} height={8}>
+        <Defs>
+          <LinearGradient id="swash" x1="0" y1="0" x2="1" y2="0">
+            <Stop offset="0" stopColor="#7C5CFF" />
+            <Stop offset="1" stopColor="#E147C4" />
+          </LinearGradient>
+        </Defs>
+        <Path d={`M2 5 Q ${width / 2} 1.5 ${width - 2} 4.5`} stroke="url(#swash)" strokeWidth={3} strokeLinecap="round" fill="none" />
+      </Svg>
+    </Animated.View>
+  );
+}
+
+// a heading that wraps word by word, with one phrase in the gradient and a swash under it
+export type Heading = (string | { u: string })[];
+export function HeadingText({ parts, size = 23, center = false }: { parts: Heading; size?: number; center?: boolean }) {
+  const words: { w: string; u: boolean }[] = [];
+  for (const p of parts) {
+    if (typeof p === "string") p.split(" ").filter(Boolean).forEach((w) => words.push({ w, u: false }));
+    else words.push({ w: p.u, u: true });
+  }
+  return (
+    <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: center ? "center" : "flex-start", columnGap: size * 0.26 }}>
+      {words.map((x, i) => (
+        <Underlinable key={i} word={x.w} underline={x.u} size={size} />
+      ))}
+    </View>
+  );
+}
+function Underlinable({ word, underline, size }: { word: string; underline: boolean; size: number }) {
+  const [w, setW] = useState(0);
+  const style = { fontSize: size, lineHeight: size * 1.27, fontWeight: "600" as const, letterSpacing: -0.4, color: ink };
+  if (!underline) return <Text style={style}>{word}</Text>;
+  const trail = /[.,!?…]$/.test(word) ? word.slice(-1) : "";
+  const core = trail ? word.slice(0, -1) : word;
+  return (
+    <View style={{ flexDirection: "row" }}>
+      <View onLayout={(e) => setW(e.nativeEvent.layout.width)}>
+        <Text style={style}>
+          <GradientText weight="600">{core}</GradientText>
+        </Text>
+        {w > 0 && <Swash width={w} />}
+      </View>
+      {!!trail && <Text style={style}>{trail}</Text>}
+    </View>
+  );
+}
+
+// the account card from clip 36 at 5.2s: vivid violet, a soft diagonal sheen, the glyph, the
+// address with its copy mark, name and balance, and the double ringed white pill
 export function AccountCard({
   address,
   name = "pehra",
@@ -237,224 +317,229 @@ export function AccountCard({
   glyph?: string;
   width: number;
 }) {
-  const w = Math.min(width - 64, 340);
+  const w = Math.round(width * 0.876),
+    h = Math.round(w * 0.62);
   return (
-    <View
-      style={{
-        width: w,
-        height: w * 0.56,
-        alignSelf: "center",
-        borderRadius: 20,
-        backgroundColor: accent,
-        padding: 16,
-        justifyContent: "space-between",
-        boxShadow: "0 10px 24px #6553b933",
-      }}
-    >
-      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <Image source={images[glyph] || images["pehra-mark-paper"]} style={{ width: 36, height: 36 }} />
-        {!!address && (
-          <Tap
-            accessibilityLabel="Copy address"
-            onPress={async () => {
-              await Clipboard.setStringAsync(address);
-              Haptics.selectionAsync();
-            }}
-            innerStyle={{ flexDirection: "row", alignItems: "center", gap: 6 }}
-          >
-            <Text style={{ color: "white", fontSize: 13, fontWeight: "600", fontVariant: ["tabular-nums"] }}>{short(address)}</Text>
-            <Icon name="copy" size={13} color="#ffffffcc" />
-          </Tap>
-        )}
-      </View>
-      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" }}>
-        <View style={{ gap: 2 }}>
-          <Text style={{ color: "white", fontSize: 17, fontWeight: "600" }}>{name}</Text>
-          <Text style={{ color: "#ffffffaa", fontSize: 13 }}>{balance}</Text>
+    <View style={{ width: w, height: h, alignSelf: "center", borderRadius: 26, backgroundColor: violet, boxShadow: "0 14px 30px #8b5cf633", overflow: "hidden" }}>
+      <Svg width={w} height={h} style={StyleSheet.absoluteFill}>
+        <Defs>
+          <LinearGradient id="sheen" x1="0" y1="0" x2="1" y2="0.55">
+            <Stop offset="0" stopColor="#ffffff" stopOpacity={0} />
+            <Stop offset="0.2" stopColor="#ffffff" stopOpacity={0.02} />
+            <Stop offset="0.3" stopColor="#ffffff" stopOpacity={0.16} />
+            <Stop offset="0.38" stopColor="#ffffff" stopOpacity={0.04} />
+            <Stop offset="0.5" stopColor="#ffffff" stopOpacity={0} />
+          </LinearGradient>
+          <LinearGradient id="edge" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor="#ffffff" stopOpacity={0.12} />
+            <Stop offset="0.25" stopColor="#ffffff" stopOpacity={0} />
+          </LinearGradient>
+        </Defs>
+        <Rect x={0} y={0} width={w} height={h} fill="url(#sheen)" />
+        <Rect x={0} y={0} width={w} height={h} fill="url(#edge)" />
+      </Svg>
+      <View style={{ flex: 1, padding: 20, paddingTop: 22, justifyContent: "space-between" }}>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <Image source={images[glyph] || images["pehra-mark-paper"]} style={{ width: 38, height: 38 }} />
+          {!!address && (
+            <Tap
+              accessibilityLabel="Copy address"
+              onPress={async () => {
+                await Clipboard.setStringAsync(address);
+                Haptics.selectionAsync();
+              }}
+              innerStyle={{ flexDirection: "row", alignItems: "center", gap: 8, paddingTop: 4 }}
+            >
+              <Text style={{ color: "white", fontSize: 16, fontWeight: "600", fontVariant: ["tabular-nums"], letterSpacing: -0.2 }}>{short(address)}</Text>
+              <Icon name="copy" size={15} color="#ffffffcc" />
+            </Tap>
+          )}
         </View>
-        {!!pill && (
-          <Tap
-            onPress={onPill}
-            accessibilityLabel={pill}
-            innerStyle={{
-              backgroundColor: "white",
-              borderRadius: 14,
-              paddingHorizontal: 11,
-              paddingVertical: 6,
-              borderWidth: 1.5,
-              borderColor: "#ffffff",
-              boxShadow: "0 0 0 2px #ffffff55",
-            }}
-          >
-            <Text style={{ color: accent, fontSize: 12, fontWeight: "700" }}>{pill}</Text>
-          </Tap>
-        )}
-        {!!badge && (
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "#ffffff26", borderRadius: 12, paddingHorizontal: 9, paddingVertical: 5 }}>
-            <View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: "white", alignItems: "center", justifyContent: "center" }}>
-              <Icon name="check" size={9} color={accent} />
-            </View>
-            <Text style={{ color: "white", fontSize: 12, fontWeight: "600" }}>{badge}</Text>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" }}>
+          <View style={{ gap: 3 }}>
+            <Text style={{ color: "white", fontSize: 18, fontWeight: "600", letterSpacing: -0.3 }}>{name}</Text>
+            <Text style={{ color: "#ffffff99", fontSize: 16, fontWeight: "500" }}>{balance}</Text>
           </View>
-        )}
+          {!!pill && (
+            <Tap onPress={onPill} accessibilityLabel={pill} innerStyle={{ borderRadius: 24, borderWidth: 2, borderColor: "#ffffffcc", padding: 3 }}>
+              <View style={{ backgroundColor: "white", borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6 }}>
+                <Text style={{ color: violet, fontSize: 15, fontWeight: "600", letterSpacing: -0.2 }}>{pill}</Text>
+              </View>
+            </Tap>
+          )}
+          {!!badge && (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#ffffff2e", borderRadius: 14, paddingHorizontal: 10, paddingVertical: 6 }}>
+              <View style={{ width: 16, height: 16, borderRadius: 8, backgroundColor: "white", alignItems: "center", justifyContent: "center" }}>
+                <Icon name="check" size={10} color={violet} />
+              </View>
+              <Text style={{ color: "white", fontSize: 13, fontWeight: "600" }}>{badge}</Text>
+            </View>
+          )}
+        </View>
       </View>
     </View>
   );
 }
 
-// the dark tooltip under the card, its pointer aimed at the pill
+// the grey tooltip under the card, its rounded pointer under the pill
 export function Tooltip({ title, body, width }: { title: string; body: string; width: number }) {
-  const w = Math.min(width - 150, 250);
+  const card = Math.round(width * 0.876),
+    right = (width - card) / 2 + 12;
   return (
     <Animated.View
-      entering={FadeIn.delay(450).duration(220).reduceMotion(ReduceMotion.System)}
-      style={{ alignSelf: "flex-end", marginRight: Math.max(32, (width - Math.min(width - 64, 340)) / 2 + 4), marginTop: 10, width: w }}
+      entering={FadeIn.delay(420).duration(240).reduceMotion(ReduceMotion.System)}
+      style={{ alignSelf: "flex-end", marginRight: right, marginTop: 12, width: Math.round(width * 0.75) }}
     >
-      <View style={{ alignSelf: "flex-end", marginRight: 30, width: 0, height: 0, borderLeftWidth: 8, borderRightWidth: 8, borderBottomWidth: 8, borderLeftColor: "transparent", borderRightColor: "transparent", borderBottomColor: "#1d1b22" }} />
-      <View style={{ backgroundColor: "#1d1b22", borderRadius: 14, padding: 14, gap: 5 }}>
-        <Text style={{ color: "white", fontSize: 14, fontWeight: "700" }}>{title}</Text>
-        <Text style={{ color: "#b9b5c2", fontSize: 12.5, lineHeight: 17 }}>{body}</Text>
+      <Svg width={28} height={12} style={{ alignSelf: "flex-end", marginRight: 42 }}>
+        <Path d="M0 12 C8 12 10 2 14 2 C18 2 20 12 28 12 Z" fill="#333" />
+      </Svg>
+      <View style={{ backgroundColor: "#333", borderRadius: 24, paddingHorizontal: 19, paddingVertical: 17, gap: 6, boxShadow: "0 12px 28px #00000026" }}>
+        <Text style={{ color: "white", fontSize: 16, fontWeight: "600", letterSpacing: -0.2 }}>{title}</Text>
+        <Text style={{ color: "#b3b3b3", fontSize: 14.5, lineHeight: 20.5 }}>{body}</Text>
       </View>
     </Animated.View>
   );
 }
 
-// "your account is ready." with the one word in purple and a hand drawn underline
+// "your account is ready." centred, the word in the gradient with its swash
 export function HighlightTitle({ before, word, after = "" }: { before: string; word: string; after?: string }) {
-  const draw = useSharedValue(0);
-  useEffect(() => {
-    draw.set(withDelay(250, withTiming(1, { duration: 420, easing: Easing.out(Easing.cubic), reduceMotion: ReduceMotion.System })));
-  }, [draw]);
-  const line = useAnimatedStyle(() => ({ transform: [{ scaleX: draw.get() }] }));
   return (
-    <View style={{ alignItems: "center", gap: 2 }}>
-      <Text style={{ fontSize: 22, fontWeight: "600", letterSpacing: -0.5, color: ink, textAlign: "center" }}>
-        {before}
-        <Text style={{ color: accent }}>{word}</Text>
-        {after}
-      </Text>
-      <Animated.View style={[{ width: word.length * 12, height: 3, borderRadius: 2, backgroundColor: accent, marginLeft: before.length * 9, transformOrigin: "left" }, line]} />
+    <View style={{ alignItems: "center" }}>
+      <HeadingText parts={[before, { u: word + after }]} size={21} center />
     </View>
   );
 }
 
-// the education tray: a purple illustration panel on top, copy, a black continue (clip 36)
-export type Lesson = { art: "shield" | "session" | "lock"; title: ReactNode; body: ReactNode };
+// the education trays, drawn in family's own pixel space (clip 36 at 1180 wide, the tray is 847
+// by 670 inside it) and scaled to the phone, so every stroke and gap keeps its proportion
+export type Lesson = { art: "shield" | "session" | "lock"; title: Heading; body: ReactNode };
+const VW = 847,
+  VH = 670;
+const soft = "#ffffff2e",
+  softer = "#ffffff1f",
+  rail = "#ffffff38";
+const logos = logoData as Record<string, { vb: string; d: string[] }>;
 
-// family's tray art: a gradient panel, a big phone outline running off the bottom edge, the
-// phone's own content faded inside it, and one glowing white badge that carries the idea
-const H = 210;
-function Badge({ cx, cy, r = 34, children }: { cx: number; cy: number; r?: number; children: ReactNode }) {
+function Logo({ name, cx, cy, size }: { name: string; cx: number; cy: number; size: number }) {
+  const l = logos[name],
+    [, , vw, vh] = l.vb.split(" ").map(Number),
+    k = size / Math.max(vw, vh);
   return (
-    <G>
-      <Circle cx={cx} cy={cy} r={r + 26} fill="url(#glow)" />
-      <Circle cx={cx} cy={cy} r={r} fill="white" />
-      {children}
+    <G transform={`translate(${cx - (vw * k) / 2} ${cy - (vh * k) / 2}) scale(${k})`}>
+      {l.d.map((d, i) => (
+        <Path key={i} d={d} fill="white" fillRule="evenodd" />
+      ))}
     </G>
   );
 }
-function Coin({ cx, cy, r, o, label }: { cx: number; cy: number; r: number; o: number; label: string }) {
+function Coin({ cx, cy, r, o, logo }: { cx: number; cy: number; r: number; o: number; logo: string }) {
   return (
     <G opacity={o}>
-      <Circle cx={cx} cy={cy} r={r} fill="#ffffff2e" stroke="#ffffff55" strokeWidth={1.5} />
-      <SvgText x={cx} y={cy + r * 0.36} fontSize={r * 0.95} fontWeight="700" fill="white" textAnchor="middle">
-        {label}
-      </SvgText>
+      <Circle cx={cx} cy={cy} r={r} fill="#a98bff" />
+      <Logo name={logo} cx={cx} cy={cy} size={r * 1.05} />
     </G>
   );
 }
-function Phone({ cx, w, children }: { cx: number; w: number; children?: ReactNode }) {
-  const pw = Math.min(w * 0.62, 230);
+function Fade({ id, from = 0.62 }: { id: string; from?: number }) {
   return (
-    <G>
-      <Rect x={cx - pw / 2} y={26} width={pw} height={H + 40} rx={34} fill="#ffffff10" stroke="#ffffff45" strokeWidth={5} />
-      <Rect x={cx - 26} y={42} width={52} height={12} rx={6} fill="#ffffff38" />
-      {children}
-    </G>
+    <Defs>
+      <LinearGradient id={id + "g"} x1="0" y1="0" x2="0" y2="1">
+        <Stop offset="0" stopColor="white" stopOpacity={1} />
+        <Stop offset={from} stopColor="white" stopOpacity={1} />
+        <Stop offset="1" stopColor="white" stopOpacity={0} />
+      </LinearGradient>
+      <Mask id={id} x={0} y={0} width={VW} height={VH} maskUnits="userSpaceOnUse">
+        <Rect x={0} y={0} width={VW} height={VH} fill={`url(#${id}g)`} />
+      </Mask>
+    </Defs>
   );
 }
 function Art({ kind, width }: { kind: Lesson["art"]; width: number }) {
-  const w = width,
-    cx = w / 2,
-    pw = Math.min(w * 0.62, 230),
-    left = cx - pw / 2 + 22,
-    inner = pw - 44;
+  const h = (width * VH) / VW;
   return (
-    <Svg width={w} height={H}>
-      <Defs>
-        <LinearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-          <Stop offset="0" stopColor="#8C74F0" />
-          <Stop offset="1" stopColor="#6D56DA" />
-        </LinearGradient>
-        <RadialGradient id="glow" cx="50%" cy="50%" r="50%">
-          <Stop offset="0" stopColor="#ffffff" stopOpacity={0.45} />
-          <Stop offset="1" stopColor="#ffffff" stopOpacity={0} />
-        </RadialGradient>
-      </Defs>
-      <Rect x={0} y={0} width={w} height={H} fill="url(#bg)" />
+    <Svg width={width} height={h} viewBox={`0 0 ${VW} ${VH}`}>
+      <Rect x={0} y={0} width={VW} height={VH} fill={violet} />
       {kind === "shield" && (
-        <Phone cx={cx} w={w}>
-          <Rect x={left} y={118} width={inner} height={74} rx={16} fill="#ffffff26" />
-          <Circle cx={left + 22} cy={140} r={10} fill="#ffffff40" />
-          <Rect x={left + 42} y={134} width={inner * 0.45} height={10} rx={5} fill="#ffffff40" />
-          <Rect x={left + 16} y={166} width={inner * 0.62} height={8} rx={4} fill="#ffffff2a" />
-          <Rect x={left + 16} y={180} width={inner * 0.36} height={8} rx={4} fill="#ffffff20" />
-          <G>
-            <Circle cx={cx} cy={92} r={58} fill="url(#glow)" />
-            <Path d={`M${cx} 58 l30 11 v23 c0 20 -14 32 -30 38 c-16 -6 -30 -18 -30 -38 v-23 z`} fill="white" />
-            <Path d={`M${cx - 12} 93 l8 8 l17 -18`} stroke={accent} strokeWidth={5.5} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        <G>
+          <Fade id="f1" from={0.7} />
+          <G mask="url(#f1)">
+            <Rect x={155} y={103} width={552} height={700} rx={118} fill="none" stroke={rail} strokeWidth={26} />
+            <Rect x={330} y={148} width={187} height={56} rx={28} fill={soft} />
+            <Rect x={197} y={360} width={453} height={280} rx={32} fill={soft} />
+            <Circle cx={253} cy={416} r={33} fill="#ffffff33" />
+            <Rect x={472} y={392} width={145} height={25} rx={12.5} fill="#ffffff33" />
+            <Rect x={220} y={556} width={170} height={25} rx={12.5} fill="#ffffff33" />
+            <Rect x={220} y={596} width={94} height={22} rx={11} fill="#ffffff26" />
           </G>
-        </Phone>
+          <Path d="M423 244 C451 262 479 270 508 272 L508 318 C508 370 470 408 423 428 C376 408 338 370 338 318 L338 272 C367 270 395 262 423 244 Z" fill="white" />
+          <Path d="M384 335 L412 362 L464 306" stroke={violet} strokeWidth={24} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </G>
       )}
       {kind === "session" && (
         <G>
-          <Rect x={cx - pw / 2 + 8} y={-20} width={pw - 16} height={H + 60} rx={30} fill="#ffffff0c" stroke="#ffffff30" strokeWidth={4} />
-          <Circle cx={cx} cy={84} r={68} fill="none" stroke="#ffffff30" strokeWidth={1.5} />
-          <Coin cx={cx - 120} cy={84} r={14} o={0.35} label="B" />
-          <Coin cx={cx - 78} cy={84} r={19} o={0.7} label="$" />
-          <Coin cx={cx + 78} cy={84} r={19} o={0.7} label="M" />
-          <Coin cx={cx + 120} cy={84} r={14} o={0.35} label="Ξ" />
-          <Badge cx={cx} cy={84} r={36}>
-            <Circle cx={cx - 9} cy={93} r={9} fill="none" stroke={accent} strokeWidth={5} />
-            <Path d={`M${cx - 3} 87 l17 -17 M${cx + 8} 76 l6 6 M${cx + 13} 71 l5 5`} stroke={accent} strokeWidth={5} strokeLinecap="round" />
-          </Badge>
-          <Rect x={cx - inner / 2 - 6} y={150} width={inner + 12} height={70} rx={14} fill="#ffffff1c" />
-          {["margin add", "your order", "stop loss"].map((t, i) => (
-            <G key={t}>
-              <Circle cx={cx - inner / 2 + 10} cy={166 + i * 16} r={3} fill="#ffffff66" />
-              <SvgText x={cx - inner / 2 + 20} y={170 + i * 16} fontSize={10} fill="#ffffffaa">{t}</SvgText>
-              <Circle cx={cx + 10} cy={166 + i * 16} r={3} fill="#ffffff44" />
-              <SvgText x={cx + 20} y={170 + i * 16} fontSize={10} fill="#ffffff77">{["1 AUSD", "100 MON", "−6%"][i]}</SvgText>
-            </G>
-          ))}
+          <Fade id="f2" from={0.72} />
+          <G mask="url(#f2)">
+            <Rect x={92} y={-120} width={660} height={900} rx={120} fill="none" stroke={softer} strokeWidth={30} />
+            <Rect x={149} y={466} width={550} height={250} rx={30} fill={softer} />
+            {["add margin", "your order", "stop loss", "take profit"].map((t, i) => (
+              <G key={t}>
+                <SvgText x={214} y={528 + i * 47} fontSize={26} fill="#ffffff80" textAnchor="middle">{i + 1}</SvgText>
+                <SvgText x={241} y={528 + i * 47} fontSize={27} fill="white">{t}</SvgText>
+                <Line x1={241} x2={430} y1={544 + i * 47} y2={544 + i * 47} stroke="#ffffff26" strokeWidth={2} />
+                <SvgText x={472} y={528 + i * 47} fontSize={26} fill="#ffffff80" textAnchor="middle">{i + 5}</SvgText>
+                <SvgText x={500} y={528 + i * 47} fontSize={27} fill="white">{["1 AUSD", "100 MON", "−6%", "+12%"][i]}</SvgText>
+                <Line x1={500} x2={690} y1={544 + i * 47} y2={544 + i * 47} stroke="#ffffff26" strokeWidth={2} />
+              </G>
+            ))}
+          </G>
+          <Circle cx={423} cy={228} r={168} fill="none" stroke="#ffffff45" strokeWidth={3} />
+          <Coin cx={187} cy={228} r={58} o={0.45} logo="btc" />
+          <Coin cx={662} cy={228} r={58} o={0.45} logo="eth" />
+          <Coin cx={282} cy={228} r={82} o={0.95} logo="ausd" />
+          <Coin cx={559} cy={228} r={82} o={0.95} logo="monad" />
+          <Circle cx={423} cy={228} r={112} fill="#ffffff3a" />
+          <Circle cx={423} cy={228} r={100} fill="white" />
+          <G transform="translate(423 228) rotate(-40)">
+            <Circle cx={-18} cy={0} r={34} fill={violet} />
+            <Circle cx={-18} cy={0} r={13} fill="white" />
+            <Rect x={8} y={-13} width={76} height={26} rx={9} fill={violet} />
+            <Rect x={48} y={2} width={17} height={30} rx={5} fill={violet} />
+            <Rect x={70} y={2} width={14} height={22} rx={5} fill={violet} />
+          </G>
         </G>
       )}
       {kind === "lock" && (
-        <Phone cx={cx} w={w}>
-          <Rect x={left} y={126} width={inner} height={90} rx={16} fill="#ffffff1c" />
-          {[0, 1, 2, 3].map((i) => (
-            <G key={i}>
-              <Rect x={left + 16} y={140 + i * 16} width={inner * 0.3} height={7} rx={3.5} fill="#ffffff45" />
-              <Rect x={left + inner / 2 + 8} y={140 + i * 16} width={inner * 0.3} height={7} rx={3.5} fill="#ffffff45" />
-            </G>
-          ))}
-          <Badge cx={cx} cy={92} r={32}>
-            <Rect x={cx - 14} y={90} width={28} height={21} rx={5} fill={accent} />
-            <Path d={`M${cx - 8} 90 v-7 a8 8 0 0 1 16 0 v7`} stroke={accent} strokeWidth={4.5} fill="none" />
-            <Line x1={cx - 20} y1={74} x2={cx + 20} y2={114} stroke="white" strokeWidth={7} strokeLinecap="round" />
-            <Line x1={cx - 20} y1={74} x2={cx + 20} y2={114} stroke={accent} strokeWidth={3.5} strokeLinecap="round" />
-          </Badge>
-        </Phone>
+        <G>
+          <Fade id="f3" from={0.72} />
+          <G mask="url(#f3)">
+            <Rect x={165} y={155} width={530} height={700} rx={112} fill="none" stroke={rail} strokeWidth={26} />
+            <Rect x={334} y={196} width={180} height={56} rx={28} fill={soft} />
+            <Rect x={209} y={420} width={428} height={330} rx={32} fill={softer} />
+            {[0, 1, 2, 3, 4, 5].map((i) => (
+              <G key={i}>
+                <SvgText x={259} y={468 + i * 37} fontSize={22} fill="#ffffff80" textAnchor="middle">{i + 1}</SvgText>
+                <Rect x={281} y={452 + i * 37} width={[91, 80, 76, 84, 86, 82][i]} height={17} rx={8.5} fill="#ffffff55" />
+                <Line x1={281} x2={400} y1={478 + i * 37} y2={478 + i * 37} stroke="#ffffff1c" strokeWidth={2} />
+                <SvgText x={457} y={468 + i * 37} fontSize={22} fill="#ffffff80" textAnchor="middle">{i + 7}</SvgText>
+                <Rect x={482} y={452 + i * 37} width={[77, 82, 84, 80, 78, 90][i]} height={17} rx={8.5} fill="#ffffff55" />
+                <Line x1={482} x2={600} y1={478 + i * 37} y2={478 + i * 37} stroke="#ffffff1c" strokeWidth={2} />
+              </G>
+            ))}
+          </G>
+          <Circle cx={423} cy={367} r={80} fill="white" />
+          <G>
+            <Path d="M393 368 L393 352 C393 335 406 322 423 322 C440 322 453 335 453 352 L453 368" stroke={violet} strokeWidth={13} fill="none" strokeLinecap="round" />
+            <Rect x={380} y={362} width={86} height={62} rx={16} fill={violet} />
+            <Line x1={381} y1={318} x2={466} y2={416} stroke="white" strokeWidth={22} strokeLinecap="round" />
+            <Line x1={381} y1={318} x2={466} y2={416} stroke={violet} strokeWidth={10} strokeLinecap="round" />
+          </G>
+        </G>
       )}
     </Svg>
   );
 }
 
-// a word in the title underlined with a soft purple brush stroke, like family's "crypto"
-export function Underlined({ children }: { children: ReactNode }) {
-  return <Text style={{ textDecorationLine: "underline", textDecorationColor: "#8C74F0", textDecorationStyle: "solid", color: accent }}>{children}</Text>;
-}
-
+// the tray: springs up over a flat grey, one page at a time, its height follows the copy
 export function LessonTray({
   lessons,
   visible,
@@ -463,12 +548,12 @@ export function LessonTray({
   finalLabel = "Continue",
   startPage = 0,
 }: {
-  startPage?: number;
   lessons: Lesson[];
   visible: boolean;
   onDone: () => void;
   onClose: () => void;
   finalLabel?: string;
+  startPage?: number;
 }) {
   const { width } = useWindowDimensions(),
     [page, setPage] = useState(0),
@@ -479,9 +564,9 @@ export function LessonTray({
     if (!visible) return;
     setPage(Math.min(startPage, lessons.length - 1));
     y.set(900);
-    alpha.set(withTiming(1, { duration: 180 }));
+    alpha.set(withTiming(1, { duration: 200 }));
     y.set(withSpring(0, spring));
-  }, [visible, y, alpha]);
+  }, [visible, y, alpha, startPage, lessons.length]);
   const leave = (then: () => void) => {
     alpha.set(withTiming(0, { duration: 180 }));
     y.set(withTiming(900, { duration: 220, reduceMotion: ReduceMotion.System }, (f) => { if (f) scheduleOnRN(then); }));
@@ -506,34 +591,33 @@ export function LessonTray({
   return (
     <Modal transparent visible animationType="none" statusBarTranslucent onRequestClose={() => leave(onClose)}>
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: "#0006" }, backdrop]}>
+        <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: "#808080" }, backdrop]}>
           <Pressable accessibilityLabel="Dismiss" style={{ flex: 1 }} onPress={() => leave(onClose)} />
         </Animated.View>
-        <View style={{ flex: 1, justifyContent: "flex-end", padding: 16, paddingBottom: 24 }} pointerEvents="box-none">
+        <View style={{ flex: 1, justifyContent: "flex-end", paddingHorizontal: 16, paddingBottom: 34 }} pointerEvents="box-none">
           <GestureDetector gesture={drag}>
-            <Animated.View style={[{ borderRadius: 36, backgroundColor: "white", overflow: "hidden" }, panel]} accessibilityViewIsModal>
-              <Animated.View key={"art" + page} entering={FadeIn.duration(200)} exiting={FadeOut.duration(120)} style={{ backgroundColor: dusk, height: H, overflow: "hidden" }}>
+            <Animated.View
+              layout={LinearTransition.springify().damping(26).stiffness(260).reduceMotion(ReduceMotion.System)}
+              style={[{ borderRadius: 38, backgroundColor: "white", overflow: "hidden" }, panel]}
+              accessibilityViewIsModal
+            >
+              <Animated.View key={"art" + page} entering={FadeIn.duration(220)} exiting={FadeOut.duration(120)}>
                 <Art kind={lesson.art} width={tw} />
               </Animated.View>
-              <Animated.View key={"copy" + page} entering={FadeIn.duration(220).delay(60)} style={{ padding: 24, gap: 12 }}>
-                <Text style={{ fontSize: 20, lineHeight: 26, fontWeight: "600", letterSpacing: -0.4, color: ink }}>{lesson.title}</Text>
-                <Text style={{ fontSize: 15, lineHeight: 22, color: muted }}>{lesson.body}</Text>
+              <Animated.View key={"copy" + page} entering={FadeIn.duration(240).delay(40)} style={{ paddingHorizontal: 32, paddingTop: 30, paddingBottom: 26, gap: 10 }}>
+                <HeadingText parts={lesson.title} />
+                <Text style={{ fontSize: 16.5, lineHeight: 24, color: muted }}>{lesson.body}</Text>
               </Animated.View>
-              <View style={{ paddingHorizontal: 24, paddingBottom: 24, gap: 14 }}>
-                <View style={{ flexDirection: "row", gap: 6, alignSelf: "center" }}>
-                  {lessons.map((_, i) => (
-                    <View key={i} style={{ width: i === page ? 18 : 6, height: 6, borderRadius: 3, backgroundColor: i === page ? ink : "#e3e0e8" }} />
-                  ))}
-                </View>
+              <View style={{ paddingHorizontal: 24, paddingBottom: 24 }}>
                 <Tap
                   onPress={() => {
                     Haptics.selectionAsync();
                     if (last) leave(onDone);
                     else setPage(page + 1);
                   }}
-                  innerStyle={{ backgroundColor: ink, borderRadius: 28, minHeight: 50, alignItems: "center", justifyContent: "center" }}
+                  innerStyle={{ backgroundColor: "black", borderRadius: 28, minHeight: 50, alignItems: "center", justifyContent: "center" }}
                 >
-                  <Text style={{ color: "white", fontSize: 17, fontWeight: "600" }}>{last ? finalLabel : "Continue"}</Text>
+                  <Text style={{ color: "white", fontSize: 18, fontWeight: "600", letterSpacing: -0.2 }}>{last ? finalLabel : "Continue"}</Text>
                 </Tap>
               </View>
             </Animated.View>
@@ -543,5 +627,3 @@ export function LessonTray({
     </Modal>
   );
 }
-
-export const Em = ({ children }: { children: ReactNode }) => <Text style={{ color: accent, fontWeight: "600" }}>{children}</Text>;
