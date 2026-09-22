@@ -6,7 +6,7 @@ the one file that says where the build is. updated every session. this folder is
 
 **building: pehra**, the mobile perps app (track 1, agora mobile bounty). second product (track 2, agora cross border payments, "send home") starts only after pehra's guard works.
 
-**t5 and t6 pass on the phone, then a hardening pass** (sept 22). a fresh account went from tap to a filled perpl order in 26.2s on the first run and 5.3 to 7.4s after the latency work (websocket rpc, batched setup txs, monad's reserve balance rule handled, see ../research/build-plan.md results log). no `any` types, 18 unit tests, a cold start harness. next is t7, the guard. the phone (nothing a069, usb debugging, `adb reverse tcp:8081 tcp:8081` and `tcp:8787`) is the test device for anything with a passkey, the emulator has no google account.
+**t5, t6 and t7 pass on the phone** (sept 22 and 23). a fresh account goes from tap to a filled perpl order in 5.3 to 7.4s, a returning account in 1.1s through the guard's server side session. the guard holds one delegated trading session per account (one passkey signature), watches every position against the mark, and adds margin before the venue liquidates: drilled on the laptop, enrolled and traded from the phone. no `any` types, 24 unit tests, a cold start harness, a guard drill. next: push notifications (firebase for the android dev client) and the real screens. the phone (nothing a069, usb debugging, `adb reverse tcp:8081 tcp:8081` and `tcp:8787`) is the test device for anything with a passkey, the emulator has no google account.
 
 ## tracer bullets
 
@@ -20,7 +20,8 @@ the one file that says where the build is. updated every session. this folder is
 | app | expo dev client runs on android emulator | pass | research/brand-refs/screens/pehra-tracer-bullet.png |
 | t5 | passkey create, sign, verify, forget storage, sign in, same address | pass | research/brand-refs/screens/t5-*.png, 5.5s create, 0.9s sign |
 | t6 | phone does t1 to t3, stopwatched | pass | 26.2s cold on the phone at first, 5.3 to 7.4s cold after hardening (harness), 1.5s returning user on the phone with the socket live, account 653 |
-| t7 | the guard, push with add margin | next | |
+| t7 | the guard, server side session delegated by the passkey, adds margin | pass, no push yet | services/api/scripts/guard-drill.ts, phone: enroll 1.1s, trade via guard 1.1s tap to fill, status 46ms |
+| t7b | push notification with add margin action | next | needs firebase |
 | t8 | funding sheet (agora pair) | | |
 | t9 | envio history | | |
 | t10 | offline flatten all | | |
@@ -55,7 +56,7 @@ node 26 breaks expo cli, use `source ~/.nvm/nvm.sh; nvm use 24` first. all toolc
 
 ## next
 
-t7 the guard in services/api (watch every enrolled account over the trading socket, push when liquidation distance is small, add margin from the push), then the real screens: markets with live prices, the ticket, the position card with the guard state.
+push for the guard (expo notifications need firebase on the android dev client, google-services.json), then the real screens: markets with live prices, the ticket, the position card with the guard state and its events, funding (t8), envio history (t9), flatten all (t10). the guard's pending enrollments and keys live in services/api/data (gitignored), a database comes when there is a second server.
 
 layout: apps/mobile (expo app), packages/perpl (typed perpl client, smoke test in scripts/), services/api (bun, drip today, guard next), web/passkeys (the rpId host on vercel), spikes (the probes the plan rests on), scripts (android env).
 

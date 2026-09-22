@@ -8,7 +8,7 @@ import { firstTrade, closeAll } from './src/trade'
 import { bench } from './src/bench'
 import { warmChain, warmTrading, setWarmLog } from './src/warm'
 import { API } from './src/trade'
-import { enrollGuard, guardState, relayOrder, relayCloseAll } from './src/guard'
+import { enrollGuard, guardState, relayOrder, relayCloseAll, type GuardState } from './src/guard'
 
 const bg = '#12091f', ink = '#f4efff', dim = '#a898d6', purple = '#8b5cf6'
 
@@ -25,9 +25,13 @@ export default function App() {
   useEffect(() => {
     setWarmLog(say)
     warmChain()
-    loadStored().then(st => {
+    loadStored().then(async st => {
       setStored(st)
-      if (st) warmTrading(st.address).then(k => say(k ? 'trading socket warm' : 'no api key stored')).catch(e => say(`warm failed: ${describe(e)}`))
+      if (!st) return
+      // an enrolled account trades through the guard's session, the phone's own socket stays closed
+      const g: GuardState = await guardState(st.address).catch(() => ({ enrolled: false }))
+      if (g.enrolled) { say(`guard ${g.live ? 'live' : 'reconnecting'} for this account`); return }
+      warmTrading(st.address).then(k => say(k ? 'trading socket warm' : 'no api key stored')).catch(e => say(`warm failed: ${describe(e)}`))
     })
   }, [])
 
