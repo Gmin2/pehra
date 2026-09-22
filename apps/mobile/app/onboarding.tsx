@@ -17,6 +17,7 @@ import {
   HighlightTitle,
   LessonTray,
   Em,
+  Underlined,
   accent,
   muted,
   ink,
@@ -40,7 +41,7 @@ const TERMS = [
 const LESSONS: Lesson[] = [
   {
     art: "shield",
-    title: <>Before you trade, one thing worth knowing…</>,
+    title: <>Before you trade, there’s one thing you should know…</>,
     body: (
       <>
         On perpl a position closes by itself when it runs out of margin. That is a <Em>liquidation</Em>, and it usually
@@ -52,7 +53,7 @@ const LESSONS: Lesson[] = [
     art: "session",
     title: (
       <>
-        The guard holds a <Em>trading session</Em> for you.
+        The guard holds a <Underlined>trading session</Underlined> for you.
       </>
     ),
     body: (
@@ -87,9 +88,10 @@ export default function Onboarding() {
     session = useRef<Session | null>(null);
   const address = session.current?.address ?? a.stored?.address;
   // ?step= shows one step for design review without touching the passkey or the server
-  const { step: preview } = useLocalSearchParams<{ step?: string }>();
+  const { step: preview, tray: trayPage } = useLocalSearchParams<{ step?: string; tray?: string }>();
   useEffect(() => {
     if (preview) next(preview);
+    if (trayPage) setTray(true);
     else if (!["choose", "terms", "creating", "ready", "delegating", "done"].includes(step)) next("choose");
   }, [preview]);
   const fail = (e: unknown) => {
@@ -262,7 +264,7 @@ export default function Onboarding() {
           <Text style={{ color: muted, fontSize: 14 }}>Maybe Later</Text>
         </Tap>
       )}
-      <LessonTray lessons={LESSONS} visible={tray} finalLabel="Turn On the Guard" onClose={() => setTray(false)} onDone={() => { setTray(false); void delegate(); }} />
+      <LessonTray lessons={LESSONS} visible={tray} startPage={trayPage ? Number(trayPage) : 0} finalLabel="Turn On the Guard" onClose={() => setTray(false)} onDone={() => { setTray(false); void delegate(); }} />
     </Screen>
   );
 }

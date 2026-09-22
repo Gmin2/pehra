@@ -3,7 +3,7 @@
 // account is made, the account card with its pill and tooltip, the education trays, the done card.
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { View, Text, Image, Modal, Pressable, StyleSheet, useWindowDimensions } from "react-native";
-import Svg, { Rect, Path, Circle, G, Line } from "react-native-svg";
+import Svg, { Rect, Path, Circle, G, Line, Defs, LinearGradient, RadialGradient, Stop, Text as SvgText } from "react-native-svg";
 import Animated, {
   FadeIn,
   FadeOut,
@@ -341,37 +341,118 @@ export function HighlightTitle({ before, word, after = "" }: { before: string; w
 // the education tray: a purple illustration panel on top, copy, a black continue (clip 36)
 export type Lesson = { art: "shield" | "session" | "lock"; title: ReactNode; body: ReactNode };
 
+// family's tray art: a gradient panel, a big phone outline running off the bottom edge, the
+// phone's own content faded inside it, and one glowing white badge that carries the idea
+const H = 210;
+function Badge({ cx, cy, r = 34, children }: { cx: number; cy: number; r?: number; children: ReactNode }) {
+  return (
+    <G>
+      <Circle cx={cx} cy={cy} r={r + 26} fill="url(#glow)" />
+      <Circle cx={cx} cy={cy} r={r} fill="white" />
+      {children}
+    </G>
+  );
+}
+function Coin({ cx, cy, r, o, label }: { cx: number; cy: number; r: number; o: number; label: string }) {
+  return (
+    <G opacity={o}>
+      <Circle cx={cx} cy={cy} r={r} fill="#ffffff2e" stroke="#ffffff55" strokeWidth={1.5} />
+      <SvgText x={cx} y={cy + r * 0.36} fontSize={r * 0.95} fontWeight="700" fill="white" textAnchor="middle">
+        {label}
+      </SvgText>
+    </G>
+  );
+}
+function Phone({ cx, w, children }: { cx: number; w: number; children?: ReactNode }) {
+  const pw = Math.min(w * 0.62, 230);
+  return (
+    <G>
+      <Rect x={cx - pw / 2} y={26} width={pw} height={H + 40} rx={34} fill="#ffffff10" stroke="#ffffff45" strokeWidth={5} />
+      <Rect x={cx - 26} y={42} width={52} height={12} rx={6} fill="#ffffff38" />
+      {children}
+    </G>
+  );
+}
 function Art({ kind, width }: { kind: Lesson["art"]; width: number }) {
   const w = width,
-    h = 170,
-    cx = w / 2;
+    cx = w / 2,
+    pw = Math.min(w * 0.62, 230),
+    left = cx - pw / 2 + 22,
+    inner = pw - 44;
   return (
-    <Svg width={w} height={h}>
-      <Rect x={cx - 72} y={18} width={144} height={170} rx={22} fill="none" stroke="#ffffff38" strokeWidth={2} />
-      <Rect x={cx - 58} y={34} width={116} height={150} rx={14} fill="#ffffff12" />
-      <Rect x={cx - 44} y={112} width={88} height={10} rx={5} fill="#ffffff22" />
-      <Rect x={cx - 44} y={130} width={62} height={10} rx={5} fill="#ffffff18" />
-      <Circle cx={cx} cy={76} r={30} fill="white" />
+    <Svg width={w} height={H}>
+      <Defs>
+        <LinearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+          <Stop offset="0" stopColor="#8C74F0" />
+          <Stop offset="1" stopColor="#6D56DA" />
+        </LinearGradient>
+        <RadialGradient id="glow" cx="50%" cy="50%" r="50%">
+          <Stop offset="0" stopColor="#ffffff" stopOpacity={0.45} />
+          <Stop offset="1" stopColor="#ffffff" stopOpacity={0} />
+        </RadialGradient>
+      </Defs>
+      <Rect x={0} y={0} width={w} height={H} fill="url(#bg)" />
       {kind === "shield" && (
-        <G>
-          <Path d={`M${cx} 58 l16 6 v12 c0 10 -8 16 -16 19 c-8 -3 -16 -9 -16 -19 v-12 z`} fill={accent} />
-          <Path d={`M${cx - 6} 76 l4 4 l8 -9`} stroke="white" strokeWidth={3} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-        </G>
+        <Phone cx={cx} w={w}>
+          <Rect x={left} y={118} width={inner} height={74} rx={16} fill="#ffffff26" />
+          <Circle cx={left + 22} cy={140} r={10} fill="#ffffff40" />
+          <Rect x={left + 42} y={134} width={inner * 0.45} height={10} rx={5} fill="#ffffff40" />
+          <Rect x={left + 16} y={166} width={inner * 0.62} height={8} rx={4} fill="#ffffff2a" />
+          <Rect x={left + 16} y={180} width={inner * 0.36} height={8} rx={4} fill="#ffffff20" />
+          <G>
+            <Circle cx={cx} cy={92} r={58} fill="url(#glow)" />
+            <Path d={`M${cx} 58 l30 11 v23 c0 20 -14 32 -30 38 c-16 -6 -30 -18 -30 -38 v-23 z`} fill="white" />
+            <Path d={`M${cx - 12} 93 l8 8 l17 -18`} stroke={accent} strokeWidth={5.5} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          </G>
+        </Phone>
       )}
       {kind === "session" && (
         <G>
-          <Circle cx={cx - 8} cy={76} r={8} fill="none" stroke={accent} strokeWidth={3.2} />
-          <Path d={`M${cx - 2} 70 l14 -12 M${cx + 6} 63 l4 4 M${cx + 10} 59 l4 4`} stroke={accent} strokeWidth={3.2} strokeLinecap="round" />
+          <Rect x={cx - pw / 2 + 8} y={-20} width={pw - 16} height={H + 60} rx={30} fill="#ffffff0c" stroke="#ffffff30" strokeWidth={4} />
+          <Circle cx={cx} cy={84} r={68} fill="none" stroke="#ffffff30" strokeWidth={1.5} />
+          <Coin cx={cx - 120} cy={84} r={14} o={0.35} label="₿" />
+          <Coin cx={cx - 78} cy={84} r={19} o={0.7} label="$" />
+          <Coin cx={cx + 78} cy={84} r={19} o={0.7} label="M" />
+          <Coin cx={cx + 120} cy={84} r={14} o={0.35} label="Ξ" />
+          <Badge cx={cx} cy={84} r={36}>
+            <Circle cx={cx - 9} cy={93} r={9} fill="none" stroke={accent} strokeWidth={5} />
+            <Path d={`M${cx - 3} 87 l17 -17 M${cx + 8} 76 l6 6 M${cx + 13} 71 l5 5`} stroke={accent} strokeWidth={5} strokeLinecap="round" />
+          </Badge>
+          <Rect x={cx - inner / 2 - 6} y={150} width={inner + 12} height={70} rx={14} fill="#ffffff1c" />
+          {["margin add", "your order", "stop loss"].map((t, i) => (
+            <G key={t}>
+              <Circle cx={cx - inner / 2 + 10} cy={166 + i * 16} r={3} fill="#ffffff66" />
+              <SvgText x={cx - inner / 2 + 20} y={170 + i * 16} fontSize={10} fill="#ffffffaa">{t}</SvgText>
+              <Circle cx={cx + 10} cy={166 + i * 16} r={3} fill="#ffffff44" />
+              <SvgText x={cx + 20} y={170 + i * 16} fontSize={10} fill="#ffffff77">{["1 AUSD", "100 MON", "−6%"][i]}</SvgText>
+            </G>
+          ))}
         </G>
       )}
       {kind === "lock" && (
-        <G>
-          <Rect x={cx - 12} y={72} width={24} height={18} rx={4} fill={accent} />
-          <Path d={`M${cx - 7} 72 v-6 a7 7 0 0 1 14 0 v6`} stroke={accent} strokeWidth={3.2} fill="none" />
-        </G>
+        <Phone cx={cx} w={w}>
+          <Rect x={left} y={126} width={inner} height={90} rx={16} fill="#ffffff1c" />
+          {[0, 1, 2, 3].map((i) => (
+            <G key={i}>
+              <Rect x={left + 16} y={140 + i * 16} width={inner * 0.3} height={7} rx={3.5} fill="#ffffff45" />
+              <Rect x={left + inner / 2 + 8} y={140 + i * 16} width={inner * 0.3} height={7} rx={3.5} fill="#ffffff45" />
+            </G>
+          ))}
+          <Badge cx={cx} cy={92} r={32}>
+            <Rect x={cx - 14} y={90} width={28} height={21} rx={5} fill={accent} />
+            <Path d={`M${cx - 8} 90 v-7 a8 8 0 0 1 16 0 v7`} stroke={accent} strokeWidth={4.5} fill="none" />
+            <Line x1={cx - 20} y1={74} x2={cx + 20} y2={114} stroke="white" strokeWidth={7} strokeLinecap="round" />
+            <Line x1={cx - 20} y1={74} x2={cx + 20} y2={114} stroke={accent} strokeWidth={3.5} strokeLinecap="round" />
+          </Badge>
+        </Phone>
       )}
     </Svg>
   );
+}
+
+// a word in the title underlined with a soft purple brush stroke, like family's "crypto"
+export function Underlined({ children }: { children: ReactNode }) {
+  return <Text style={{ textDecorationLine: "underline", textDecorationColor: dusk, textDecorationStyle: "solid", color: ink }}>{children}</Text>;
 }
 
 export function LessonTray({
@@ -380,7 +461,9 @@ export function LessonTray({
   onDone,
   onClose,
   finalLabel = "Continue",
+  startPage = 0,
 }: {
+  startPage?: number;
   lessons: Lesson[];
   visible: boolean;
   onDone: () => void;
@@ -394,7 +477,7 @@ export function LessonTray({
   const tw = width - 32;
   useEffect(() => {
     if (!visible) return;
-    setPage(0);
+    setPage(Math.min(startPage, lessons.length - 1));
     y.set(900);
     alpha.set(withTiming(1, { duration: 180 }));
     y.set(withSpring(0, spring));
@@ -429,7 +512,7 @@ export function LessonTray({
         <View style={{ flex: 1, justifyContent: "flex-end", padding: 16, paddingBottom: 24 }} pointerEvents="box-none">
           <GestureDetector gesture={drag}>
             <Animated.View style={[{ borderRadius: 36, backgroundColor: "white", overflow: "hidden" }, panel]} accessibilityViewIsModal>
-              <Animated.View key={"art" + page} entering={FadeIn.duration(200)} exiting={FadeOut.duration(120)} style={{ backgroundColor: dusk, height: 170, overflow: "hidden" }}>
+              <Animated.View key={"art" + page} entering={FadeIn.duration(200)} exiting={FadeOut.duration(120)} style={{ backgroundColor: dusk, height: H, overflow: "hidden" }}>
                 <Art kind={lesson.art} width={tw} />
               </Animated.View>
               <Animated.View key={"copy" + page} entering={FadeIn.duration(220).delay(60)} style={{ padding: 24, gap: 12 }}>
