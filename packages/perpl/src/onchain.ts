@@ -46,10 +46,16 @@ export function monadChain(net: Network = 'testnet'): Chain {
 }
 
 // one websocket carries every call, so parallel reads cost one round trip instead of one tls handshake each.
-// http stays as the fallback for networks that block websockets.
-export function publicClient(net: Network = 'testnet') {
+// http stays as the fallback for networks that block websockets. one client per network, so a connection
+// warmed at app start is the one every later call rides on.
+const clients = new Map<Network, PublicClient>()
+export function publicClient(net: Network = 'testnet'): PublicClient {
+  const hit = clients.get(net)
+  if (hit) return hit
   const c = monadChain(net)
-  return createPublicClient({ chain: c, transport: fallback([webSocket(c.rpcUrls.default.webSocket?.[0], { reconnect: true }), http()]), pollingInterval: POLL_MS })
+  const client = createPublicClient({ chain: c, transport: fallback([webSocket(c.rpcUrls.default.webSocket?.[0], { reconnect: true }), http()]), pollingInterval: POLL_MS })
+  clients.set(net, client)
+  return client
 }
 
 export type PerplAccountInfo = { accountId: bigint; balanceCns: bigint; lockedCns: bigint; frozen: boolean; addr: Address }

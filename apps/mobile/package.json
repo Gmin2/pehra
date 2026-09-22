@@ -24,7 +24,10 @@
     "expo-status-bar": "~57.0.1",
     "react": "19.2.3",
     "react-native": "0.86.3",
+    "react-native-nitro-modules": "^0.37.1",
     "react-native-passkey": "3.6.1",
+    "react-native-quick-base64": "^3.0.1",
+    "react-native-quick-crypto": "^1.1.7",
     "viem": "^2.56.8"
   },
   "devDependencies": {

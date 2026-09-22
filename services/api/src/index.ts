@@ -72,6 +72,12 @@ const server = Bun.serve({
   async fetch(req) {
     const url = new URL(req.url)
     if (url.pathname === '/health') return json({ ok: true, payer: payer.address })
+    // the phone mirrors its on screen log here, so a dev can tail it instead of reading the screen
+    if (url.pathname === '/log' && req.method === 'POST') {
+      const body = await req.json().catch(() => ({})) as { line?: string }
+      if (typeof body.line === 'string') console.log('phone', new Date().toISOString().slice(11, 19), body.line.slice(0, 500))
+      return json({ ok: true })
+    }
     if (url.pathname === '/drip' && req.method === 'POST') {
       const body = await req.json().catch(() => ({})) as { address?: string }
       const address = body.address

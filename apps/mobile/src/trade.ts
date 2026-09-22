@@ -1,16 +1,13 @@
-import * as SecureStore from 'expo-secure-store'
-import { enrollApiKey, feeCaps, getContext, marketBySymbol, publicClient, setupPerplAccount, TradingSocket, toLeverage, fromPrice, fromSize, fromCns, Reason, type Enrolled } from '@pehra/perpl'
+import { enrollApiKey, getContext, getPerplAccount, marketBySymbol, publicClient, setupPerplAccount, toLeverage, fromPrice, fromSize, fromCns, Reason } from '@pehra/perpl'
+import { parseEther } from 'viem'
+import { tradingSocket } from './warm'
+import { loadApiKey, saveApiKey } from './keys'
+import { timings } from './account'
+export { loadApiKey } from './keys'
 import type { Session } from './account'
 
 // the dev machine over adb reverse, or a lan ip. the drip server pays for testnet gas and AUSD.
 export const API = 'http://localhost:8787'
-
-const keyFor = (address: string) => `pehra.perplkey.${address.toLowerCase()}`
-
-export async function loadApiKey(address: string): Promise<Enrolled | null> {
-  const raw = await SecureStore.getItemAsync(keyFor(address))
-  return raw ? (JSON.parse(raw) as Enrolled) : null
-}
 
 export type Step = (label: string) => void
 
@@ -23,27 +20,28 @@ export async function firstTrade(s: Session, say: Step) {
   const at = () => `+${((Date.now() - t0) / 1000).toFixed(1)}s`
   const pub = publicClient('testnet')
   const ctxP = getContext('testnet')
-  void feeCaps(pub)
+  if (timings.derive !== undefined) say(`${at()} key derivation ${timings.derive}ms, of which seed ${timings.seed}ms`)
 
-  const r = await fetch(`${API}/drip`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ address: s.address }) })
-  const drip = (await r.json()) as DripResponse
-  if (!r.ok && drip.error !== 'cooldown') throw new Error(`drip: ${drip.error}`)
-  say(`${at()} funded, ${drip.mon ?? '?'} MON ${drip.ausd ?? '?'} AUSD`)
-
-  const setup = await setupPerplAccount(pub, s.account, { depositCns: 100_000_000n, fundedAt: drip.block ? BigInt(drip.block) : undefined })
-  say(`${at()} perpl account ${setup.info.accountId}, ${setup.report.length} txs`)
-
+  // a returning account has a stored key and, after warm up, an open trading socket. nothing else to do.
   let key = await loadApiKey(s.address)
-  if (key) say(`${at()} api key from storage`)
-  else {
+  if (!key) {
+    const [existing, gas] = await Promise.all([getPerplAccount(pub, s.address), pub.getBalance({ address: s.address })])
+    let drip: DripResponse = {}
+    if (!existing || gas < parseEther('0.01')) {
+      const r = await fetch(`${API}/drip`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ address: s.address }) })
+      drip = (await r.json()) as DripResponse
+      if (!r.ok && drip.error !== 'cooldown') throw new Error(`drip: ${drip.error}`)
+      say(`${at()} funded, ${drip.mon ?? '?'} MON ${drip.ausd ?? '?'} AUSD`)
+    }
+    const setup = existing ? { info: existing, report: [] } : await setupPerplAccount(pub, s.account, { depositCns: 100_000_000n, fundedAt: drip.block ? BigInt(drip.block) : undefined })
+    say(`${at()} perpl account ${setup.info.accountId}, ${setup.report.length} txs`)
     key = await enrollApiKey({ address: s.address, signTypedData: td => s.account.signTypedData(td) }, { label: 'pehra phone' })
-    await SecureStore.setItemAsync(keyFor(s.address), JSON.stringify(key))
+    await saveApiKey(s.address, key)
     say(`${at()} api key enrolled`)
   }
 
-  const ts = new TradingSocket({ net: 'testnet', apiKey: key.apiKey, secret: key.secret })
-  await ts.connect()
-  say(`${at()} signed in, account ${ts.account?.id}`)
+  const ts = await tradingSocket(key)
+  say(`${at()} socket ready, account ${ts.account?.id}`)
 
   const mon = marketBySymbol(await ctxP, 'MON')
   const res = await ts.openMarket({ mkt: mon.id, side: 'long', size: 100, leverage: toLeverage(5) })
@@ -54,7 +52,6 @@ export async function firstTrade(s: Session, say: Step) {
   await new Promise(r => setTimeout(r, 1000))
   const pos = [...ts.positions.values()].find(p => p.mkt === mon.id)
   if (pos) say(`${at()} position ${pos.pid} entry ${fromPrice(mon, pos.ep)} collateral ${fromCns(pos.c)}`)
-  ts.close()
   return { ms: filledAt, order: o, pos }
 }
 
@@ -62,8 +59,7 @@ export async function closeAll(s: Session, say: Step) {
   const key = await loadApiKey(s.address)
   if (!key) throw new Error('no api key')
   const ctx = await getContext('testnet')
-  const ts = new TradingSocket({ net: 'testnet', apiKey: key.apiKey, secret: key.secret })
-  await ts.connect()
+  const ts = await tradingSocket(key)
   for (const pos of ts.positions.values()) {
     const m = ctx.markets.find(m => m.id === pos.mkt)
     if (!m) continue
@@ -72,5 +68,4 @@ export async function closeAll(s: Session, say: Step) {
   }
   await new Promise(r => setTimeout(r, 1000))
   say(`balance ${fromCns(ts.account?.b ?? '0')} AUSD, ${ts.positions.size} open`)
-  ts.close()
 }

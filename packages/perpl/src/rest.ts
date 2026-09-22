@@ -17,10 +17,19 @@ export type Context = {
   markets: Market[]
 }
 
-export async function getContext(net: Network = 'testnet'): Promise<Context> {
-  const r = await fetch(`${NETWORKS[net].rest}/v1/pub/context`)
-  if (!r.ok) throw new Error(`context ${r.status}`)
-  return r.json()
+const contextCache = new Map<Network, { at: number; ctx: Promise<Context> }>()
+
+// market config changes rarely, prices in it are a snapshot anyway. cached a minute, shared by callers.
+export function getContext(net: Network = 'testnet'): Promise<Context> {
+  const hit = contextCache.get(net)
+  if (hit && Date.now() - hit.at < 60_000) return hit.ctx
+  const ctx = fetch(`${NETWORKS[net].rest}/v1/pub/context`).then(r => {
+    if (!r.ok) throw new Error(`context ${r.status}`)
+    return r.json() as Promise<Context>
+  })
+  ctx.catch(() => contextCache.delete(net))
+  contextCache.set(net, { at: Date.now(), ctx })
+  return ctx
 }
 
 export function marketBySymbol(ctx: Context, symbol: string) {

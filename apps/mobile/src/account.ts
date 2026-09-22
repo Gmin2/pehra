@@ -8,7 +8,8 @@ import {
 } from '@category-labs/mera'
 import { reactNativeWebAuthnClient } from '@category-labs/mera/react-native-webauthn-client'
 import { toViemAccount } from '@category-labs/mera/viem'
-import { entropyToMnemonic, mnemonicToSeedSync } from '@scure/bip39'
+import { entropyToMnemonic } from '@scure/bip39'
+import { pbkdf2Sync } from 'react-native-quick-crypto'
 import { wordlist } from '@scure/bip39/wordlists/english.js'
 import { HDKey } from '@scure/bip32'
 import * as SecureStore from 'expo-secure-store'
@@ -27,10 +28,22 @@ export type Session = {
   account: ReturnType<typeof toViemAccount>
 }
 
+// bip39 seed = pbkdf2 sha512, 2048 rounds, over the nfkd mnemonic with salt "mnemonic". the native
+// pbkdf2 takes about 20ms where the javascript one took two seconds on hermes.
+export function bip39Seed(mnemonic: string, passphrase = '') {
+  const out = pbkdf2Sync(mnemonic.normalize('NFKD'), ('mnemonic' + passphrase).normalize('NFKD'), 2048, 64, 'sha512')
+  return new Uint8Array(out.buffer, out.byteOffset, out.byteLength)
+}
+
+export const timings: Record<string, number> = {}
+
 function deriveKey(prfOutput: Uint8Array) {
   const mnemonic = entropyToMnemonic(prfOutput, wordlist)
-  const seed = mnemonicToSeedSync(mnemonic)
+  const t0 = Date.now()
+  const seed = bip39Seed(mnemonic)
+  timings.seed = Date.now() - t0
   const hd = HDKey.fromMasterSeed(seed).derive(PATH)
+  timings.derive = Date.now() - t0
   if (!hd.privateKey) throw new Error('no private key at path')
   const privateKey = new Uint8Array(hd.privateKey)
   seed.fill(0)

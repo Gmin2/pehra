@@ -5,6 +5,9 @@ import { Pressable, ScrollView, Text, View } from 'react-native'
 import { verifyMessage } from 'viem'
 import { createAccount, signIn, loadStored, forgetStored, type Session, type StoredAccount } from './src/account'
 import { firstTrade, closeAll } from './src/trade'
+import { bench } from './src/bench'
+import { warmChain, warmTrading, setWarmLog } from './src/warm'
+import { API } from './src/trade'
 
 const bg = '#12091f', ink = '#f4efff', dim = '#a898d6', purple = '#8b5cf6'
 
@@ -12,9 +15,20 @@ export default function App() {
   const [stored, setStored] = useState<StoredAccount | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [log, setLog] = useState<string[]>([])
-  const say = (s: string) => setLog(l => [`${new Date().toLocaleTimeString()} ${s}`, ...l].slice(0, 30))
+  const say = (s: string) => {
+    setLog(l => [`${new Date().toLocaleTimeString()} ${s}`, ...l].slice(0, 30))
+    console.log('[pehra]', s)
+    fetch(`${API}/log`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ line: s }) }).catch(() => {})
+  }
 
-  useEffect(() => { loadStored().then(setStored) }, [])
+  useEffect(() => {
+    setWarmLog(say)
+    warmChain()
+    loadStored().then(st => {
+      setStored(st)
+      if (st) warmTrading(st.address).then(k => say(k ? 'trading socket warm' : 'no api key stored')).catch(e => say(`warm failed: ${describe(e)}`))
+    })
+  }, [])
 
   const run = async (label: string, fn: () => Promise<void>) => {
     const t0 = Date.now()
@@ -66,6 +80,7 @@ export default function App() {
         <Btn label="forget storage" onPress={onForget} />
         <Btn label="first trade (t6)" onPress={onTrade} disabled={!session} />
         <Btn label="close all" onPress={onClose} disabled={!session} />
+        <Btn label="bench" onPress={() => bench(say)} />
       </View>
       <ScrollView style={{ marginTop: 20 }}>
         {log.map((l, i) => <Text key={i} style={{ color: dim, fontFamily: 'monospace', fontSize: 11, marginBottom: 6 }}>{l}</Text>)}
