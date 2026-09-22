@@ -122,6 +122,21 @@ describe('trading socket', () => {
     await expect(p).rejects.toThrow('1008')
   })
 
+  test('one ping timer no matter how many frames arrive', async () => {
+    const ts = new TradingSocket({ net: 'testnet', apiKey: 'k', secret: key.secret, pingMs: 20 })
+    const p = ts.connect()
+    await tick()
+    const sock = FakeSocket.instances[0]
+    sock.serverSnapshot()
+    await p
+    for (let i = 0; i < 50; i++) sock.serverSend({ mt: 100, sn: 1001 + i, h: 1 })
+    await new Promise(r => setTimeout(r, 110))
+    const pings = sock.sent.filter(f => f.mt === 1).length
+    expect(pings).toBeGreaterThanOrEqual(3)
+    expect(pings).toBeLessThanOrEqual(7)
+    ts.close()
+  })
+
   test('heartbeats track the head block', async () => {
     const { ts, sock } = await open()
     sock.serverSend({ mt: 100, sn: 1001, h: 64785392 })

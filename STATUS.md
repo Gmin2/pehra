@@ -49,7 +49,7 @@ node 26 breaks expo cli, use `source ~/.nvm/nvm.sh; nvm use 24` first. all toolc
 
 ## open questions to people
 
-- perpl (pbj via portal or discord): builder id for testnet, how to cancel a resting trigger order (direct cancel returns OrderDoesNotExist), does contract 1.7.5 mean close fees
+- perpl (pbj via portal or discord): builder id for testnet, how to cancel a resting trigger order (direct cancel returns OrderDoesNotExist), does contract 1.7.5 mean close fees, and what the trading socket's "ping timeout" measures (a react native client gets closed every 9 to 90s with pings every 5s, see the build plan)
 - agora (portal mentors tab, drakeevans): is there a staging environment (the payments bounty text mentions one, nothing public)
 - register pehra.trade and @pehratrade, then move the passkey host off the vercel subdomain (test passkeys get recreated)
 

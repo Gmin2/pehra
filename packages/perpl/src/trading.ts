@@ -13,6 +13,7 @@ export type TradingOptions = {
   apiKey: string
   secret: Hex
   orderTimeoutMs?: number
+  pingMs?: number
   onFrame?: Listener
   onClose?: (code: number, reason: string) => void
 }
@@ -56,15 +57,19 @@ export class TradingSocket {
         this.pending.clear()
         this.opts.onClose?.(e.code, e.reason)
       }
-      // the server sends wallet, orders and positions snapshots back to back after sign in
+      // the server sends wallet, orders and positions snapshots back to back after sign in.
+      // the ready step must run exactly once, a second ping timer would flood the rate limit.
       const seen = new Set<number>()
+      let ready = false
       ws.onmessage = e => {
         const m = JSON.parse(String(e.data)) as TradingFrame
         this.handle(m)
+        if (ready) return
         if (m.mt === MT.walletSnapshot || m.mt === MT.ordersSnapshot || m.mt === MT.positionsSnapshot) seen.add(m.mt)
         if (seen.size === 3) {
+          ready = true
           clearTimeout(guard)
-          this.pingTimer = setInterval(() => ws.send(JSON.stringify({ mt: MT.ping })), 30_000)
+          this.pingTimer = setInterval(() => ws.send(JSON.stringify({ mt: MT.ping, t: Date.now() })), this.opts.pingMs ?? 30_000)
           resolve()
         }
       }
