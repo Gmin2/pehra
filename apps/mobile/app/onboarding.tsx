@@ -232,7 +232,7 @@ export default function Onboarding() {
             <View style={{ flex: 1, justifyContent: "center", paddingTop: 70, gap: 22 }}>
               <Success />
               <Text style={{ fontSize: 20, fontWeight: "600", textAlign: "center", color: ink }}>{guardOn ? "The Guard Is Watching" : "You’re All Set"}</Text>
-              <AccountCard width={width} address={address} balance="100 AUSD" badge={guardOn ? "Guard On" : "Ready"} glyph={guardOn ? "pehra-watching-two-tone" : "pehra-dozing-two-tone"} />
+              <AccountCard width={width} address={address} balance="100 AUSD" badge={guardOn ? "Guard On" : "Ready"} glyph="pehra-mark-paper" />
               <Text style={[space.copy, { textAlign: "center", fontSize: 14, paddingHorizontal: 40 }]}>
                 {guardOn ? "It will tell you before anything goes wrong." : "You can turn on the guard later from its tab."}
               </Text>

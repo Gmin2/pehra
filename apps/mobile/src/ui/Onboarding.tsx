@@ -79,7 +79,7 @@ export function CardStack({ width }: { width: number }) {
         ]}
       >
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-          <Image source={images["pehra-dozing-two-tone"]} style={{ width: 34, height: 34 }} />
+          <Image source={images["pehra-mark-paper"]} style={{ width: 34, height: 34 }} />
           <View style={{ width: 70, height: 12, borderRadius: 6, backgroundColor: "#ffffff40" }} />
         </View>
         <View style={{ gap: 6 }}>
@@ -225,7 +225,7 @@ export function AccountCard({
   pill,
   onPill,
   badge,
-  glyph = "pehra-dozing-two-tone",
+  glyph = "pehra-mark-paper",
   width,
 }: {
   address?: string;
@@ -252,7 +252,7 @@ export function AccountCard({
       }}
     >
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <Image source={images[glyph] || images["pehra-dozing-two-tone"]} style={{ width: 36, height: 36 }} />
+        <Image source={images[glyph] || images["pehra-mark-paper"]} style={{ width: 36, height: 36 }} />
         {!!address && (
           <Tap
             accessibilityLabel="Copy address"
