@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "107536974045",
+    "project_id": "pehra-ae5c6",
+    "storage_bucket": "pehra-ae5c6.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:107536974045:android:b410ddac74a2bc5a1b9b34",
+        "android_client_info": {
+          "package_name": "trade.pehra.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDSwL9pdhpoDey09cTZW81LrdfB5w1vB2U"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

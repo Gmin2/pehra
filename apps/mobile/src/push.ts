@@ -10,7 +10,7 @@ Notifications.setNotificationHandler({
 
 export async function registerPush(address: string, say: (s: string) => void) {
   if (Platform.OS === 'android') {
-    await Notifications.setNotificationChannelAsync('guard', { name: 'guard', importance: Notifications.AndroidImportance.MAX, sound: 'default', vibrationPattern: [0, 250, 250, 250], lightColor: '#8b5cf6' })
+    await Notifications.setNotificationChannelAsync('guard', { name: 'guard', importance: Notifications.AndroidImportance.MAX, vibrationPattern: [0, 250, 250, 250], lightColor: '#8b5cf6' })
   }
   const perm = await Notifications.getPermissionsAsync()
   const status = perm.granted ? 'granted' : (await Notifications.requestPermissionsAsync()).status
