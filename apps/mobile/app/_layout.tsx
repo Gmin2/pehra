@@ -7,9 +7,12 @@ import { StatusBar } from "expo-status-bar";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { useReducedMotion } from "react-native-reanimated";
 import { Provider } from "../src/ui/store";
+import { useFonts, Manrope_400Regular, Manrope_500Medium, Manrope_600SemiBold, Manrope_700Bold, Manrope_800ExtraBold } from "@expo-google-fonts/manrope";
 import SheetHost from "../src/ui/SheetHost";
 export default function Layout() {
   const reduced = useReducedMotion();
+  const [loaded] = useFonts({ Manrope_400Regular, Manrope_500Medium, Manrope_600SemiBold, Manrope_700Bold, Manrope_800ExtraBold });
+  if (!loaded) return null;
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
@@ -20,7 +23,7 @@ export default function Layout() {
               screenOptions={{
                 headerShown: false,
                 animation: reduced ? "fade" : "default",
-                contentStyle: { backgroundColor: "#fff" },
+                contentStyle: { backgroundColor: "#FAF8F2" },
               }}
             />
             <SheetHost />

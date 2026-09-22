@@ -1,18 +1,20 @@
 import { StyleSheet } from "react-native";
+// pehra brand kit 0.1 (brand/tokens.json): dusk, paper, ink, mist. green and red are kept for meaning.
 export const colors = {
-  ink: "#151515",
-  muted: "#999999",
-  faint: "#c4c4c4",
-  surface: "#f6f6f6",
-  // the accent is pehra dusk, brand/tokens.json. the key keeps family's name so every screen follows
-  blue: "#6553B9",
-  green: "#00c858",
-  red: "#ff2945",
-  purple: "#7c3fe9",
-  line: "#f0f0f0",
+  ink: "#28243E",
+  muted: "#706A7D",
+  faint: "#B9B2C5",
+  surface: "#F0EDF3",
+  blue: "#7362CE",
+  green: "#23765A",
+  red: "#B4474D",
+  purple: "#7362CE",
+  line: "#DDD8E6",
+  paper: "#FAF8F2",
+  mist: "#E6E0F7",
 };
 export const space = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: "#fff" },
+  screen: { flex: 1, backgroundColor: "#FAF8F2" },
   row: { flexDirection: "row", alignItems: "center" },
   between: {
     flexDirection: "row",

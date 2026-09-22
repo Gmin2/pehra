@@ -1,6 +1,7 @@
 import Success from "../src/ui/Success";
 import { useState, useEffect, useRef } from "react";
-import { View, Text, ScrollView, useWindowDimensions } from "react-native";
+import { View, ScrollView, useWindowDimensions } from "react-native";
+import { Text } from "../src/ui/Text";
 import Animated, { FadeIn, ReduceMotion } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import { Screen, Header, Button, Tap, MorphText, s } from "../src/ui/components";
@@ -164,9 +165,9 @@ export default function Onboarding() {
   }, [preview, step]);
   const bare = ["creating", "ready", "delegating", "done"].includes(step);
   let action: undefined | { label: string; press: () => void; disabled?: boolean };
-  if (step === "terms") action = { label: "I Understand, Continue", press: () => create(false), disabled: terms.length !== TERMS.length };
-  if (step === "ready") action = { label: "Turn On the Guard", press: () => setTray(true) };
-  if (step === "done") action = { label: "Place Your First Trade", press: () => a.go("/portfolio") };
+  if (step === "terms") action = { label: "i understand, continue", press: () => create(false), disabled: terms.length !== TERMS.length };
+  if (step === "ready") action = { label: "turn on the guard", press: () => setTray(true) };
+  if (step === "done") action = { label: "place your first trade", press: () => a.go("/portfolio") };
   return (
     <Screen>
       {!bare && (
@@ -189,25 +190,25 @@ export default function Onboarding() {
         <Animated.View key={step} entering={FadeIn.duration(180).reduceMotion(ReduceMotion.System)} style={{ flex: 1 }}>
           {step === "choose" && (
             <View style={{ flex: 1 }}>
-              <View style={{ backgroundColor: "#f7f6fa", paddingTop: 30, paddingBottom: 26 }}>
+              <View style={{ backgroundColor: "#F0EDF3", paddingTop: 30, paddingBottom: 26 }}>
                 <PositionStack width={width} />
               </View>
               <View style={{ paddingHorizontal: 32, paddingTop: 28, alignItems: "center", gap: 8 }}>
-                <Text style={{ fontSize: 22, fontWeight: "600", letterSpacing: -0.5, color: ink, textAlign: "center" }}>Trade perps without watching the chart</Text>
+                <Text style={{ fontSize: 22, fontWeight: "600", letterSpacing: -0.5, color: ink, textAlign: "center" }}>trade perps without watching the chart</Text>
                 <Text style={[space.copy, { textAlign: "center", fontSize: 15, lineHeight: 21 }]}>
                   Face id in, dollars in, and a guard that keeps you from getting liquidated at 3am.
                 </Text>
               </View>
               <View style={{ paddingHorizontal: 24, paddingTop: 26, gap: 12 }}>
-                <ChoiceCard icon="plus" color={accent} title="Create Account" subtitle="Make a passkey and open a funded testnet account." onPress={() => next("terms")} />
-                <ChoiceCard icon="key" color="#23765A" title="Sign In" subtitle="Use the passkey you already made on this or another phone." onPress={() => create(true)} />
+                <ChoiceCard icon="plus" color={accent} title="create account" subtitle="Make a passkey and open a funded testnet account." onPress={() => next("terms")} />
+                <ChoiceCard icon="key" color={ink} title="sign in" subtitle="Use the passkey you already made on this or another phone." onPress={() => create(true)} />
               </View>
             </View>
           )}
           {step === "terms" && (
             <View style={{ paddingHorizontal: 32 }}>
-              <Text style={{ fontSize: 24, fontWeight: "600", letterSpacing: -0.6, marginTop: 36, marginBottom: 12, color: ink }}>Accept Terms</Text>
-              <Text style={[space.copy, { fontSize: 16, lineHeight: 23 }]}>Please read and agree to the following terms before you continue.</Text>
+              <Text style={{ fontSize: 24, fontWeight: "600", letterSpacing: -0.6, marginTop: 36, marginBottom: 12, color: ink }}>before you start</Text>
+              <Text style={[space.copy, { fontSize: 16, lineHeight: 23 }]}>four things worth knowing. tap each one.</Text>
               <View style={{ marginTop: 30, gap: 6 }}>
                 {TERMS.map((t, i) => (
                   <Tap
@@ -229,7 +230,7 @@ export default function Onboarding() {
           {(step === "creating" || step === "delegating") && (
             <View style={{ flex: 1, justifyContent: "center", gap: 34, paddingTop: 60 }}>
               <Text style={{ fontSize: 22, fontWeight: "600", color: ink, textAlign: "center", letterSpacing: -0.5 }}>
-                {step === "creating" ? "Setting up your account" : "Waking the guard"}
+                {step === "creating" ? "setting up your account" : "waking the guard"}
               </Text>
               <WorkSteps startedAt={startedAt} steps={workSteps} />
             </View>
@@ -238,16 +239,16 @@ export default function Onboarding() {
             <View style={{ flex: 1, justifyContent: "center", paddingTop: 70, gap: 22 }}>
               <HighlightTitle before="Your account is " word="funded" after="." />
               <View>
-                <AccountCard width={width} address={address} balance="100 AUSD" pill="Turn On Guard" onPill={() => setTray(true)} />
-                <Tooltip width={width} title="Turn on the guard" body="Most liquidations happen while you are away. The guard steps in first." />
+                <AccountCard width={width} address={address} balance="100 AUSD" pill="turn on guard" onPill={() => setTray(true)} />
+                <Tooltip width={width} title="turn on the guard" body="Most liquidations happen while you are away. The guard steps in first." />
               </View>
             </View>
           )}
           {step === "done" && (
             <View style={{ flex: 1, justifyContent: "center", paddingTop: 70, gap: 22 }}>
               <Success />
-              <Text style={{ fontSize: 20, fontWeight: "600", textAlign: "center", color: ink }}>{guardOn ? "The Guard Is Watching" : "You’re All Set"}</Text>
-              <AccountCard width={width} address={address} balance="100 AUSD" badge={guardOn ? "Guard On" : "Ready"} glyph="pehra-mark-paper" />
+              <Text style={{ fontSize: 20, fontWeight: "600", textAlign: "center", color: ink }}>{guardOn ? "the guard is watching" : "you’re all set"}</Text>
+              <AccountCard width={width} address={address} balance="100 AUSD" badge={guardOn ? "guard on" : "ready"} glyph="pehra-mark-paper" />
               <Text style={[space.copy, { textAlign: "center", fontSize: 14, paddingHorizontal: 40 }]}>
                 {guardOn ? "It will tell you before anything goes wrong." : "You can turn on the guard later from its tab."}
               </Text>
@@ -257,7 +258,7 @@ export default function Onboarding() {
         </Animated.View>
       </ScrollView>
       {step === "terms" && (
-        <Text style={[space.small, { textAlign: "center", marginBottom: 4 }]}>By checking the boxes, you agree to these terms.</Text>
+        <Text style={[space.small, { textAlign: "center", marginBottom: 4 }]}>by checking the boxes you agree to these terms.</Text>
       )}
       {action && (
         <View style={[s.footer, { paddingHorizontal: 32 }]}>
@@ -274,10 +275,10 @@ export default function Onboarding() {
           }}
           innerStyle={{ alignItems: "center", paddingBottom: 14 }}
         >
-          <Text style={{ color: muted, fontSize: 14 }}>Maybe Later</Text>
+          <Text style={{ color: muted, fontSize: 14 }}>maybe later</Text>
         </Tap>
       )}
-      <LessonTray lessons={LESSONS} visible={tray} startPage={trayPage ? Number(trayPage) : 0} finalLabel="Turn On the Guard" onClose={() => setTray(false)} onDone={() => { setTray(false); void delegate(); }} />
+      <LessonTray lessons={LESSONS} visible={tray} startPage={trayPage ? Number(trayPage) : 0} finalLabel="turn on the guard" onClose={() => setTray(false)} onDone={() => { setTray(false); void delegate(); }} />
     </Screen>
   );
 }

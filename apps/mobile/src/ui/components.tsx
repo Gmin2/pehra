@@ -1,16 +1,6 @@
 import React, { useState } from "react";
-import {
-  View,
-  Text,
-  Image,
-  Pressable,
-  StyleSheet,
-  type ViewStyle,
-  type StyleProp,
-  type PressableProps,
-  TextInput,
-  type TextInputProps,
-} from "react-native";
+import { View, Image, Pressable, StyleSheet, type ViewStyle, type StyleProp, type PressableProps, TextInput, type TextInputProps } from "react-native";
+import { Text } from "./Text";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { SvgXml } from "react-native-svg";
 import Animated, {

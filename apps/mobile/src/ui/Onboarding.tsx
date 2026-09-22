@@ -2,7 +2,8 @@
 // (clips 17, 36 and 45): the stacked card hero, square checks, the grid that works while the
 // account is made, the account card with its pill and tooltip, the education trays, the done card.
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { View, Text, Image, Modal, Pressable, StyleSheet, useWindowDimensions } from "react-native";
+import { View, Image, Modal, Pressable, StyleSheet, useWindowDimensions } from "react-native";
+import { Text } from "./Text";
 import Svg, { Rect, Path, Circle, G, Line, Defs, LinearGradient, Stop, Mask, Text as SvgText } from "react-native-svg";
 import Animated, {
   FadeIn,
@@ -30,14 +31,16 @@ import { images } from "./assets";
 import logoData from "./logos.json";
 import { Rough, type RoughType } from "./Rough";
 
-// family's onboarding violet, shifted a little toward pehra dusk. measured off clip 36 at full size.
-export const ink = "#1a1a1a",
-  muted = "#999",
-  violet = "#8B5CF6",
+// the brand kit (brand/README.md): flat dusk, paper, ink and mist, no gradients or glows on brand
+// surfaces, one bird at the lower right of a card, manrope throughout
+export const ink = "#28243E",
+  muted = "#706A7D",
+  violet = "#7362CE",
   dusk = violet,
   accent = violet,
-  mist = "#EFEAFB",
-  paleGrid = "#ECE8F5";
+  mist = "#E6E0F7",
+  paper = "#FAF8F2",
+  paleGrid = "#E6E0F7";
 
 const spring = { duration: 300, dampingRatio: 0.8, overshootClamping: true, reduceMotion: ReduceMotion.System };
 
@@ -118,8 +121,8 @@ export function ChoiceCard({
         flexDirection: "row",
         alignItems: "center",
         gap: 14,
-        backgroundColor: "#f6f5f8",
-        borderRadius: 20,
+        backgroundColor: "#F0EDF3",
+        borderRadius: 24,
         paddingVertical: 16,
         paddingHorizontal: 16,
       }}
@@ -154,7 +157,7 @@ export function SquareCheck({ checked, color = accent }: { checked: boolean; col
         height: 24,
         borderRadius: 7,
         borderWidth: checked ? 0 : 2,
-        borderColor: "#dcd8e3",
+        borderColor: "#DDD8E6",
         backgroundColor: checked ? color : "transparent",
         alignItems: "center",
         justifyContent: "center",
@@ -279,7 +282,7 @@ export function HeadingText({ parts, size = 23, center = false, markDelay = 350 
         const core = trail ? x.w.slice(0, -1) : x.w;
         return (
           <View key={i} style={{ flexDirection: "row", marginHorizontal: x.mark === "circle" ? 10 : 0 }}>
-            <Rough type={x.mark} color={x.mark === "highlight" ? "#C4B5FD" : violet} padding={x.mark === "circle" ? 6 : 3} paddingX={x.mark === "circle" ? 13 : 3} strokeWidth={x.mark === "circle" ? 2.2 : 2.6} iterations={2} delay={markDelay}>
+            <Rough type={x.mark} color={x.mark === "highlight" ? mist : violet} padding={x.mark === "circle" ? 6 : 3} paddingX={x.mark === "circle" ? 13 : 3} strokeWidth={x.mark === "circle" ? 2.2 : 2.6} iterations={2} delay={markDelay}>
               <Text style={style}>{core}</Text>
             </Rough>
             {!!trail && <Text style={style}>{trail}</Text>}
@@ -292,35 +295,8 @@ export function HeadingText({ parts, size = 23, center = false, markDelay = 350 
 
 // the account card from clip 36 at 5.2s: vivid violet, a soft diagonal sheen, the glyph, the
 // address with its copy mark, name and balance, and the double ringed white pill
-export const night = { top: "#2B2157", bottom: "#1B1636", star: "#ffffff", line: "#ffffff14" };
-const STARS = [[0.12, 0.2, 1.4], [0.3, 0.12, 1], [0.46, 0.3, 1.2], [0.63, 0.16, 0.9], [0.84, 0.36, 1.3], [0.22, 0.46, 0.8], [0.72, 0.54, 1], [0.9, 0.12, 0.8], [0.55, 0.62, 0.7], [0.08, 0.66, 1]];
-export function NightSky({ w, h, id }: { w: number; h: number; id: string }) {
-  return (
-    <Svg width={w} height={h} style={StyleSheet.absoluteFill}>
-      <Defs>
-        <LinearGradient id={id + "sky"} x1="0" y1="0" x2="0.4" y2="1">
-          <Stop offset="0" stopColor={night.top} />
-          <Stop offset="1" stopColor={night.bottom} />
-        </LinearGradient>
-        <LinearGradient id={id + "glow"} x1="1" y1="0" x2="0.2" y2="0.9">
-          <Stop offset="0" stopColor="#8B5CF6" stopOpacity={0.55} />
-          <Stop offset="0.55" stopColor="#8B5CF6" stopOpacity={0} />
-        </LinearGradient>
-      </Defs>
-      <Rect x={0} y={0} width={w} height={h} fill={`url(#${id}sky)`} />
-      <Rect x={0} y={0} width={w} height={h} fill={`url(#${id}glow)`} />
-      {[0.25, 0.5, 0.75].map((f) => (
-        <Line key={f} x1={0} x2={w} y1={h * f} y2={h * f} stroke={night.line} strokeWidth={1} />
-      ))}
-      {STARS.map(([x, y, r], i) => (
-        <Circle key={i} cx={x * w} cy={y * h} r={r} fill={night.star} opacity={0.55} />
-      ))}
-    </Svg>
-  );
-}
-
-// the account card, pehra's own: a night sky with a violet glow in the corner, the mascot keeping
-// watch, the balance large, the address in small type, and a violet pill to turn on the guard
+// the account card: flat dusk like the brand board, the bird large at the lower right, cropped by
+// the card edge, and paper type. the pill is paper on dusk.
 export function AccountCard({
   address,
   name = "pehra",
@@ -343,13 +319,13 @@ export function AccountCard({
   const w = Math.round(width * 0.876),
     h = Math.round(w * 0.62);
   return (
-    <View style={{ width: w, height: h, alignSelf: "center", borderRadius: 26, overflow: "hidden", boxShadow: "0 16px 32px #1b163640" }}>
-      <NightSky w={w} h={h} id="acct" />
+    <View style={{ width: w, height: h, alignSelf: "center", borderRadius: 24, overflow: "hidden", backgroundColor: dusk }}>
+      <Image source={images[glyph] || images["pehra-mark-paper"]} style={{ position: "absolute", width: h * 0.92, height: h * 0.92, right: -h * 0.16, bottom: -h * 0.2, opacity: 0.16 }} />
       <View style={{ flex: 1, padding: 20, justifyContent: "space-between" }}>
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-            <Image source={images[glyph] || images["pehra-mark-paper"]} style={{ width: 34, height: 34 }} />
-            <Text style={{ color: "white", fontSize: 17, fontWeight: "600", letterSpacing: -0.3 }}>{name}</Text>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 9 }}>
+            <Image source={images["pehra-mark-paper"]} style={{ width: 30, height: 30 }} />
+            <Text style={{ color: paper, fontSize: 19, fontWeight: "700", letterSpacing: -0.6 }}>{name}</Text>
           </View>
           {!!address && (
             <Tap
@@ -358,28 +334,28 @@ export function AccountCard({
                 await Clipboard.setStringAsync(address);
                 Haptics.selectionAsync();
               }}
-              innerStyle={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#ffffff12", borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6 }}
+              innerStyle={{ flexDirection: "row", alignItems: "center", gap: 6 }}
             >
-              <Text style={{ color: "#ffffffcc", fontSize: 12.5, fontWeight: "600", fontVariant: ["tabular-nums"] }}>{short(address)}</Text>
-              <Icon name="copy" size={12} color="#ffffff99" />
+              <Text style={{ color: "#FAF8F2d9", fontSize: 13.5, fontWeight: "600", fontVariant: ["tabular-nums"] }}>{short(address)}</Text>
+              <Icon name="copy" size={13} color="#FAF8F2b3" />
             </Tap>
           )}
         </View>
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-end" }}>
-          <View style={{ gap: 2 }}>
-            <Text style={{ color: "#ffffff80", fontSize: 12, fontWeight: "600", letterSpacing: 0.6 }}>BALANCE</Text>
-            <Text style={{ color: "white", fontSize: 26, fontWeight: "700", letterSpacing: -0.6, fontVariant: ["tabular-nums"] }}>{balance}</Text>
+          <View style={{ gap: 1 }}>
+            <Text style={{ color: "#FAF8F2b3", fontSize: 13, fontWeight: "500" }}>balance</Text>
+            <Text style={{ color: paper, fontSize: 27, fontWeight: "700", letterSpacing: -0.8, fontVariant: ["tabular-nums"] }}>{balance}</Text>
           </View>
           {!!pill && (
-            <Tap onPress={onPill} accessibilityLabel={pill} innerStyle={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: violet, borderRadius: 18, paddingHorizontal: 13, paddingVertical: 9, boxShadow: "0 6px 14px #8b5cf655" }}>
-              <Icon name="shield" size={14} color="white" />
-              <Text style={{ color: "white", fontSize: 14, fontWeight: "600" }}>{pill}</Text>
+            <Tap onPress={onPill} accessibilityLabel={pill} innerStyle={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: paper, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 9 }}>
+              <Icon name="shield" size={14} color={dusk} />
+              <Text style={{ color: dusk, fontSize: 14, fontWeight: "600" }}>{pill}</Text>
             </Tap>
           )}
           {!!badge && (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#7EE2B026", borderRadius: 14, paddingHorizontal: 11, paddingVertical: 7 }}>
-              <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: "#7EE2B0" }} />
-              <Text style={{ color: "#CFF5E2", fontSize: 13, fontWeight: "600" }}>{badge}</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#FAF8F226", borderRadius: 999, paddingHorizontal: 12, paddingVertical: 7 }}>
+              <Icon name="shield" size={13} color={paper} />
+              <Text style={{ color: paper, fontSize: 13, fontWeight: "600" }}>{badge}</Text>
             </View>
           )}
         </View>
@@ -398,11 +374,11 @@ export function Tooltip({ title, body, width }: { title: string; body: string; w
       style={{ alignSelf: "flex-end", marginRight: right, marginTop: 12, width: Math.round(width * 0.75) }}
     >
       <Svg width={28} height={12} style={{ alignSelf: "flex-end", marginRight: 42 }}>
-        <Path d="M0 12 C8 12 10 2 14 2 C18 2 20 12 28 12 Z" fill="#333" />
+        <Path d="M0 12 C8 12 10 2 14 2 C18 2 20 12 28 12 Z" fill={ink} />
       </Svg>
-      <View style={{ backgroundColor: "#333", borderRadius: 24, paddingHorizontal: 19, paddingVertical: 17, gap: 6, boxShadow: "0 12px 28px #00000026" }}>
-        <Text style={{ color: "white", fontSize: 16, fontWeight: "600", letterSpacing: -0.2 }}>{title}</Text>
-        <Text style={{ color: "#b3b3b3", fontSize: 14.5, lineHeight: 20.5 }}>{body}</Text>
+      <View style={{ backgroundColor: ink, borderRadius: 24, paddingHorizontal: 19, paddingVertical: 17, gap: 6 }}>
+        <Text style={{ color: paper, fontSize: 16, fontWeight: "600", letterSpacing: -0.2 }}>{title}</Text>
+        <Text style={{ color: "#B9B2C5", fontSize: 14.5, lineHeight: 20.5 }}>{body}</Text>
       </View>
     </Animated.View>
   );
@@ -442,7 +418,7 @@ function Logo({ name, cx, cy, size }: { name: string; cx: number; cy: number; si
 function Coin({ cx, cy, r, o, logo }: { cx: number; cy: number; r: number; o: number; logo: string }) {
   return (
     <G opacity={o}>
-      <Circle cx={cx} cy={cy} r={r} fill="#a98bff" />
+      <Circle cx={cx} cy={cy} r={r} fill="#958AE0" />
       <Logo name={logo} cx={cx} cy={cy} size={r * 1.05} />
     </G>
   );
@@ -611,14 +587,14 @@ export function LessonTray({
   return (
     <Modal transparent visible animationType="none" statusBarTranslucent onRequestClose={() => leave(onClose)}>
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: "#808080" }, backdrop]}>
+        <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: "#28243E99" }, backdrop]}>
           <Pressable accessibilityLabel="Dismiss" style={{ flex: 1 }} onPress={() => leave(onClose)} />
         </Animated.View>
         <View style={{ flex: 1, justifyContent: "flex-end", paddingHorizontal: 16, paddingBottom: 34 }} pointerEvents="box-none">
           <GestureDetector gesture={drag}>
             <Animated.View
               layout={LinearTransition.springify().damping(26).stiffness(260).reduceMotion(ReduceMotion.System)}
-              style={[{ borderRadius: 38, backgroundColor: "white", overflow: "hidden" }, panel]}
+              style={[{ borderRadius: 32, backgroundColor: paper, overflow: "hidden" }, panel]}
               accessibilityViewIsModal
             >
               <Animated.View key={"art" + page} entering={FadeIn.duration(220)} exiting={FadeOut.duration(120)}>
@@ -635,9 +611,9 @@ export function LessonTray({
                     if (last) leave(onDone);
                     else setPage(page + 1);
                   }}
-                  innerStyle={{ backgroundColor: "black", borderRadius: 28, minHeight: 50, alignItems: "center", justifyContent: "center" }}
+                  innerStyle={{ backgroundColor: ink, borderRadius: 999, minHeight: 52, alignItems: "center", justifyContent: "center" }}
                 >
-                  <Text style={{ color: "white", fontSize: 18, fontWeight: "600", letterSpacing: -0.2 }}>{last ? finalLabel : "Continue"}</Text>
+                  <Text style={{ color: paper, fontSize: 17, fontWeight: "600" }}>{last ? finalLabel : "continue"}</Text>
                 </Tap>
               </View>
             </Animated.View>
@@ -670,38 +646,38 @@ export function PositionStack({ width }: { width: number }) {
   const w = Math.min(width - 88, 310),
     h = w * 0.58;
   const fill = useAnimatedStyle(() => ({ width: `${72 * bar.get()}%` }));
-  const back = (color: string, top: number, inset: number, label: string, tag: string) => (
+  const back = (color: string, top: number, inset: number, label: string, tag: string, fg: string) => (
     <View style={{ position: "absolute", top, left: inset, right: inset, height: h, borderRadius: 20, backgroundColor: color, paddingHorizontal: 16, paddingTop: 5, flexDirection: "row", justifyContent: "space-between" }}>
-      <Text style={{ color: "#ffffffd9", fontSize: 10, fontWeight: "700", letterSpacing: 0.4 }}>{label}</Text>
-      <Text style={{ color: "#ffffffb3", fontSize: 10, fontWeight: "700" }}>{tag}</Text>
+      <Text style={{ color: fg, fontSize: 11, fontWeight: "600" }}>{label}</Text>
+      <Text style={{ color: fg, fontSize: 11, fontWeight: "600", opacity: 0.7 }}>{tag}</Text>
     </View>
   );
   return (
     <View style={{ height: h + 44, width: w, alignSelf: "center" }}>
-      {back("#8C80B8", 0, 28, "ETH LONG", "−1.2%")}
-      {back("#5B4E8E", 21, 14, "BTC SHORT", "+0.8%")}
-      <Animated.View style={[{ position: "absolute", top: 42, left: 0, right: 0, height: h, borderRadius: 22, padding: 16, justifyContent: "space-between", overflow: "hidden", boxShadow: "0 14px 28px #1b163640" }, front]}>
-        <NightSky w={w} h={h} id="stack" />
+      {back(mist, 0, 28, "eth long", "−1.2%", ink)}
+      {back(ink, 21, 14, "btc short", "+0.8%", paper)}
+      <Animated.View style={[{ position: "absolute", top: 42, left: 0, right: 0, height: h, borderRadius: 24, padding: 16, justifyContent: "space-between", overflow: "hidden", backgroundColor: dusk }, front]}>
+        <Image source={images["pehra-mark-paper"]} style={{ position: "absolute", width: h * 0.95, height: h * 0.95, right: -h * 0.18, bottom: -h * 0.24, opacity: 0.14 }} />
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
           <MarketCoin logo="monad" />
           <View style={{ flex: 1 }}>
-            <Text style={{ color: "white", fontSize: 15, fontWeight: "600" }}>MON long</Text>
+            <Text style={{ color: paper, fontSize: 16, fontWeight: "600" }}>mon long</Text>
             <Text style={{ color: "#ffffffa6", fontSize: 12, fontWeight: "500" }}>3x · 100 AUSD</Text>
           </View>
-          <View style={{ backgroundColor: "#ffffff2e", borderRadius: 11, paddingHorizontal: 9, paddingVertical: 4 }}>
-            <Text style={{ color: "white", fontSize: 12, fontWeight: "700", fontVariant: ["tabular-nums"] }}>+4.2%</Text>
+          <View style={{ backgroundColor: paper, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>
+            <Text style={{ color: "#23765A", fontSize: 12.5, fontWeight: "700", fontVariant: ["tabular-nums"] }}>+4.2%</Text>
           </View>
         </View>
         <View style={{ gap: 7 }}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
             <Text style={{ color: "#ffffffcc", fontSize: 12, fontWeight: "500" }}>28% from liquidation</Text>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-              <Icon name="shield" size={12} color="#CFF5E2" />
-              <Text style={{ color: "#CFF5E2", fontSize: 11, fontWeight: "700" }}>guarded</Text>
+              <Icon name="shield" size={12} color={paper} />
+              <Text style={{ color: paper, fontSize: 12, fontWeight: "600" }}>guarded</Text>
             </View>
           </View>
           <View style={{ height: 6, borderRadius: 3, backgroundColor: "#ffffff2e", overflow: "hidden" }}>
-            <Animated.View style={[{ height: 6, borderRadius: 3, backgroundColor: "#7EE2B0" }, fill]} />
+            <Animated.View style={[{ height: 6, borderRadius: 3, backgroundColor: paper }, fill]} />
           </View>
         </View>
       </Animated.View>
@@ -727,12 +703,12 @@ function Tick({ done, active }: { done: boolean; active: boolean }) {
     return (
       <Animated.View style={[{ width: 26, height: 26 }, rot]}>
         <Svg width={26} height={26}>
-          <Circle cx={13} cy={13} r={10.5} stroke="#E6DDFD" strokeWidth={3} fill="none" />
+          <Circle cx={13} cy={13} r={10.5} stroke={mist} strokeWidth={3} fill="none" />
           <Path d="M13 2.5 A10.5 10.5 0 0 1 23.5 13" stroke={violet} strokeWidth={3} fill="none" strokeLinecap="round" />
         </Svg>
       </Animated.View>
     );
-  return <View style={{ width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: "#E6E2EC" }} />;
+  return <View style={{ width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: "#DDD8E6" }} />;
 }
 export function WorkSteps({ steps, startedAt }: { steps: WorkStep[]; startedAt: number }) {
   const [now, setNow] = useState(Date.now());
@@ -745,7 +721,7 @@ export function WorkSteps({ steps, startedAt }: { steps: WorkStep[]; startedAt: 
   const secs = Math.max(0, (now - startedAt) / 1000);
   return (
     <View style={{ gap: 26, alignSelf: "center", width: Math.min(300, 320) }}>
-      <View style={{ alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 7, backgroundColor: "#F4F0FE", borderRadius: 16, paddingHorizontal: 13, paddingVertical: 7 }}>
+      <View style={{ alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 7, backgroundColor: mist, borderRadius: 999, paddingHorizontal: 13, paddingVertical: 7 }}>
         <Icon name="history" size={14} color={violet} />
         <Text style={{ color: violet, fontSize: 15, fontWeight: "700", fontVariant: ["tabular-nums"] }}>{secs.toFixed(1)}s</Text>
       </View>
@@ -753,7 +729,7 @@ export function WorkSteps({ steps, startedAt }: { steps: WorkStep[]; startedAt: 
         {steps.map((s) => (
           <View key={s.label} style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
             <Tick done={s.done} active={s.active} />
-            <Text style={{ fontSize: 17, fontWeight: s.active ? "600" : "500", color: s.done || s.active ? ink : "#c2bdcb", letterSpacing: -0.2 }}>{s.label}</Text>
+            <Text style={{ fontSize: 17, fontWeight: s.active ? "600" : "500", color: s.done || s.active ? ink : "#B9B2C5", letterSpacing: -0.2 }}>{s.label}</Text>
           </View>
         ))}
       </View>
