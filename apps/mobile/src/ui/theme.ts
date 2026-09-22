@@ -5,13 +5,13 @@ export const colors = {
   muted: "#706A7D",
   faint: "#B9B2C5",
   surface: "#F0EDF3",
-  blue: "#7362CE",
+  blue: "#9E4DFD",
   green: "#23765A",
   red: "#B4474D",
-  purple: "#7362CE",
+  purple: "#9E4DFD",
   line: "#DDD8E6",
   paper: "#FAF8F2",
-  mist: "#E6E0F7",
+  mist: "#EFE5FF",
 };
 export const space = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#FAF8F2" },

@@ -76,7 +76,7 @@ function Stroke({ s, color, delay, duration, run, opacity }: { s: Stroke; color:
 export function Rough({
   children,
   type,
-  color = "#8B5CF6",
+  color = "#9E4DFD",
   padding = 5,
   paddingX,
   strokeWidth = 2,

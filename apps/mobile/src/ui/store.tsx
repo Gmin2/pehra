@@ -218,7 +218,7 @@ export function pehraAccount(address: string | null): Wallet {
     id: "pehra",
     name: "pehra",
     balance: address ? address.slice(0, 6) + "···" + address.slice(-4) : "no account yet",
-    color: "#6553B9",
+    color: "#9E4DFD",
     icon: "pehra-dozing-two-tone",
   };
 }

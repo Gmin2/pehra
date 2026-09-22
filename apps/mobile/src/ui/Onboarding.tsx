@@ -35,10 +35,10 @@ import { Rough, type RoughType } from "./Rough";
 // surfaces, one bird at the lower right of a card, manrope throughout
 export const ink = "#28243E",
   muted = "#706A7D",
-  violet = "#7362CE",
+  violet = "#9E4DFD",
   dusk = violet,
   accent = violet,
-  mist = "#E6E0F7",
+  mist = "#EFE5FF",
   paper = "#FAF8F2",
   paleGrid = "#E6E0F7";
 
@@ -418,7 +418,7 @@ function Logo({ name, cx, cy, size }: { name: string; cx: number; cy: number; si
 function Coin({ cx, cy, r, o, logo }: { cx: number; cy: number; r: number; o: number; logo: string }) {
   return (
     <G opacity={o}>
-      <Circle cx={cx} cy={cy} r={r} fill="#958AE0" />
+      <Circle cx={cx} cy={cy} r={r} fill="#B57DFE" />
       <Logo name={logo} cx={cx} cy={cy} size={r * 1.05} />
     </G>
   );
@@ -587,7 +587,7 @@ export function LessonTray({
   return (
     <Modal transparent visible animationType="none" statusBarTranslucent onRequestClose={() => leave(onClose)}>
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: "#28243E99" }, backdrop]}>
+        <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: "#86828F" }, backdrop]}>
           <Pressable accessibilityLabel="Dismiss" style={{ flex: 1 }} onPress={() => leave(onClose)} />
         </Animated.View>
         <View style={{ flex: 1, justifyContent: "flex-end", paddingHorizontal: 16, paddingBottom: 34 }} pointerEvents="box-none">

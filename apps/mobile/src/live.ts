@@ -23,7 +23,7 @@ export type LiveMarket = {
 const marketColors: Record<string, string> = {
   BTC: '#f7931a', ETH: '#627eea', SOL: '#9945ff', MON: '#836ef9', ZEC: '#f4b728', LIT: '#00b5ed', PUMP: '#2ecc71',
 }
-export const marketColor = (symbol: string) => marketColors[symbol] ?? '#6553B9'
+export const marketColor = (symbol: string) => marketColors[symbol] ?? '#9E4DFD'
 
 function shape(m: Market, s: MarketState | undefined): LiveMarket {
   const st = s ?? m.state
