@@ -281,8 +281,8 @@ export function HeadingText({ parts, size = 23, center = false, markDelay = 350 
         const trail = /[.,!?…]$/.test(x.w) ? x.w.slice(-1) : "";
         const core = trail ? x.w.slice(0, -1) : x.w;
         return (
-          <View key={i} style={{ flexDirection: "row", marginHorizontal: x.mark === "circle" ? 10 : 0 }}>
-            <Rough type={x.mark} color={x.mark === "highlight" ? mist : violet} padding={x.mark === "circle" ? 6 : 3} paddingX={x.mark === "circle" ? 13 : 3} strokeWidth={x.mark === "circle" ? 2.2 : 2.6} iterations={2} delay={markDelay}>
+          <View key={i} style={{ flexDirection: "row", marginHorizontal: x.mark === "circle" ? 10 : x.mark === "highlight" ? 12 : 0 }}>
+            <Rough type={x.mark} color={x.mark === "highlight" ? "#E4CCFF" : violet} padding={x.mark === "circle" ? 6 : 3} paddingX={x.mark === "circle" ? 13 : 3} strokeWidth={x.mark === "circle" ? 2.2 : 2.6} iterations={2} delay={markDelay}>
               <Text style={style}>{core}</Text>
             </Rough>
             {!!trail && <Text style={style}>{trail}</Text>}
@@ -523,12 +523,10 @@ function Art({ kind, width }: { kind: Lesson["art"]; width: number }) {
             ))}
           </G>
           <Circle cx={423} cy={367} r={80} fill="white" />
-          <G>
-            <Path d="M383 372 L383 398 C383 404 388 409 394 409 L452 409 C458 409 463 404 463 398 L463 372" stroke={violet} strokeWidth={12} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-            <Path d="M423 386 L423 322 M399 344 L423 320 L447 344" stroke={violet} strokeWidth={12} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-            <Line x1={378} y1={318} x2={468} y2={416} stroke="white" strokeWidth={22} strokeLinecap="round" />
-            <Line x1={378} y1={318} x2={468} y2={416} stroke={violet} strokeWidth={10} strokeLinecap="round" />
-          </G>
+          <Path d="M398 362 L398 346 C398 332 409 321 423 321 C437 321 448 332 448 346 L448 362" stroke={violet} strokeWidth={12} fill="none" strokeLinecap="round" />
+          <Rect x={384} y={356} width={78} height={60} rx={15} fill={violet} />
+          <Circle cx={423} cy={381} r={8} fill="white" />
+          <Rect x={419.5} y={383} width={7} height={17} rx={3.5} fill="white" />
         </G>
       )}
     </Svg>

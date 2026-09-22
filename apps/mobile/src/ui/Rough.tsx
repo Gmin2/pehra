@@ -33,7 +33,8 @@ function strokes(type: RoughType, w: number, h: number, pad: number, padX: numbe
     if (type === "highlight") {
       const y = h / 2;
       const o = { ...base, roughness: 3, strokeWidth: h * 0.95 };
-      push(ltr ? gen.line(0, y, w, y, o) : gen.line(w, y, 0, y, o), w * 1.2, h * 0.95);
+      const i0 = h * 0.18, i1 = w - h * 0.18;
+      push(ltr ? gen.line(i0, y, i1, y, o) : gen.line(i1, y, i0, y, o), w * 1.2, h * 0.95);
     }
     if (type === "box") push(gen.rectangle(-padX, -pad, w + padX * 2, h + pad * 2, base), (w + h + pad * 4) * 2.3);
     if (type === "circle") {
@@ -114,7 +115,7 @@ export function Rough({
       style={{ position: "absolute", left: -m, top: -m }}
     >
       {list.map((s, i) => (
-        <Stroke key={i + ":" + run} s={s} color={color} delay={delay + i * each} duration={each} run={run} opacity={type === "highlight" ? 0.35 : 1} />
+        <Stroke key={i + ":" + run} s={s} color={color} delay={delay + i * each} duration={each} run={run} opacity={1} />
       ))}
     </Svg>
   );
