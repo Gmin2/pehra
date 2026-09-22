@@ -1,0 +1,10 @@
+{
+  "name": "spikes",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "viem": "^2.56.8",
+    "@noble/ed25519": "^2.3.0",
+    "@noble/hashes": "^2.0.0"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "pehra",
+    "slug": "pehra",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "pehra",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "bundleIdentifier": "trade.pehra.app",
+      "supportsTablet": false
+    },
+    "android": {
+      "package": "trade.pehra.app"
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-build-properties"
+    ]
+  }
+}

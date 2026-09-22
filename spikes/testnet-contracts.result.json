@@ -1,0 +1,72 @@
+{
+  "ausd": {
+    "name": "AUSD",
+    "symbol": "AUSD",
+    "decimals": 6,
+    "version": "ERR Position `131105` is out of bounds (`0 < position < 96`).",
+    "supply": "302010000",
+    "DOMAIN_SEPARATOR": "0x7ff7d6b4bdc3e260c85cf89f8779b1ac80120e3c277f7db4900739a507f03ea1",
+    "computedFromNameVersion": "0x20aafa4c87239ec4b0acbe0f27a0e2dc90891ef28729f95410696d177ea5ef2c",
+    "domainMatches": false,
+    "codeBytes": 5937,
+    "selectors": {
+      "transferWithAuthorization": true,
+      "receiveWithAuthorization": true,
+      "permit": false
+    },
+    "note": "proxy: selectors may live in the implementation, absence here is not proof"
+  },
+  "faucet": {
+    "codeBytes": 1200,
+    "hasRequestFunds": false
+  },
+  "pair": {
+    "token0": "0x7BEb5D9DB0d85cBEa543C04f0dE8c23c2176cd9D",
+    "token1": "0xa9012a055bd4e0eDfF8Ce09f960291C09D5322dC",
+    "token0IsCtk": true,
+    "priceNormalized": "1000000000000000000",
+    "reserve0_ctk": "998973",
+    "reserve1_ausd": "1001027",
+    "randomIsApprovedSwapper": "ERR The contract function \"hasRole\" reverted.",
+    "paused": false,
+    "quote_1ausd_to_ctk": [
+      "1000000",
+      "1000000000000000000"
+    ],
+    "whitelister": {
+      "codeBytes": 1200,
+      "hasSetApprovedSwapper": false,
+      "hasSetApprovedSwappers": false
+    }
+  },
+  "perpl": {
+    "codeBytes": 225,
+    "isProxy": true,
+    "minAccountOpenCNS": "100000000",
+    "numberOfAccounts": "648",
+    "getAccountByAddr_random": "reverted: The contract function \"getAccountByAddr\" reverted with the following signature:\n0x03a0e277",
+    "selectorsInCode": {
+      "createAccount": false,
+      "depositCollateral": false,
+      "withdrawCollateral": false,
+      "allowOrderForwarding": false
+    }
+  },
+  "p256_precompile": {
+    "result": "0x0000000000000000000000000000000000000000000000000000000000000001",
+    "expected": "0x...0001 = valid signature"
+  },
+  "delegates": {
+    "kernel33Bytes": 24469,
+    "simple7702Bytes": 3639
+  },
+  "gas": {
+    "gasPriceWei": "102000000000",
+    "gasPriceGwei": 102,
+    "maxPriorityFeePerGas": "2000000000",
+    "baseFeeGwei": 100,
+    "blockGasLimit": "150000000",
+    "block": "64549418",
+    "ts": "1790025026"
+  }
+}

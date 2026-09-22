@@ -1,0 +1,7 @@
+{
+  "name": "monad-metropolis",
+  "private": true,
+  "scripts": {
+    "typecheck": "pnpm -r --filter './packages/*' --filter './services/*' run typecheck"
+  }
+}
