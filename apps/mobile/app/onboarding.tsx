@@ -8,10 +8,10 @@ import { useLocalSearchParams } from "expo-router";
 import { useApp } from "../src/ui/store";
 import { space } from "../src/ui/theme";
 import {
-  CardStack,
+  PositionStack,
+  WorkSteps,
   ChoiceCard,
   SquareCheck,
-  WorkingGrid,
   AccountCard,
   Tooltip,
   HighlightTitle,
@@ -32,38 +32,39 @@ import { setOnboarded } from "../src/keys";
 // family's onboarding from the reference recordings: choose, terms, working grid, ready card with
 // its tooltip, education trays, the completed card with confetti. only the words are pehra's.
 const TERMS = [
-  "I understand that my passkey is my account. There is no seed phrase to lose and no password to reset.",
-  "I understand that the guard may add margin from my balance to keep a position open, within limits I set.",
-  "I understand that this is monad testnet. The dollars are test dollars, the trades are real trades on perpl testnet.",
-  "I understand that pehra never holds my keys and cannot move my money out of my account.",
-];
+  "I understand that perps are leveraged. A small move in price can close my position.",
+  "I understand that the guard adds margin within limits I set, and that I can turn it off.",
+  "I understand that my passkey is my account and pehra never holds my keys.",
+  "I understand that this is monad testnet, with test dollars on perpl testnet.",
+]
 const LESSONS: Lesson[] = [
   {
     art: "shield",
-    title: ["Before you trade, there’s one thing you should know…"],
+    title: ["Most liquidations happen while you’re", { u: "away." }],
     body: (
       <>
-        On perpl a position closes by itself when its margin runs out. That is a <Em>liquidation</Em>, and it tends to
-        happen while you sleep. The guard watches and tops up the margin first.
+        When a position runs out of margin, perpl closes it for you, and it rarely waits for you to wake up. The guard
+        watches the <Em>distance to liquidation</Em> and adds margin before it gets there.
       </>
     ),
   },
   {
     art: "session",
-    title: ["The guard keeps a trading session for you,", { u: "securely." }],
+    title: ["One signature, and every trade fills in about a", { u: "second." }],
     body: (
       <>
-        One signature from your passkey lets it add margin and place your orders, which is why a trade fills in about a
-        second. You can turn it off any time.
+        Your passkey lets the guard keep a trading session for you. It adds margin and places your orders, no wallet
+        popup, no gas. You can turn it off any time.
       </>
     ),
   },
   {
     art: "lock",
-    title: ["One last important thing…"],
+    title: ["Your money stays yours."],
     body: (
       <>
-        The guard can never withdraw. Only your passkey can move money out of your account, and it <Em>asks you every time</Em>.
+        The guard can add margin, but it can never withdraw. Only your passkey moves money out of your account, and it
+        <Em> asks you every time</Em>.
       </>
     ),
   },
@@ -79,6 +80,8 @@ export default function Onboarding() {
     [error, setError] = useState(""),
     [tray, setTray] = useState(false),
     [guardOn, setGuardOn] = useState(false),
+    [phase, setPhase] = useState(0),
+    [startedAt, setStartedAt] = useState(Date.now()),
     session = useRef<Session | null>(null);
   const address = session.current?.address ?? a.stored?.address;
   // ?step= shows one step for design review without touching the passkey or the server
@@ -96,6 +99,8 @@ export default function Onboarding() {
   };
   const create = async (existing: boolean) => {
     setError("");
+    setPhase(0);
+    setStartedAt(Date.now());
     next("creating");
     try {
       const reuse = existing || !!a.stored;
@@ -108,12 +113,15 @@ export default function Onboarding() {
       a.setSession(sess);
       a.setStored({ address: sess.address, credentialId: sess.credentialId });
       Haptics.selectionAsync();
+      setPhase(1);
       const t1 = Date.now();
       await prepareAccount(sess, (p) => {
-        setProgress(p === "funding your account" ? "Adding test dollars…" : p === "opening your perpl account" ? "Opening your perpl account…" : "Almost there…");
+        if (p === "opening your perpl account") setPhase(2);
         log(`onboarding: ${p}`);
       });
       log(`onboarding: ready in ${Date.now() - t1}ms`);
+      setPhase(3);
+      await new Promise((r) => setTimeout(r, 450));
       next("ready");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e) {
@@ -125,14 +133,18 @@ export default function Onboarding() {
     const sess = session.current;
     if (!sess) return next("choose");
     setError("");
+    setPhase(0);
+    setStartedAt(Date.now());
     next("delegating");
     try {
       const t2 = Date.now();
       const r = await enrollGuard(sess);
+      setPhase(2);
       log(`onboarding: guard holds account ${r.account}, ${Date.now() - t2}ms`);
       registerPush(sess.address, log).catch(() => {});
       await setOnboarded(true);
       setGuardOn(true);
+      setPhase(3);
       next("done");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (e) {
@@ -140,11 +152,21 @@ export default function Onboarding() {
       next("ready");
     }
   };
+  const labels = step === "delegating" ? ["Passkey signature", "Guard session opened", "Notifications on"] : ["Passkey made", "100 test dollars added", "Perpl account opened"];
+  const workSteps = labels.map((label, i) => ({ label, done: phase > i, active: phase === i }));
+  // preview only: walk the steps on a timer so the screen can be judged without a passkey
+  useEffect(() => {
+    if (!preview || (step !== "creating" && step !== "delegating")) return;
+    setPhase(0);
+    setStartedAt(Date.now());
+    const ts = [900, 2100, 3300].map((ms, i) => setTimeout(() => setPhase(i + 1), ms));
+    return () => ts.forEach(clearTimeout);
+  }, [preview, step]);
   const bare = ["creating", "ready", "delegating", "done"].includes(step);
   let action: undefined | { label: string; press: () => void; disabled?: boolean };
   if (step === "terms") action = { label: "I Understand, Continue", press: () => create(false), disabled: terms.length !== TERMS.length };
   if (step === "ready") action = { label: "Turn On the Guard", press: () => setTray(true) };
-  if (step === "done") action = { label: "Done", press: () => a.go("/portfolio") };
+  if (step === "done") action = { label: "Place Your First Trade", press: () => a.go("/portfolio") };
   return (
     <Screen>
       {!bare && (
@@ -168,12 +190,12 @@ export default function Onboarding() {
           {step === "choose" && (
             <View style={{ flex: 1 }}>
               <View style={{ backgroundColor: "#f7f6fa", paddingTop: 30, paddingBottom: 26 }}>
-                <CardStack width={width} />
+                <PositionStack width={width} />
               </View>
               <View style={{ paddingHorizontal: 32, paddingTop: 28, alignItems: "center", gap: 8 }}>
-                <Text style={{ fontSize: 22, fontWeight: "600", letterSpacing: -0.5, color: ink }}>Welcome to pehra</Text>
+                <Text style={{ fontSize: 22, fontWeight: "600", letterSpacing: -0.5, color: ink, textAlign: "center" }}>Trade perps without watching the chart</Text>
                 <Text style={[space.copy, { textAlign: "center", fontSize: 15, lineHeight: 21 }]}>
-                  Perps in your pocket. Your fingerprint is your account, no seed phrase and no gas.
+                  Face id in, dollars in, and a guard that keeps you from getting liquidated at 3am.
                 </Text>
               </View>
               <View style={{ paddingHorizontal: 24, paddingTop: 26, gap: 12 }}>
@@ -205,22 +227,19 @@ export default function Onboarding() {
             </View>
           )}
           {(step === "creating" || step === "delegating") && (
-            <View style={{ flex: 1, justifyContent: "center", gap: 28, paddingTop: 80 }}>
-              <Text style={{ fontSize: 20, fontWeight: "500", color: muted, textAlign: "center" }}>
-                {step === "creating" ? "Creating Your Account" : "Waking the Guard"}
+            <View style={{ flex: 1, justifyContent: "center", gap: 34, paddingTop: 60 }}>
+              <Text style={{ fontSize: 22, fontWeight: "600", color: ink, textAlign: "center", letterSpacing: -0.5 }}>
+                {step === "creating" ? "Setting up your account" : "Waking the guard"}
               </Text>
-              <WorkingGrid width={width} />
-              <View style={{ alignItems: "center", minHeight: 22 }}>
-                <MorphText text={step === "creating" ? progress || "Doing some cryptographic magic…" : "One signature, no prompt…"} size={14} color={muted} />
-              </View>
+              <WorkSteps startedAt={startedAt} steps={workSteps} />
             </View>
           )}
           {step === "ready" && (
             <View style={{ flex: 1, justifyContent: "center", paddingTop: 70, gap: 22 }}>
-              <HighlightTitle before="Your account is " word="ready" after="." />
+              <HighlightTitle before="Your account is " word="funded" after="." />
               <View>
                 <AccountCard width={width} address={address} balance="100 AUSD" pill="Turn On Guard" onPill={() => setTray(true)} />
-                <Tooltip width={width} title="Let pehra keep watch" body="The guard adds margin before a position can be liquidated, even while your phone is in your pocket." />
+                <Tooltip width={width} title="Turn on the guard" body="Most liquidations happen while you are away. The guard steps in first." />
               </View>
             </View>
           )}

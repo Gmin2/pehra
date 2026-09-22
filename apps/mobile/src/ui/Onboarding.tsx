@@ -461,18 +461,31 @@ function Art({ kind, width }: { kind: Lesson["art"]; width: number }) {
       <Rect x={0} y={0} width={VW} height={VH} fill={violet} />
       {kind === "shield" && (
         <G>
-          <Fade id="f1" from={0.7} />
+          <Fade id="f1" from={0.72} />
+          <Defs>
+            <LinearGradient id="risk" x1="0" y1="0" x2="1" y2="0">
+              <Stop offset="0" stopColor="#7EE2B0" />
+              <Stop offset="0.55" stopColor="#FFD37A" />
+              <Stop offset="1" stopColor="#FF7A8A" />
+            </LinearGradient>
+          </Defs>
           <G mask="url(#f1)">
             <Rect x={155} y={103} width={552} height={700} rx={118} fill="none" stroke={rail} strokeWidth={26} />
             <Rect x={330} y={148} width={187} height={56} rx={28} fill={soft} />
-            <Rect x={197} y={360} width={453} height={280} rx={32} fill={soft} />
-            <Circle cx={253} cy={416} r={33} fill="#ffffff33" />
-            <Rect x={472} y={392} width={145} height={25} rx={12.5} fill="#ffffff33" />
-            <Rect x={220} y={556} width={170} height={25} rx={12.5} fill="#ffffff33" />
-            <Rect x={220} y={596} width={94} height={22} rx={11} fill="#ffffff26" />
+            <Rect x={197} y={384} width={453} height={300} rx={32} fill={soft} />
+            <Circle cx={250} cy={486} r={30} fill="#ffffff40" />
+            <Logo name="monad" cx={250} cy={486} size={32} />
+            <SvgText x={296} y={480} fontSize={28} fontWeight="700" fill="white">MON long</SvgText>
+            <SvgText x={296} y={510} fontSize={21} fill="#ffffffaa">3x · 100 AUSD</SvgText>
+            <SvgText x={226} y={578} fontSize={21} fill="#ffffffcc">distance to liquidation</SvgText>
+            <Rect x={226} y={596} width={395} height={16} rx={8} fill="url(#risk)" opacity={0.9} />
+            <Circle cx={560} cy={604} r={15} fill="white" />
+            <Circle cx={560} cy={604} r={7} fill="#FF7A8A" />
+            <Rect x={226} y={646} width={170} height={20} rx={10} fill="#ffffff33" />
           </G>
-          <Path d="M423 244 C451 262 479 270 508 272 L508 318 C508 370 470 408 423 428 C376 408 338 370 338 318 L338 272 C367 270 395 262 423 244 Z" fill="white" />
-          <Path d="M384 335 L412 362 L464 306" stroke={violet} strokeWidth={24} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          <Circle cx={423} cy={316} r={96} fill="#ffffff26" />
+          <Path d="M423 242 C451 260 479 268 508 270 L508 316 C508 368 470 406 423 426 C376 406 338 368 338 316 L338 270 C367 268 395 260 423 242 Z" fill="white" />
+          <Path d="M384 333 L412 360 L464 304" stroke={violet} strokeWidth={24} fill="none" strokeLinecap="round" strokeLinejoin="round" />
         </G>
       )}
       {kind === "session" && (
@@ -528,10 +541,10 @@ function Art({ kind, width }: { kind: Lesson["art"]; width: number }) {
           </G>
           <Circle cx={423} cy={367} r={80} fill="white" />
           <G>
-            <Path d="M393 368 L393 352 C393 335 406 322 423 322 C440 322 453 335 453 352 L453 368" stroke={violet} strokeWidth={13} fill="none" strokeLinecap="round" />
-            <Rect x={380} y={362} width={86} height={62} rx={16} fill={violet} />
-            <Line x1={381} y1={318} x2={466} y2={416} stroke="white" strokeWidth={22} strokeLinecap="round" />
-            <Line x1={381} y1={318} x2={466} y2={416} stroke={violet} strokeWidth={10} strokeLinecap="round" />
+            <Path d="M383 372 L383 398 C383 404 388 409 394 409 L452 409 C458 409 463 404 463 398 L463 372" stroke={violet} strokeWidth={12} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+            <Path d="M423 386 L423 322 M399 344 L423 320 L447 344" stroke={violet} strokeWidth={12} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+            <Line x1={378} y1={318} x2={468} y2={416} stroke="white" strokeWidth={22} strokeLinecap="round" />
+            <Line x1={378} y1={318} x2={468} y2={416} stroke={violet} strokeWidth={10} strokeLinecap="round" />
           </G>
         </G>
       )}
@@ -625,5 +638,117 @@ export function LessonTray({
         </View>
       </GestureHandlerRootView>
     </Modal>
+  );
+}
+
+// welcome: three open positions fanned like family's card stack, the front one lifts in with its
+// distance to liquidation. it shows what pehra is before any sentence does.
+function MarketCoin({ logo, size = 30 }: { logo: string; size?: number }) {
+  return (
+    <Svg width={size} height={size}>
+      <Circle cx={size / 2} cy={size / 2} r={size / 2} fill="#ffffff33" />
+      <Logo name={logo} cx={size / 2} cy={size / 2} size={size * 0.58} />
+    </Svg>
+  );
+}
+export function PositionStack({ width }: { width: number }) {
+  const rise = useSharedValue(26),
+    bar = useSharedValue(0),
+    reduced = useReducedMotion();
+  useEffect(() => {
+    rise.set(withSpring(0, { ...spring, duration: 520 }));
+    bar.set(withDelay(380, withTiming(1, { duration: 700, easing: Easing.out(Easing.cubic), reduceMotion: ReduceMotion.System })));
+  }, [rise, bar]);
+  const front = useAnimatedStyle(() => ({ transform: [{ translateY: reduced ? 0 : rise.get() }] }));
+  const w = Math.min(width - 88, 310),
+    h = w * 0.58;
+  const fill = useAnimatedStyle(() => ({ width: `${72 * bar.get()}%` }));
+  const back = (color: string, top: number, inset: number, label: string, tag: string) => (
+    <View style={{ position: "absolute", top, left: inset, right: inset, height: h, borderRadius: 20, backgroundColor: color, paddingHorizontal: 16, paddingTop: 4, flexDirection: "row", justifyContent: "space-between" }}>
+      <Text style={{ color: "#ffffffd9", fontSize: 10, fontWeight: "700", letterSpacing: 0.4 }}>{label}</Text>
+      <Text style={{ color: "#ffffffb3", fontSize: 10, fontWeight: "700" }}>{tag}</Text>
+    </View>
+  );
+  return (
+    <View style={{ height: h + 30, width: w, alignSelf: "center" }}>
+      {back("#D9CCFD", 0, 28, "ETH LONG", "−1.2%")}
+      {back("#B79BFB", 14, 14, "BTC SHORT", "+0.8%")}
+      <Animated.View style={[{ position: "absolute", top: 28, left: 0, right: 0, height: h, borderRadius: 22, backgroundColor: violet, padding: 16, justifyContent: "space-between", overflow: "hidden", boxShadow: "0 10px 24px #8b5cf62e" }, front]}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <MarketCoin logo="monad" />
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: "white", fontSize: 15, fontWeight: "600" }}>MON long</Text>
+            <Text style={{ color: "#ffffffa6", fontSize: 12, fontWeight: "500" }}>3x · 100 AUSD</Text>
+          </View>
+          <View style={{ backgroundColor: "#ffffff2e", borderRadius: 11, paddingHorizontal: 9, paddingVertical: 4 }}>
+            <Text style={{ color: "white", fontSize: 12, fontWeight: "700", fontVariant: ["tabular-nums"] }}>+4.2%</Text>
+          </View>
+        </View>
+        <View style={{ gap: 7 }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <Text style={{ color: "#ffffffcc", fontSize: 12, fontWeight: "500" }}>28% from liquidation</Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+              <Icon name="shield" size={12} color="white" />
+              <Text style={{ color: "white", fontSize: 11, fontWeight: "700" }}>guarded</Text>
+            </View>
+          </View>
+          <View style={{ height: 6, borderRadius: 3, backgroundColor: "#ffffff2e", overflow: "hidden" }}>
+            <Animated.View style={[{ height: 6, borderRadius: 3, backgroundColor: "white" }, fill]} />
+          </View>
+        </View>
+      </Animated.View>
+    </View>
+  );
+}
+
+// creating: the three real steps tick as they finish, a stopwatch runs beside them
+export type WorkStep = { label: string; done: boolean; active: boolean };
+function Tick({ done, active }: { done: boolean; active: boolean }) {
+  const spin = useSharedValue(0);
+  useEffect(() => {
+    if (active) spin.set(withRepeat(withTiming(360, { duration: 900, easing: Easing.linear }), -1, false));
+  }, [active, spin]);
+  const rot = useAnimatedStyle(() => ({ transform: [{ rotate: `${spin.get()}deg` }] }));
+  if (done)
+    return (
+      <Animated.View entering={ZoomIn.springify().damping(13).stiffness(300).reduceMotion(ReduceMotion.System)} style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: violet, alignItems: "center", justifyContent: "center" }}>
+        <Icon name="check" size={13} color="white" />
+      </Animated.View>
+    );
+  if (active)
+    return (
+      <Animated.View style={[{ width: 26, height: 26 }, rot]}>
+        <Svg width={26} height={26}>
+          <Circle cx={13} cy={13} r={10.5} stroke="#E6DDFD" strokeWidth={3} fill="none" />
+          <Path d="M13 2.5 A10.5 10.5 0 0 1 23.5 13" stroke={violet} strokeWidth={3} fill="none" strokeLinecap="round" />
+        </Svg>
+      </Animated.View>
+    );
+  return <View style={{ width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: "#E6E2EC" }} />;
+}
+export function WorkSteps({ steps, startedAt }: { steps: WorkStep[]; startedAt: number }) {
+  const [now, setNow] = useState(Date.now());
+  const finished = steps.every((s) => s.done);
+  useEffect(() => {
+    if (finished) return;
+    const t = setInterval(() => setNow(Date.now()), 60);
+    return () => clearInterval(t);
+  }, [finished]);
+  const secs = Math.max(0, (now - startedAt) / 1000);
+  return (
+    <View style={{ gap: 26, alignSelf: "center", width: Math.min(300, 320) }}>
+      <View style={{ alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 7, backgroundColor: "#F4F0FE", borderRadius: 16, paddingHorizontal: 13, paddingVertical: 7 }}>
+        <Icon name="history" size={14} color={violet} />
+        <Text style={{ color: violet, fontSize: 15, fontWeight: "700", fontVariant: ["tabular-nums"] }}>{secs.toFixed(1)}s</Text>
+      </View>
+      <View style={{ gap: 22 }}>
+        {steps.map((s) => (
+          <View key={s.label} style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
+            <Tick done={s.done} active={s.active} />
+            <Text style={{ fontSize: 17, fontWeight: s.active ? "600" : "500", color: s.done || s.active ? ink : "#c2bdcb", letterSpacing: -0.2 }}>{s.label}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
   );
 }
