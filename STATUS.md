@@ -19,7 +19,7 @@ the one file that says where the build is. updated every session. this folder is
 | t4 | stop, take profit, margin add, close | pass | spikes/t4.ts, two quirks logged |
 | app | expo dev client runs on android emulator | pass | research/brand-refs/screens/pehra-tracer-bullet.png |
 | t5 | passkey create, sign, verify, forget storage, sign in, same address | pass | research/brand-refs/screens/t5-*.png, 5.5s create, 0.9s sign |
-| t6 | phone does t1 to t3, stopwatched | pass | ../research/brand-refs/screens/t6-first-trade-26s.png, 26.2s cold on the phone, 5.3 to 7.4s after hardening (harness), account 653 |
+| t6 | phone does t1 to t3, stopwatched | pass | 26.2s cold on the phone at first, 5.3 to 7.4s cold after hardening (harness), 1.5s returning user on the phone with the socket live, account 653 |
 | t7 | the guard, push with add margin | next | |
 | t8 | funding sheet (agora pair) | | |
 | t9 | envio history | | |
