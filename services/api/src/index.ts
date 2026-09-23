@@ -95,6 +95,19 @@ async function dripUsdc(address: Address, withUsdc = true) {
   }
 }
 
+// the envio indexer's graphql (indexer/), the chain's record of every perpl account
+const INDEXER = process.env.INDEXER_GRAPHQL ?? 'http://localhost:8080/v1/graphql'
+async function chainHistory(address: string) {
+  const query = `query ($a: String!) { Account(where: { address: { _eq: $a } }) { id } }`
+  const acct = await fetch(INDEXER, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ query, variables: { a: address.toLowerCase() } }) }).then(r => r.json()) as { data?: { Account: { id: string }[] } }
+  const id = acct.data?.Account[0]?.id
+  if (!id) return { accountId: null, rows: [] }
+  const q2 = `query ($id: numeric!) { Activity(where: { accountId: { _eq: $id } }, order_by: { block: desc }, limit: 200) { kind perpId side priceWire lotWire amountCns pnlCns leverageHdths block timestamp tx } }`
+  const r = await fetch(INDEXER, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ query: q2, variables: { id } }) }).then(r => r.json()) as { data?: { Activity: unknown[] }; errors?: unknown }
+  if (!r.data) throw new Error('indexer: ' + JSON.stringify(r.errors).slice(0, 200))
+  return { accountId: id, rows: r.data.Activity }
+}
+
 const guard = new Guard()
 const pendingEnroll = new Map<string, EnrollPayload>()
 
@@ -212,6 +225,10 @@ const server = Bun.serve({
       } catch (e) {
         return json({ error: e instanceof Error ? e.message : 'order failed' }, 500)
       }
+    }
+    const ch = url.pathname.match(/^\/chain\/(0x[0-9a-fA-F]{40})$/)
+    if (ch && req.method === 'GET') {
+      try { return json(await chainHistory(ch[1])) } catch (e) { return json({ error: e instanceof Error ? e.message : 'indexer unreachable' }, 502) }
     }
     if (url.pathname === '/activity' && req.method === 'POST') {
       const body = await req.json().catch(() => ({})) as { address?: string; kind?: string; amount?: number; tx?: string; text?: string }

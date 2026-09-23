@@ -16,7 +16,8 @@ import { Rough } from "../src/ui/Rough";
 import { PehraBird } from "../src/ui/PehraBird";
 import { Shield } from "../src/ui/Home";
 import { useApp } from "../src/ui/store";
-import { useAccount, money } from "../src/live";
+import { useAccount, useMarkets, money } from "../src/live";
+import { useChain, merge } from "../src/chain";
 import { Segmented, Tray } from "../src/ui/Trade";
 import type { GuardEvent } from "../src/guard";
 
@@ -64,6 +65,7 @@ function describe(e: GuardEvent): { title: string; sub: string; right: string; c
     case "warn":
       return { title: `${pos || sym(e)} got close`, sub: `${(e.distancePct ?? 0).toFixed(1)}% from liquidation, guard watching`, right: "", color: ink };
     case "failed":
+      if (/liquidated/.test(e.text)) return { title: `${pos} liquidated`, sub: "perpl closed it at the liquidation price", right: e.pnl !== undefined ? signed(e.pnl) : "", color: red };
       return { title: "the guard couldn’t add margin", sub: e.text, right: "", color: red };
     case "manual":
       return { title: `you added ${money(e.addAusd ?? 0)} ausd`, sub: e.after ? `${pos}, now ${e.after.distancePct.toFixed(1)}% away` : pos, right: "+" + money(e.addAusd ?? 0), color: ink };
@@ -107,11 +109,16 @@ export default function Activity() {
   const a = useApp(),
     address = a.stored?.address ?? a.session?.address ?? null,
     { account } = useAccount(address),
+    chain = useChain(address),
+    markets = useMarkets(),
     [filter, setFilter] = useState<Filter>("all"),
     [open, setOpen] = useState<GuardEvent | null>(null);
   const eyes = useSharedValue(1),
     glance = useSharedValue(0);
-  const events = (account?.events ?? []).filter((e) => SHOWN.has(e.kind)).map(backfill);
+  const events = useMemo(
+    () => merge((account?.events ?? []).map(backfill), chain, markets.map((m) => m.market)).filter((e) => SHOWN.has(e.kind)),
+    [account?.events, chain, markets.length],
+  );
   const shown = events.filter((e) => (filter === "all" ? true : filter === "guard" ? GUARD.has(e.kind) : !GUARD.has(e.kind)));
   const groups = useMemo(() => {
     const out: { label: string; items: GuardEvent[] }[] = [];
@@ -163,7 +170,7 @@ export default function Activity() {
             </>
           )}
           <Text style={{ marginTop: 8, fontSize: 14, lineHeight: 20, fontWeight: "500", color: muted }}>
-            {account ? `it watched ${watched} position${watched === 1 ? "" : "s"} today and spent ${money(spent)} of your ${limit} ausd daily limit.` : "reading the guard’s day"}
+            {account ? `it watched ${watched} position${watched === 1 ? "" : "s"} today and spent ${money(spent)} of your ${limit} ausd daily limit. every row is read from monad through envio.` : "reading the guard’s day"}
           </Text>
         </Animated.View>
 
@@ -205,7 +212,7 @@ export default function Activity() {
                       </View>
                       <View style={{ alignItems: "flex-end", gap: 3 }}>
                         {!!d.right && <Text style={{ fontSize: 14, fontWeight: "700", color: d.color, fontVariant: ["tabular-nums"] }}>{d.right}</Text>}
-                        <Text style={{ fontSize: 11.5, fontWeight: "500", color: faint }}>{time(e.at)}</Text>
+                        {(e as { onchain?: boolean }).onchain ? <OnChain /> : <Text style={{ fontSize: 11.5, fontWeight: "500", color: faint }}>{e.tx ? "settling…" : time(e.at)}</Text>}
                       </View>
                     </Tap>
                   </Animated.View>
@@ -230,6 +237,16 @@ export default function Activity() {
         )}
       </Tray>
     </Screen>
+  );
+}
+
+// the row's proof: envio has this transaction from monad
+function OnChain() {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 4, height: 18, paddingHorizontal: 7, borderRadius: 9, backgroundColor: "#23765A14" }}>
+      <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: green }} />
+      <Text style={{ fontSize: 10, fontWeight: "700", color: green }}>on chain</Text>
+    </View>
   );
 }
 
