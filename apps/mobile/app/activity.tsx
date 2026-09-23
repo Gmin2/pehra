@@ -42,6 +42,19 @@ const time = (at: number) => new Date(at).toLocaleTimeString("en-US", { hour: "n
 const signed = (n: number) => (n >= 0 ? "+" : "−") + Math.abs(n).toFixed(2);
 const words = ["no times", "once", "twice"];
 
+// events from before the server kept side, size and pnl as fields still say them in their text
+function backfill(e: GuardEvent): GuardEvent {
+  if (e.side) return e;
+  let m;
+  if (e.kind === "closed" && (m = e.text.match(/closed (long|short) ([\d.]+) \w+ at ([\d.]+), ([+-]?)([\d.]+)/)))
+    return { ...e, side: m[1], amount: Number(m[2]), price: Number(m[3]), pnl: (m[4] === "-" ? -1 : 1) * Number(m[5]) };
+  if (e.kind === "opened" && (m = e.text.match(/(long|short) ([\d.]+) \w+ at ([\d.]+)x, filled at ([\d.]+)/)))
+    return { ...e, side: m[1], amount: Number(m[2]), lv: Number(m[3]) * 100, price: Number(m[4]) };
+  if (e.kind === "manual" && (m = e.text.match(/collateral now ([\d.]+) AUSD, ([\d.]+)% from/)))
+    return { ...e, after: { collateral: Number(m[1]), distancePct: Number(m[2]) } };
+  return e;
+}
+
 // what a row says for each kind
 function describe(e: GuardEvent): { title: string; sub: string; right: string; color: string } {
   const pos = `${sym(e)} ${e.side ?? ""}`.trim();
@@ -98,7 +111,7 @@ export default function Activity() {
     [open, setOpen] = useState<GuardEvent | null>(null);
   const eyes = useSharedValue(1),
     glance = useSharedValue(0);
-  const events = (account?.events ?? []).filter((e) => SHOWN.has(e.kind));
+  const events = (account?.events ?? []).filter((e) => SHOWN.has(e.kind)).map(backfill);
   const shown = events.filter((e) => (filter === "all" ? true : filter === "guard" ? GUARD.has(e.kind) : !GUARD.has(e.kind)));
   const groups = useMemo(() => {
     const out: { label: string; items: GuardEvent[] }[] = [];
