@@ -1,18 +1,20 @@
 // the guard: one server side trading session per delegated account, every position checked against
 // the mark on every update, margin added before the venue can liquidate. keys live in data/guard-keys.json
-// for now, events in memory. the same session relays the phone's own orders.
+// and events in data/guard-events.json. the same session relays the phone's own orders, closes and brackets.
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import type { Hex } from 'viem'
 import { sendPush } from './push'
 import {
-  decide, defaultGuardSettings, getContext, MarketDataSocket, positionHealth, TradingSocket, fromCns, toCns, toLeverage, toSize,
+  decide, defaultGuardSettings, getContext, MarketDataSocket, positionHealth, TradingSocket, fromCns, fromPrice, fromSize, toCns, toLeverage, toPrice, toSize, Trigger,
   type Context, type Decision, type Enrolled, type GuardSettings, type Health, type Market, type Position,
 } from '@pehra/perpl'
 
-export type GuardEvent = { at: number; pid?: number; kind: 'watch' | 'warn' | 'add' | 'added' | 'failed' | 'session'; text: string; distancePct?: number; addAusd?: number }
+// guard kinds: warn, add, added, failed, session. the user's own actions: opened, closed, bracket, manual (a margin add)
+export type GuardEvent = { at: number; pid?: number; symbol?: string; kind: 'watch' | 'warn' | 'add' | 'added' | 'failed' | 'session' | 'opened' | 'closed' | 'bracket' | 'manual'; text: string; distancePct?: number; addAusd?: number; price?: number }
 type Stored = { address: Hex; key: Enrolled; settings: GuardSettings; enrolledAt: number }
 
 const KEYS = new URL('../data/guard-keys.json', import.meta.url)
+const EVENTS = new URL('../data/guard-events.json', import.meta.url)
 const COOLDOWN_MS = 60_000
 const DAY_MS = 24 * 3600_000
 
@@ -30,6 +32,12 @@ export class Guard {
     this.log = log
     this.market = new MarketDataSocket('testnet')
     if (existsSync(KEYS)) for (const s of JSON.parse(readFileSync(KEYS, 'utf8')) as Stored[]) this.stored.set(s.address.toLowerCase(), s)
+    if (existsSync(EVENTS)) for (const [a, list] of Object.entries(JSON.parse(readFileSync(EVENTS, 'utf8')) as Record<string, GuardEvent[]>)) this.events.set(a, list)
+  }
+  private eventsTimer: ReturnType<typeof setTimeout> | null = null
+  private persistEvents() {
+    if (this.eventsTimer) return
+    this.eventsTimer = setTimeout(() => { this.eventsTimer = null; writeFileSync(EVENTS, JSON.stringify(Object.fromEntries(this.events))) }, 1000)
   }
 
   async start() {
@@ -67,6 +75,7 @@ export class Guard {
     const list = this.events.get(addr) ?? []
     list.unshift({ at: Date.now(), ...e })
     this.events.set(addr, list.slice(0, 200))
+    this.persistEvents()
     this.log(`guard ${addr.slice(0, 8)} ${e.kind} ${e.text}`)
     // the phone hears about warnings and margin adds, sessions and attempts stay in the log
     if (e.kind === 'warn') void sendPush(addr, 'pehra: close to liquidation', e.text, { kind: e.kind, pid: String(e.pid ?? ''), action: 'add' })
@@ -94,16 +103,24 @@ export class Guard {
     return ts
   }
 
-  // the whole guard is this function, run on every position update and every mark tick
-  health(address: string): (Health & { symbol: string; lv: number; mkt: number })[] {
+  // each position with its health and the stop and take profit resting on it (untriggered, st 8)
+  health(address: string): (Health & { symbol: string; lv: number; mkt: number; stop?: number; take?: number })[] {
     const addr = address.toLowerCase()
     const ts = this.sessions.get(addr)
     if (!ts || !this.ctx) return []
-    const out: (Health & { symbol: string; lv: number; mkt: number })[] = []
+    const out: (Health & { symbol: string; lv: number; mkt: number; stop?: number; take?: number })[] = []
     for (const pos of ts.positions.values()) {
       const m = this.ctx.markets.find(x => x.id === pos.mkt)
       const state = this.market.states.get(pos.mkt)
-      if (m && state) out.push({ ...positionHealth(pos, m, state.mrk), symbol: m.symbol, lv: pos.lv, mkt: pos.mkt })
+      if (!m || !state) continue
+      let stop: number | undefined, take: number | undefined
+      for (const o of ts.orders.values()) {
+        if (o.lp !== pos.pid || o.st !== 8 || !o.tp) continue
+        const below = o.tpc === Trigger.lteLast || o.tpc === Trigger.lteMark
+        const isStop = pos.sd === 1 ? below : !below
+        if (isStop) stop = fromPrice(m, o.tp); else take = fromPrice(m, o.tp)
+      }
+      out.push({ ...positionHealth(pos, m, state.mrk), symbol: m.symbol, lv: pos.lv, mkt: pos.mkt, stop, take })
     }
     return out
   }
@@ -125,21 +142,21 @@ export class Guard {
       const last = this.lastAdd.get(pos.pid) ?? 0
       if (Date.now() - last < COOLDOWN_MS) continue
       this.lastAdd.set(pos.pid, Date.now())
-      if (d.action === 'warn') { this.emit(addr, { kind: 'warn', pid: pos.pid, text: `${m.symbol} ${h.side} ${(h.distance * 100).toFixed(2)}% from liquidation, ${d.reason}`, distancePct: h.distance * 100 }); continue }
+      if (d.action === 'warn') { this.emit(addr, { kind: 'warn', pid: pos.pid, symbol: m.symbol, text: `${m.symbol} ${h.side} ${(h.distance * 100).toFixed(2)}% from liquidation, ${d.reason}`, distancePct: h.distance * 100 }); continue }
       void this.act(addr, ts, pos, m, d, day, addedToday)
     }
   }
 
   private async act(addr: string, ts: TradingSocket, pos: Position, m: Market, d: Decision, day: number, addedToday: number) {
     const ausd = fromCns(d.addCns ?? '0')
-    this.emit(addr, { kind: 'add', pid: pos.pid, text: `${m.symbol} ${d.health.side} ${(d.health.distance * 100).toFixed(2)}% from liquidation, adding ${ausd.toFixed(2)} AUSD`, distancePct: d.health.distance * 100, addAusd: ausd })
+    this.emit(addr, { kind: 'add', pid: pos.pid, symbol: m.symbol, text: `${m.symbol} ${d.health.side} ${(d.health.distance * 100).toFixed(2)}% from liquidation, adding ${ausd.toFixed(2)} AUSD`, distancePct: d.health.distance * 100, addAusd: ausd })
     try {
       const r = await ts.addMargin(pos, d.addCns ?? '0')
       const after = r.position ? positionHealth(r.position, m, this.market.states.get(pos.mkt)?.mrk ?? pos.ep) : null
       this.addedToday.set(addr, { day, ausd: addedToday + ausd })
-      this.emit(addr, { kind: 'added', pid: pos.pid, text: `collateral now ${after ? after.collateral.toFixed(4) : '?'} AUSD, ${after ? (after.distance * 100).toFixed(2) : '?'}% from liquidation`, distancePct: after ? after.distance * 100 : undefined, addAusd: ausd })
+      this.emit(addr, { kind: 'added', pid: pos.pid, symbol: m.symbol, text: `collateral now ${after ? after.collateral.toFixed(4) : '?'} AUSD, ${after ? (after.distance * 100).toFixed(2) : '?'}% from liquidation`, distancePct: after ? after.distance * 100 : undefined, addAusd: ausd })
     } catch (e) {
-      this.emit(addr, { kind: 'failed', pid: pos.pid, text: `margin add failed: ${e instanceof Error ? e.message : String(e)}` })
+      this.emit(addr, { kind: 'failed', pid: pos.pid, symbol: m.symbol, text: `margin add failed: ${e instanceof Error ? e.message : String(e)}` })
     }
   }
 
@@ -150,7 +167,43 @@ export class Guard {
     const m = this.ctx.markets.find(x => x.symbol === symbol)
     if (!m) throw new Error('no market ' + symbol)
     // size arrives in coins, perpl wants it scaled by the market's size decimals
-    return { market: m, result: await ts.openMarket({ mkt: m.id, side, size: toSize(m, size), leverage: toLeverage(leverage) }) }
+    const result = await ts.openMarket({ mkt: m.id, side, size: toSize(m, size), leverage: toLeverage(leverage) })
+    const o = result.order
+    if (o?.st === 4) this.emit(address.toLowerCase(), { kind: 'opened', pid: result.position?.pid, symbol: m.symbol, price: fromPrice(m, o.fp ?? 0), text: `${side} ${fromSize(m, o.fs ?? 0)} ${m.symbol} at ${leverage}x, filled at ${fromPrice(m, o.fp ?? 0)}` })
+    return { market: m, result }
+  }
+
+  private pos(address: string, pid: number) {
+    const ts = this.sessions.get(address.toLowerCase())
+    if (!ts || !this.ctx) throw new Error('no live session')
+    const pos = ts.positions.get(pid)
+    if (!pos) throw new Error('no such position')
+    const m = this.ctx.markets.find(x => x.id === pos.mkt)
+    if (!m) throw new Error('no market')
+    return { ts, pos, m }
+  }
+
+  async closePosition(address: string, pid: number) {
+    const { ts, pos, m } = this.pos(address, pid)
+    const entry = fromPrice(m, pos.ep), size = fromSize(m, pos.s), side = pos.sd === 1 ? 'long' : 'short'
+    const r = await ts.closeMarket(pos)
+    const o = r.order
+    if (o?.st !== 4) throw new Error('close did not fill, status ' + (o?.st ?? r.status?.status.code))
+    const exit = fromPrice(m, o.fp ?? 0)
+    const pnl = (side === 'long' ? 1 : -1) * (exit - entry) * size
+    this.emit(address.toLowerCase(), { kind: 'closed', pid, symbol: m.symbol, price: exit, text: `closed ${side} ${size} ${m.symbol} at ${exit}, ${pnl >= 0 ? '+' : '-'}${Math.abs(pnl).toFixed(2)} AUSD` })
+    return { price: exit, pnl, collateral: fromCns(pos.c) }
+  }
+
+  // stop and take profit in human prices. perpl will not cancel a resting trigger yet, so these are set once
+  async setBrackets(address: string, pid: number, b: { stop?: number; take?: number }) {
+    const { ts, pos, m } = this.pos(address, pid)
+    const out: { stop?: number; take?: number } = {}
+    if (b.stop) { const r = await ts.stopLoss(pos, toPrice(m, b.stop)); if (r.order && r.order.st !== 7) out.stop = b.stop }
+    if (b.take) { const r = await ts.takeProfit(pos, toPrice(m, b.take)); if (r.order && r.order.st !== 7) out.take = b.take }
+    const parts = [out.stop ? `stop at ${out.stop}` : '', out.take ? `take profit at ${out.take}` : ''].filter(Boolean).join(', ')
+    if (parts) this.emit(address.toLowerCase(), { kind: 'bracket', pid, symbol: m.symbol, text: `${m.symbol}: ${parts}` })
+    return out
   }
 
   // a manual add from the phone, the push's "add" action lands here
@@ -163,7 +216,7 @@ export class Guard {
     if (!m) throw new Error('no market')
     const r = await ts.addMargin(pos, toCns(ausd))
     const after = r.position ? positionHealth(r.position, m, this.market.states.get(pos.mkt)?.mrk ?? pos.ep) : null
-    this.emit(address.toLowerCase(), { kind: 'added', pid, text: `you added ${ausd.toFixed(2)} AUSD, collateral now ${after ? after.collateral.toFixed(4) : '?'} AUSD, ${after ? (after.distance * 100).toFixed(2) : '?'}% from liquidation`, addAusd: ausd, distancePct: after ? after.distance * 100 : undefined })
+    this.emit(address.toLowerCase(), { kind: 'manual', pid, symbol: m.symbol, text: `you added ${ausd.toFixed(2)} AUSD, collateral now ${after ? after.collateral.toFixed(4) : '?'} AUSD, ${after ? (after.distance * 100).toFixed(2) : '?'}% from liquidation`, addAusd: ausd, distancePct: after ? after.distance * 100 : undefined })
     return after
   }
 

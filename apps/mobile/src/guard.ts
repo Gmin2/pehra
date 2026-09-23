@@ -5,8 +5,9 @@ import type { Session } from './account'
 import { API } from './trade'
 
 type Wire = { types: Record<string, { name: string; type: string }[]>; domain: { name: string; version: string; chainId: string; verifyingContract?: `0x${string}`; salt?: `0x${string}` }; primaryType: string; message: Record<string, unknown> }
-export type PositionHealth = { pid: number; side: string; entry: number; mark: number; liq: number; distance: number; collateral: number; size: number; symbol: string; lv: number; mkt: number }
-export type GuardState = { enrolled: boolean; live?: boolean; balance?: number; settings?: { enabled: boolean; thresholdPct: number; targetPct: number; minAddAusd: number; maxAddAusdPerDay: number }; health?: PositionHealth[]; events?: { at: number; kind: string; text: string }[] }
+export type PositionHealth = { pid: number; side: string; entry: number; mark: number; liq: number; distance: number; collateral: number; size: number; symbol: string; lv: number; mkt: number; stop?: number; take?: number }
+export type GuardEvent = { at: number; pid?: number; symbol?: string; kind: 'watch' | 'warn' | 'add' | 'added' | 'failed' | 'session' | 'opened' | 'closed' | 'bracket' | 'manual'; text: string; distancePct?: number; addAusd?: number; price?: number }
+export type GuardState = { enrolled: boolean; live?: boolean; balance?: number; settings?: { enabled: boolean; thresholdPct: number; targetPct: number; minAddAusd: number; maxAddAusdPerDay: number }; health?: PositionHealth[]; events?: GuardEvent[] }
 
 const post = async <T,>(path: string, body: unknown): Promise<T> => {
   const r = await fetch(`${API}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
@@ -32,3 +33,6 @@ export const relayOrder = (address: string, symbol: string, side: 'long' | 'shor
   post<{ filled: boolean; status?: number; reason?: unknown; size: number; price: number }>('/order', { address, symbol, side, size, leverage })
 
 export const relayCloseAll = (address: string) => post<{ closed: number }>('/close-all', { address })
+export const relayClose = (address: string, pid: number) => post<{ price: number; pnl: number; collateral: number }>('/close', { address, pid })
+export const relayBrackets = (address: string, pid: number, b: { stop?: number; take?: number }) => post<{ stop?: number; take?: number }>('/brackets', { address, pid, ...b })
+export const relayAddMargin = (address: string, pid: number, ausd: number) => post<{ health?: { distance: number; collateral: number } }>('/guard/add', { address, pid, ausd })

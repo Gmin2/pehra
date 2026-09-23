@@ -163,6 +163,16 @@ const server = Bun.serve({
         return json({ error: e instanceof Error ? e.message : 'order failed' }, 500)
       }
     }
+    if (url.pathname === '/close' && req.method === 'POST') {
+      const body = await req.json().catch(() => ({})) as { address?: string; pid?: number }
+      if (!body.address || !body.pid) return json({ error: 'bad request' }, 400)
+      try { return json(await guard.closePosition(body.address, body.pid)) } catch (e) { return json({ error: e instanceof Error ? e.message : 'close failed' }, 500) }
+    }
+    if (url.pathname === '/brackets' && req.method === 'POST') {
+      const body = await req.json().catch(() => ({})) as { address?: string; pid?: number; stop?: number; take?: number }
+      if (!body.address || !body.pid || (!body.stop && !body.take)) return json({ error: 'bad request' }, 400)
+      try { return json(await guard.setBrackets(body.address, body.pid, { stop: body.stop, take: body.take })) } catch (e) { return json({ error: e instanceof Error ? e.message : 'brackets failed' }, 500) }
+    }
     if (url.pathname === '/close-all' && req.method === 'POST') {
       const body = await req.json().catch(() => ({})) as { address?: string }
       if (!body.address) return json({ error: 'bad request' }, 400)
