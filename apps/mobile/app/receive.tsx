@@ -36,7 +36,7 @@ export default function Receive() {
     size = Math.min(width - 64, 380),
     x = useSharedValue(size / 2),
     y = useSharedValue(size / 2),
-    radius = useSharedValue(0),
+    radius = useSharedValue(1),
     opacity = useSharedValue(0);
   const gesture = useMemo(
     () =>
@@ -72,7 +72,7 @@ export default function Receive() {
   const props = useAnimatedProps(() => ({
     cx: x.get(),
     cy: y.get(),
-    r: radius.get(),
+    r: Math.max(1, radius.get()),
     opacity: opacity.get(),
   }));
   return (
