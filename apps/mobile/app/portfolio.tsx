@@ -4,10 +4,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { View, ScrollView, useWindowDimensions } from "react-native";
 import { Stack } from "expo-router";
-import Animated, { FadeIn, LinearTransition, ReduceMotion, ZoomIn, useSharedValue, withSpring } from "react-native-reanimated";
+import Animated, { FadeIn, FadeInDown, LinearTransition, ReduceMotion, ZoomIn, useSharedValue, withSpring } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import { Screen, Tap, Button, MorphText, Tabs, IconButton, s } from "../src/ui/components";
-import { MarketsArt, PositionsArt, PositionCard, Shield } from "../src/ui/Home";
+import { MarketsArt, PositionsArt, PositionCard, Shield, SuggestionCard, GhostRow, type Suggestion } from "../src/ui/Home";
+import { freshLiquidationPrice, maxLeverage } from "@pehra/perpl";
 import { Text } from "../src/ui/Text";
 import { useApp } from "../src/ui/store";
 import { colors, space } from "../src/ui/theme";
@@ -92,6 +93,17 @@ export default function Portfolio() {
   const open = riskOpenness(health, threshold);
   const sorted = useMemo(() => [...markets].sort((x, y) => (x.symbol === "MON" ? -1 : y.symbol === "MON" ? 1 : 0)), [markets]);
   const held = health.map((h) => h.symbol).join();
+  // two first trades for an empty tab: mon and the next market by 24h move, long at up to 3x
+  const suggestions = useMemo<Suggestion[]>(() => {
+    const free = balance ?? 0;
+    const margin = Math.max(1, Math.min(10, Math.floor(free)));
+    const picks = [sorted.find((x) => x.symbol === "MON"), [...sorted].filter((x) => x.symbol !== "MON").sort((x, y) => y.change24h - x.change24h)[0]].filter((x): x is LiveMarket => !!x);
+    return picks.map((x) => {
+      const lev = Math.min(3, maxLeverage(x.market));
+      const liq = freshLiquidationPrice(x.market, "long", x.mark, lev);
+      return { m: x, side: "long" as const, lev, margin, away: x.mark > 0 ? ((x.mark - liq) / x.mark) * 100 : 0 };
+    });
+  }, [sorted, balance]);
   useEffect(() => {
     for (const x of sorted) if (held.includes(x.symbol)) prefetchCandles(x.market);
   }, [held, sorted.length]);
@@ -111,7 +123,7 @@ export default function Portfolio() {
           <MorphText text={a.stealth ? "✱✱✱✱✱" : total === null ? "$—" : "$" + money(total)} size={44} />
           <View style={[space.row, { gap: 8, marginTop: 8 }]}>
             <Text style={{ color: muted, fontWeight: "500", fontVariant: ["tabular-nums"] }}>
-              {balance === null ? "loading your account" : `${money(balance)} free · ${money(inPositions)} in positions`}
+              {balance === null ? "loading your account" : health.length ? `${money(balance)} free · ${money(inPositions)} in positions` : `${money(balance)} free · nothing open`}
             </Text>
             {!!health.length && (
               <Text style={{ color: pnl >= 0 ? green : red, fontWeight: "600", fontVariant: ["tabular-nums"] }}>
@@ -162,12 +174,24 @@ export default function Portfolio() {
         ) : (
           <Animated.View key="positions" entering={FadeIn.duration(160).reduceMotion(ReduceMotion.System)}>
             {health.length === 0 ? (
-              <View style={{ alignItems: "center", paddingTop: 50, gap: 14 }}>
-                <MorphText text="nothing open, the bird is asleep" size={18} />
-                <Text style={[space.copy, { textAlign: "center" }]}>open a position and the guard starts watching it.</Text>
-                <Button variant="secondary" onPress={() => setTab("markets")}>
-                  see markets
-                </Button>
+              <View style={{ marginHorizontal: -8, gap: 10 }}>
+                <Text style={{ fontSize: 13, fontWeight: "600", color: muted, marginHorizontal: 8, marginBottom: 2 }}>nothing open. a place to start:</Text>
+                {suggestions.length === 0 && <GhostRow />}
+                {suggestions.map((x, i) => (
+                  <Animated.View key={x.m.id} entering={FadeInDown.delay(i * 80).springify().damping(18).reduceMotion(ReduceMotion.System)}>
+                    <Tap
+                      onPressIn={() => prefetchCandles(x.m.market)}
+                      onPress={() => {
+                        Haptics.selectionAsync();
+                        a.go(`/trade?symbol=${x.m.symbol}&side=${x.side}&margin=${x.margin}&lev=${x.lev}`);
+                      }}
+                      accessibilityLabel={`${x.m.symbol} ${x.side} ${x.lev}x with ${x.margin} ausd`}
+                    >
+                      <SuggestionCard s={x} />
+                    </Tap>
+                  </Animated.View>
+                ))}
+                <GhostRow opacity={0.7} />
               </View>
             ) : (
               <View style={{ gap: 10, marginHorizontal: -8, paddingTop: 4 }}>

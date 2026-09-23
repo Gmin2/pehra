@@ -5,10 +5,10 @@
 import { useEffect } from "react";
 import { View } from "react-native";
 import Svg, { Rect, Line, Circle, Path, Defs, LinearGradient, Stop, Mask, G, Text as SvgText } from "react-native-svg";
-import Animated, { Easing, ReduceMotion, useAnimatedProps, useAnimatedStyle, useSharedValue, withDelay, withSpring, withTiming } from "react-native-reanimated";
+import Animated, { Easing, ReduceMotion, useAnimatedProps, useAnimatedStyle, useSharedValue, withDelay, withRepeat, withSpring, withTiming } from "react-native-reanimated";
 import { Text } from "./Text";
 import { Coin } from "./Coin";
-import { PehraBird } from "./PehraBird";
+import { PehraBird, BODY, BEAK } from "./PehraBird";
 import { glyphs } from "./glyphs";
 import { tint } from "./Glyph";
 import type { LiveMarket } from "../live";
@@ -140,6 +140,7 @@ export function PositionsArt({ health, markets, threshold, open, width }: { heal
   const near = [...health].sort((a, b) => a.distance - b.distance).slice(0, 2);
   const held = new Set(health.map((h) => h.symbol));
   const edge = markets.filter((m) => !held.has(m.symbol)).slice(0, 2);
+  if (health.length === 0) return <AsleepArt width={width} />;
   const side = (h: PositionHealth, x: number) => {
     const away = h.distance * 100;
     return (
@@ -173,6 +174,100 @@ export function PositionsArt({ health, markets, threshold, open, width }: { heal
       </View>
       <View style={{ position: "absolute", left: cx + 14, top: cy + 22, width: 30, height: 30, borderRadius: 15, backgroundColor: ink, alignItems: "center", justifyContent: "center" }}>
         <Shield size={15} color="white" cut={ink} />
+      </View>
+    </View>
+  );
+}
+
+// nothing to watch: the bird asleep in its circle, breathing, z's drifting up, the seats empty
+function Zee({ i, x, y }: { i: number; x: number; y: number }) {
+  const k = useSharedValue(0);
+  useEffect(() => {
+    k.set(withDelay(i * 700, withRepeat(withTiming(1, { duration: 2100, easing: Easing.out(Easing.quad), reduceMotion: ReduceMotion.System }), -1, false)));
+  }, [k, i]);
+  const style = useAnimatedStyle(() => ({ opacity: k.get() < 0.15 ? k.get() / 0.15 : 1 - k.get(), transform: [{ translateX: k.get() * 14 }, { translateY: -k.get() * 30 }, { scale: 0.7 + k.get() * 0.5 }] }));
+  return <Animated.Text style={[{ position: "absolute", left: x, top: y, fontFamily: "Manrope_700Bold", fontSize: 14, color: "white" }, style]}>z</Animated.Text>;
+}
+function AsleepArt({ width }: { width: number }) {
+  const cx = width / 2,
+    cy = 92;
+  const breath = useSharedValue(0);
+  useEffect(() => {
+    breath.set(withRepeat(withTiming(1, { duration: 2200, easing: Easing.inOut(Easing.quad), reduceMotion: ReduceMotion.System }), -1, true));
+  }, [breath]);
+  const bird = useAnimatedStyle(() => ({ transform: [{ scale: 1 + breath.get() * 0.04 }, { translateY: -breath.get() * 1.5 }] }));
+  return (
+    <View style={{ width, height: CARD_H, borderRadius: 28, backgroundColor: violet, overflow: "hidden" }}>
+      <Backdrop width={width} id="p" bars={[[60, 52], [88, 40], [72, 48], [80, 36]]} />
+      <Svg width={width} height={CARD_H} style={{ position: "absolute" }}>
+        <Circle cx={cx} cy={cy} r={76} fill="none" stroke="#ffffff26" strokeWidth={1.5} strokeDasharray="3 7" />
+        <Circle cx={94} cy={cy} r={26} fill="#ffffff14" stroke="#ffffff33" strokeWidth={1.5} strokeDasharray="3 5" />
+        <Circle cx={width - 94} cy={cy} r={26} fill="#ffffff14" stroke="#ffffff33" strokeWidth={1.5} strokeDasharray="3 5" />
+        <Circle cx={cx} cy={cy} r={48} fill="#ffffff3a" />
+        <Circle cx={cx} cy={cy} r={42} fill="white" />
+      </Svg>
+      <Animated.View style={[{ position: "absolute", left: cx - 28, top: cy - 28 }, bird]}>
+        <Svg width={56} height={56} viewBox="0 0 256 256">
+          <Path d={BODY} fill={violet} />
+          <Path d="M78 110 Q91 120 104 110" stroke="white" strokeWidth={8} fill="none" strokeLinecap="round" />
+          <Path d="M138 110 Q151 120 164 110" stroke="white" strokeWidth={8} fill="none" strokeLinecap="round" />
+          <Path d={BEAK} fill="white" />
+        </Svg>
+      </Animated.View>
+      {[0, 1, 2].map((i) => (
+        <Zee key={i} i={i} x={cx + 26} y={cy - 40} />
+      ))}
+      <View style={{ position: "absolute", left: cx - 70, top: 158, width: 140, height: 26, borderRadius: 13, backgroundColor: "#ffffff26", alignItems: "center", justifyContent: "center" }}>
+        <Text style={{ fontSize: 12, fontWeight: "600", color: "white" }}>nothing to watch</Text>
+      </View>
+    </View>
+  );
+}
+
+// the empty positions tab hands you a first move: ready made trades with their real liquidation
+// distance, one tap to the ticket with everything filled in
+export type Suggestion = { m: LiveMarket; side: "long" | "short"; lev: number; margin: number; away: number };
+export function SuggestionCard({ s }: { s: Suggestion }) {
+  const up = s.m.change24h >= 0;
+  return (
+    <View style={{ backgroundColor: "white", borderRadius: 22, borderWidth: 1, borderColor: line, paddingHorizontal: 14, height: 76, flexDirection: "row", alignItems: "center", gap: 14 }}>
+      <Coin symbol={s.m.symbol} size={40} />
+      <View style={{ flex: 1, gap: 3 }}>
+        <Text style={{ fontSize: 15.5, fontWeight: "700", color: ink }}>
+          {s.m.symbol.toLowerCase()} {s.side}
+        </Text>
+        <Text style={{ fontSize: 12, fontWeight: "500", color: muted, fontVariant: ["tabular-nums"] }}>
+          {s.lev}x with {s.margin} ausd · {s.away.toFixed(0)}% from liquidation
+        </Text>
+      </View>
+      <View style={{ alignItems: "flex-end", gap: 8 }}>
+        <Text style={{ fontSize: 12.5, fontWeight: "700", color: up ? green : red, fontVariant: ["tabular-nums"] }}>
+          {up ? "+" : "−"}
+          {Math.abs(s.m.change24h).toFixed(1)}% today
+        </Text>
+        <View style={{ width: 30, height: 20, borderRadius: 10, backgroundColor: "#EFE5FF", alignItems: "center", justifyContent: "center" }}>
+          <Svg width={10} height={10} viewBox="0 0 12 12">
+            <Path d="M4.25 10.25 L8.5 6 L4.25 1.75" stroke={violet} strokeWidth={1.8} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          </Svg>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// family's skeleton row, pale bars where a row will be
+export function GhostRow({ opacity = 1 }: { opacity?: number }) {
+  const bar = (w: number, h = 12) => <View style={{ width: w, height: h, borderRadius: 6, backgroundColor: "#F0EDF3" }} />;
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 14, height: 76, paddingHorizontal: 14, opacity }}>
+      <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: "#F0EDF3" }} />
+      <View style={{ flex: 1, gap: 10 }}>
+        {bar(120, 13)}
+        {bar(70)}
+      </View>
+      <View style={{ alignItems: "flex-end", gap: 10 }}>
+        {bar(64, 13)}
+        {bar(40)}
       </View>
     </View>
   );

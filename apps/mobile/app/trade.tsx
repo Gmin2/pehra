@@ -28,16 +28,16 @@ function stopsFor(max: number) {
 
 export default function Trade() {
   const a = useApp(),
-    { symbol = "MON" } = useLocalSearchParams<{ symbol?: string }>(),
+    { symbol = "MON", side: sideParam, margin: marginParam, lev: levParam } = useLocalSearchParams<{ symbol?: string; side?: string; margin?: string; lev?: string }>(),
     { width } = useWindowDimensions(),
     address = a.stored?.address ?? a.session?.address ?? null,
     markets = useMarkets(),
     { account } = useAccount(address),
     m = markets.find((x) => x.symbol === symbol);
   const [range, setRange] = useState<Range>("1d"),
-    [side, setSide] = useState<"long" | "short">("long"),
-    [marginText, setMarginText] = useState("10"),
-    [lev, setLev] = useState(3),
+    [side, setSide] = useState<"long" | "short">(sideParam === "short" ? "short" : "long"),
+    [marginText, setMarginText] = useState(marginParam && Number(marginParam) > 0 ? marginParam : "10"),
+    [lev, setLev] = useState(Number(levParam) > 0 ? Number(levParam) : 3),
     [phase, setPhase] = useState<Phase>("idle"),
     [since, setSince] = useState(0),
     [fillMs, setFillMs] = useState(0),
