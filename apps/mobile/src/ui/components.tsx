@@ -551,7 +551,6 @@ export function Tabs({ active }: { active: string }) {
       {[
         ["activity", "history"],
         ["portfolio", "wallet"],
-        ["browser", "browser"],
       ].map(([path, icon]) => (
         <IconButton
           key={path}

@@ -127,6 +127,74 @@ export function MarketsArt({ markets, width }: { markets: LiveMarket[]; width: n
   );
 }
 
+// today's three biggest moves on a podium: the biggest in the middle and highest, second on the left,
+// third on the right. the blocks rise 3, 2, 1 and the coins drop onto them. before perpl answers it is
+// the same podium as empty blocks, breathing
+const PODIUM = [
+  { rank: 2, h: 64, r: 19 },
+  { rank: 1, h: 96, r: 24 },
+  { rank: 3, h: 46, r: 19 },
+];
+function Block({ rank, h, x, w, base, index, m, r }: { rank: number; h: number; x: number; w: number; base: number; index: number; m?: LiveMarket; r: number }) {
+  const rise = useSharedValue(0),
+    drop = useSharedValue(0);
+  const order = rank === 3 ? 0 : rank === 2 ? 1 : 2;
+  useEffect(() => {
+    rise.set(withDelay(order * 110, withSpring(1, { duration: 520, dampingRatio: 0.7, reduceMotion: ReduceMotion.System })));
+  }, [rise, order]);
+  useEffect(() => {
+    if (!m) return;
+    drop.set(0);
+    drop.set(withDelay(300 + order * 110, withSpring(1, { duration: 560, dampingRatio: 0.55, reduceMotion: ReduceMotion.System })));
+  }, [m?.symbol, drop, order]);
+  const block = useAnimatedStyle(() => ({ height: h * rise.get(), top: base - h * rise.get() }));
+  const onTop = useAnimatedStyle(() => ({ opacity: drop.get() > 0.02 ? 1 : 0, transform: [{ translateY: base - h - (1 - drop.get()) * 40 }] }));
+  const up = (m?.change24h ?? 0) >= 0;
+  return (
+    <>
+      <Animated.View style={[{ position: "absolute", left: x - w / 2, width: w, borderRadius: 14, backgroundColor: rank === 1 ? "#ffffff40" : "#ffffff26", alignItems: "center", paddingTop: 6, overflow: "hidden" }, block]}>
+        <Text style={{ fontSize: rank === 1 ? 26 : 20, fontWeight: "700", color: "#ffffffe6" }}>{rank}</Text>
+      </Animated.View>
+      {m && (
+        <Animated.View style={[{ position: "absolute", left: x - 34, top: 0, width: 68, alignItems: "center" }, onTop]}>
+          <View style={{ position: "absolute", bottom: 26, padding: rank === 1 ? 5 : 3, borderRadius: 40, backgroundColor: "white" }}>
+            <Coin symbol={m.symbol} size={r * 2} />
+          </View>
+          <View style={{ position: "absolute", bottom: 2, width: 64, height: 20, borderRadius: 10, backgroundColor: "white", alignItems: "center", justifyContent: "center" }}>
+            <Text style={{ fontSize: 11.5, fontWeight: "700", color: up ? green : red, fontVariant: ["tabular-nums"] }}>{pctLabel(m.change24h)}</Text>
+          </View>
+        </Animated.View>
+      )}
+    </>
+  );
+}
+export function PodiumArt({ markets, width }: { markets: LiveMarket[]; width: number }) {
+  const top = [...markets].sort((a, b) => Math.abs(b.change24h) - Math.abs(a.change24h)).slice(0, 3);
+  const byRank = [top[1], top[0], top[2]];
+  const base = CARD_H - 18,
+    w = 92,
+    gap = 10,
+    cx = width / 2;
+  const k = useSharedValue(0);
+  useEffect(() => {
+    k.set(markets.length ? 1 : withRepeat(withTiming(0.5, { duration: 800 }), -1, true));
+  }, [markets.length, k]);
+  const breathe = useAnimatedStyle(() => ({ opacity: markets.length ? 1 : 0.6 + 0.4 * k.get() }));
+  return (
+    <View style={{ width, height: CARD_H, borderRadius: 28, backgroundColor: violet, overflow: "hidden" }}>
+      <Svg width={width} height={CARD_H} style={{ position: "absolute" }}>
+        <Rect x={14} y={16} width={width - 28} height={CARD_H + 60} rx={40} fill="none" stroke="#ffffff1f" strokeWidth={10} />
+      </Svg>
+      <Text style={{ position: "absolute", top: 20, width, textAlign: "center", fontSize: 12.5, fontWeight: "600", color: "#ffffffcc" }}>{markets.length ? "today’s biggest moves" : "reading perpl’s markets"}</Text>
+      <Animated.View style={[{ position: "absolute", left: 0, top: 0, width, height: CARD_H }, breathe]}>
+        {PODIUM.map((p, i) => (
+          <Block key={p.rank} rank={p.rank} h={p.h} r={p.r} w={w} x={cx + (i - 1) * (w + gap)} base={base} index={i} m={byRank[i]} />
+        ))}
+      </Animated.View>
+    </View>
+  );
+}
+
 // the bird in the middle opens its eyes by how close the closest position is, the two positions
 // nearest liquidation sit either side, two markets you dont hold fade at the edges
 export function PositionsArt({ health, markets, threshold, open, width }: { health: PositionHealth[]; markets: LiveMarket[]; threshold: number; open: number; width: number }) {

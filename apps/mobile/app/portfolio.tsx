@@ -7,8 +7,11 @@ import { Stack } from "expo-router";
 import Animated, { FadeIn, FadeInDown, LinearTransition, ReduceMotion, ZoomIn, useSharedValue, withSpring } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import { Screen, Tap, Button, MorphText, Tabs, IconButton, s } from "../src/ui/components";
-import { MarketsArt, PositionsArt, PositionCard, Shield, SuggestionCard, GhostRow, type Suggestion } from "../src/ui/Home";
+import { PodiumArt, PositionsArt, PositionCard, Shield, SuggestionCard, GhostRow, type Suggestion } from "../src/ui/Home";
 import { freshLiquidationPrice, maxLeverage } from "@pehra/perpl";
+import { Segmented } from "../src/ui/Trade";
+
+const SORTS = ["calm", "movers", "leverage"] as const;
 import { Text } from "../src/ui/Text";
 import { useApp } from "../src/ui/store";
 import { colors, space } from "../src/ui/theme";
@@ -60,20 +63,39 @@ function Header({ address, open }: { address?: string; open: number }) {
   );
 }
 
-function MarketRow({ m, onPress }: { m: LiveMarket; onPress: () => void }) {
+// room at 3x: how far liquidation would sit if you opened here at 3x (or the market's max if lower)
+const roomAt3 = (m: LiveMarket) => {
+  const lev = Math.min(3, maxLeverage(m.market));
+  const liq = freshLiquidationPrice(m.market, "long", m.mark, lev);
+  return m.mark > 0 ? ((m.mark - liq) / m.mark) * 100 : 0;
+};
+
+function MarketRow({ m, index, onPress }: { m: LiveMarket; index: number; onPress: () => void }) {
   const up = m.change24h >= 0;
+  const room = roomAt3(m);
+  const col = room < 15 ? "#9A6B1C" : green;
   return (
-    <Tap onPress={onPress} onPressIn={() => prefetchCandles(m.market)} accessibilityLabel={`${m.symbol} perp`} innerStyle={{ height: 72, flexDirection: "row", alignItems: "center", gap: 12 }}>
-      <Coin symbol={m.symbol} />
-      <View style={{ flex: 1, gap: 4 }}>
-        <Text style={{ fontSize: 16, fontWeight: "600", color: ink }}>{m.symbol.toLowerCase()}</Text>
-        <Text style={{ fontSize: 13, color: muted, fontWeight: "500" }}>up to {Math.round(m.market.config.initial_margin / 10) / 10}x · funding {(m.fundingRate * 100).toFixed(3)}%</Text>
-      </View>
-      <View style={{ alignItems: "flex-end", gap: 4 }}>
-        <Text style={{ fontSize: 16, fontWeight: "600", color: ink, fontVariant: ["tabular-nums"] }}>${price(m, m.mark)}</Text>
-        <Text style={{ fontSize: 13, fontWeight: "600", color: up ? green : red, fontVariant: ["tabular-nums"] }}>{pct(m.change24h)}</Text>
-      </View>
-    </Tap>
+    <Animated.View entering={FadeInDown.delay(index * 45).springify().damping(20).reduceMotion(ReduceMotion.System)} layout={LinearTransition.springify().damping(22)}>
+      <Tap onPress={onPress} onPressIn={() => prefetchCandles(m.market)} accessibilityLabel={`${m.symbol} perp`} innerStyle={{ height: 68, flexDirection: "row", alignItems: "center", gap: 12 }}>
+        <Coin symbol={m.symbol} />
+        <View style={{ flex: 1, gap: 7 }}>
+          <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8 }}>
+            <Text style={{ fontSize: 16, fontWeight: "600", color: ink }}>{m.symbol.toLowerCase()}</Text>
+            <Text style={{ fontSize: 12, fontWeight: "600", color: muted }}>up to {maxLeverage(m.market)}x</Text>
+          </View>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <View style={{ width: 84, height: 5, borderRadius: 3, backgroundColor: "#F0EDF3", overflow: "hidden" }}>
+              <View style={{ width: `${Math.min(100, (room / 30) * 100)}%`, height: 5, borderRadius: 3, backgroundColor: col }} />
+            </View>
+            <Text style={{ fontSize: 11.5, fontWeight: "600", color: col, fontVariant: ["tabular-nums"] }}>{room.toFixed(0)}% room at 3x</Text>
+          </View>
+        </View>
+        <View style={{ alignItems: "flex-end", gap: 4 }}>
+          <Text style={{ fontSize: 16, fontWeight: "600", color: ink, fontVariant: ["tabular-nums"] }}>${price(m, m.mark)}</Text>
+          <Text style={{ fontSize: 13, fontWeight: "600", color: up ? green : red, fontVariant: ["tabular-nums"] }}>{pct(m.change24h, 1)}</Text>
+        </View>
+      </Tap>
+    </Animated.View>
   );
 }
 
@@ -92,6 +114,14 @@ export default function Portfolio() {
   const total = balance === null ? null : balance + inPositions + pnl;
   const open = riskOpenness(health, threshold);
   const sorted = useMemo(() => [...markets].sort((x, y) => (x.symbol === "MON" ? -1 : y.symbol === "MON" ? 1 : 0)), [markets]);
+  const [sort, setSort] = useState<(typeof SORTS)[number]>("calm");
+  const listed = useMemo(() => {
+    const l = [...markets];
+    if (sort === "calm") l.sort((x, y) => roomAt3(y) - roomAt3(x));
+    if (sort === "movers") l.sort((x, y) => Math.abs(y.change24h) - Math.abs(x.change24h));
+    if (sort === "leverage") l.sort((x, y) => maxLeverage(y.market) - maxLeverage(x.market));
+    return l;
+  }, [markets, sort]);
   const held = health.map((h) => h.symbol).join();
   // two first trades for an empty tab: mon and the next market by 24h move, long at up to 3x
   const suggestions = useMemo<Suggestion[]>(() => {
@@ -133,7 +163,7 @@ export default function Portfolio() {
           </View>
         </Tap>
         <View style={{ marginHorizontal: -8, marginBottom: 10 }}>
-          {tab === "markets" ? <MarketsArt markets={sorted} width={width - 32} /> : <PositionsArt health={health} markets={sorted} threshold={threshold} open={open} width={width - 32} />}
+          {tab === "markets" ? <PodiumArt markets={sorted} width={width - 32} /> : <PositionsArt health={health} markets={sorted} threshold={threshold} open={open} width={width - 32} />}
         </View>
         <View style={[space.between, { height: 52 }]}>
           <View style={[space.row, { gap: 18 }]}>
@@ -165,10 +195,17 @@ export default function Portfolio() {
         </View>
         {tab === "markets" ? (
           <Animated.View key="markets" entering={FadeIn.duration(160).reduceMotion(ReduceMotion.System)}>
+            <View style={{ marginBottom: 6 }}>
+              <Segmented options={SORTS} value={sort} onChange={setSort} dark={false} />
+            </View>
             {sorted.length === 0 ? (
-              <Text style={[space.copy, { paddingVertical: 30, textAlign: "center" }]}>loading markets from perpl…</Text>
+              <View style={{ marginHorizontal: -14 }}>
+                {[0, 1, 2, 3].map((i) => (
+                  <GhostRow key={i} opacity={1 - i * 0.2} />
+                ))}
+              </View>
             ) : (
-              sorted.map((m) => <MarketRow key={m.id} m={m} onPress={() => openTrade(m.symbol)} />)
+              listed.map((m, i) => <MarketRow key={m.id} m={m} index={i} onPress={() => openTrade(m.symbol)} />)
             )}
           </Animated.View>
         ) : (
