@@ -111,6 +111,12 @@ export function Mark({ name, size = 38 }: { name: "back" | "chevron" | "close"; 
     </View>
   );
 }
+// a tick drawn at its own size, the icon set's check reads flipped when small
+export const Tick = ({ size = 14, color = "white" }: { size?: number; color?: string }) => (
+  <Svg width={size} height={size} viewBox="0 0 14 14">
+    <Path d="M2.8 7.4 L5.8 10.2 L11.2 4" stroke={color} strokeWidth={2.2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+  </Svg>
+);
 // the open mark at row size
 export const Chevron = () => <Mark name="chevron" size={26} />;
 
@@ -433,7 +439,7 @@ export function Check({
         justifyContent: "center",
       }}
     >
-      {checked && <Icon name="check" size={14} color="white" />}
+      {checked && <Tick />}
     </View>
   );
 }

@@ -157,7 +157,7 @@ export default function Onboarding() {
       next("ready");
     }
   };
-  const labels = step === "delegating" ? ["Passkey signature", "Guard session opened", "Notifications on"] : ["Passkey made", "100 test dollars added", "Perpl account opened"];
+  const labels = step === "delegating" ? ["passkey signature", "guard session opened", "notifications on"] : ["passkey ready", "test dollars in", "perpl account open"];
   const workSteps = labels.map((label, i) => ({ label, done: phase > i, active: phase === i }));
   // preview only: walk the steps on a timer so the screen can be judged without a passkey
   useEffect(() => {

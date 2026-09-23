@@ -22,12 +22,13 @@ import Animated, {
   Easing,
   ReduceMotion,
   useReducedMotion,
+  cancelAnimation,
 } from "react-native-reanimated";
 import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { scheduleOnRN } from "react-native-worklets";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
-import { Tap, Icon } from "./components";
+import { Tap, Icon, Tick as TickMark } from "./components";
 import { images } from "./assets";
 import logoData from "./logos.json";
 import { Rough, type RoughType } from "./Rough";
@@ -166,7 +167,7 @@ export function SquareCheck({ checked, color = accent }: { checked: boolean; col
     >
       {checked && (
         <Animated.View entering={ZoomIn.springify().damping(14).stiffness(320).reduceMotion(ReduceMotion.System)}>
-          <Icon name="check" size={14} color="white" />
+          <TickMark />
         </Animated.View>
       )}
     </View>
@@ -698,14 +699,21 @@ export function PositionStack({ width }: { width: number }) {
 export type WorkStep = { label: string; done: boolean; active: boolean };
 function Tick({ done, active }: { done: boolean; active: boolean }) {
   const spin = useSharedValue(0);
+  // a finished step drops the spin, or the tick inherits whatever angle the spinner stopped at
   useEffect(() => {
     if (active) spin.set(withRepeat(withTiming(360, { duration: 900, easing: Easing.linear }), -1, false));
+    else {
+      cancelAnimation(spin);
+      spin.set(0);
+    }
   }, [active, spin]);
   const rot = useAnimatedStyle(() => ({ transform: [{ rotate: `${spin.get()}deg` }] }));
   if (done)
     return (
-      <Animated.View entering={ZoomIn.springify().damping(13).stiffness(300).reduceMotion(ReduceMotion.System)} style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: violet, alignItems: "center", justifyContent: "center" }}>
-        <Icon name="check" size={13} color="white" />
+      <Animated.View key="done" entering={ZoomIn.duration(200).reduceMotion(ReduceMotion.System)} style={{ transform: [{ rotate: "0deg" }], width: 26, height: 26, borderRadius: 13, backgroundColor: violet, alignItems: "center", justifyContent: "center" }}>
+        <Svg width={14} height={14} viewBox="0 0 14 14">
+          <Path d="M2.8 7.4 L5.8 10.2 L11.2 4" stroke="white" strokeWidth={2.2} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </Svg>
       </Animated.View>
     );
   if (active)
