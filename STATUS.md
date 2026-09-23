@@ -22,7 +22,7 @@ the one file that says where the build is. updated every session. this folder is
 | t6 | phone does t1 to t3, stopwatched | pass | 26.2s cold on the phone at first, 5.3 to 7.4s cold after hardening (harness), 1.5s returning user on the phone with the socket live, account 653 |
 | t7 | the guard, server side session delegated by the passkey, adds margin | pass, no push yet | services/api/scripts/guard-drill.ts, phone: enroll 1.1s, trade via guard 1.1s tap to fill, status 46ms |
 | t7b | push notification with add margin action | pass | firebase project pehra-ae5c6, fcm from the server, "pehra added margin" landed on the phone with the app in the background |
-| t8 | funding sheet (agora pair) | | |
+| t8 | funding through agora's instant settlement pair | pass, ui next | spikes/t8.ts and t8b.ts: usdc (CTK) to AUSD 1:1 no fee, into perpl as one batch 2.2s, withdraw back 2.0s; a third party can grant the swapper role on testnet, so the server whitelists users; /drip/usdc gives 50 test usdc and gas |
 | t9 | envio history | | |
 | t10 | offline flatten all | | |
 

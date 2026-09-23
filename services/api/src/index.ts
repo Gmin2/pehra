@@ -2,7 +2,7 @@
 // can do the perpl setup itself. the dev key pays. later: enrollment proxy, the guard, push.
 import { encodeFunctionData, formatEther, formatUnits, isAddress, parseEther, type Address } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
-import { publicClient, erc20Abi, faucetAbi, AUSD_FAUCET, NETWORKS, GAS, sendBatch, nextNonce, feeCaps, enrollPayload, enrollFinish, fromCns, fromPrice, fromSize, Reason, type Call, type EnrollPayload, type GuardSettings } from '@pehra/perpl'
+import { publicClient, erc20Abi, faucetAbi, AUSD_FAUCET, NETWORKS, GAS, AGORA, AGORA_GAS, whitelisterAbi, isSwapper, pairState, sendBatch, nextNonce, feeCaps, enrollPayload, enrollFinish, fromCns, fromPrice, fromSize, Reason, type Call, type EnrollPayload, type GuardSettings } from '@pehra/perpl'
 import { Guard } from './guard'
 import { pushReady, registerToken, sendPush } from './push'
 
@@ -17,6 +17,11 @@ const DRIP_AUSD = 200_000_000n
 const MIN_AUSD = 100_000_000n
 const REFILL_BELOW = 2_000_000_000n
 const cooldown = new Map<string, number>()
+const usdcCooldown = new Map<string, number>()
+// the fund screen's test money: 50 test usdc (agora's CTK), the swapper role on the pair, and enough MON
+// for the four transaction fund batch (about 0.055 MON of limits at testnet fees)
+const DRIP_USDC = 50n * 10n ** 18n
+const USDC_MON = parseEther('0.1')
 let refilling = false
 
 // the agora faucet has a cooldown, so the payer keeps its own AUSD stock and tops up in the background
@@ -66,6 +71,29 @@ async function drip(address: Address) {
   }
 }
 
+async function dripUsdc(address: Address) {
+  const a = AGORA.testnet
+  const [mon, usdc, swapper, nonce] = await Promise.all([
+    pub.getBalance({ address }),
+    pub.readContract({ address: a.usdc, abi: erc20Abi, functionName: 'balanceOf', args: [address] }),
+    isSwapper(pub, address),
+    payerNonce ?? nextNonce(pub, payer.address),
+  ])
+  const calls: Call[] = []
+  if (!swapper) calls.push({ to: a.whitelister, gas: AGORA_GAS.whitelist, data: encodeFunctionData({ abi: whitelisterAbi, functionName: 'setApprovedSwapper', args: [address] }) })
+  if (mon < USDC_MON) calls.push({ to: address, value: USDC_MON - mon, gas: GAS.transfer })
+  if (usdc < DRIP_USDC / 5n) calls.push({ to: a.usdc, gas: GAS.erc20Transfer, data: encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [address, DRIP_USDC] }) })
+  payerNonce = nonce + calls.length
+  try {
+    const sent = await sendBatch(pub, payer, calls, { nonce })
+    const block = sent.reduce((b, x) => (x.receipt.blockNumber > b ? x.receipt.blockNumber : b), 0n)
+    return { txs: sent.map(x => x.hash), block, whitelisted: !swapper, usdc: Number(formatUnits(usdc + (usdc < DRIP_USDC / 5n ? DRIP_USDC : 0n), 18)) }
+  } catch (e) {
+    payerNonce = null
+    throw e
+  }
+}
+
 const guard = new Guard()
 const pendingEnroll = new Map<string, EnrollPayload>()
 
@@ -101,6 +129,26 @@ const server = Bun.serve({
         console.error('drip failed', address, msg)
         return json({ error: msg }, 500)
       }
+    }
+    if (url.pathname === '/drip/usdc' && req.method === 'POST') {
+      const body = await req.json().catch(() => ({})) as { address?: string }
+      if (!body.address || !isAddress(body.address)) return json({ error: 'bad address' }, 400)
+      const last = usdcCooldown.get(body.address.toLowerCase()) ?? 0
+      if (Date.now() - last < 10 * 60_000) return json({ error: 'cooldown' }, 429)
+      try {
+        const t0 = Date.now()
+        const r = await dripUsdc(body.address)
+        usdcCooldown.set(body.address.toLowerCase(), Date.now())
+        console.log('drip usdc', body.address, r.txs.length, 'txs', r.whitelisted ? 'whitelisted' : '', `${Date.now() - t0}ms`)
+        return json({ ...r, block: r.block.toString(), ms: Date.now() - t0 })
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'drip failed'
+        console.error('drip usdc failed', body.address, msg)
+        return json({ error: msg }, 500)
+      }
+    }
+    if (url.pathname === '/agora/pair') {
+      try { return json(await pairState(pub)) } catch (e) { return json({ error: e instanceof Error ? e.message : 'pair read failed' }, 500) }
     }
     // guard enrollment: the server makes the key, the passkey signs the delegation, the server keeps the key
     if (url.pathname === '/guard/start' && req.method === 'POST') {

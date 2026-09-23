@@ -11,6 +11,7 @@ export const erc20Abi = parseAbi([
 export const exchangeAbi = parseAbi([
   'function createAccount(uint256 amountCNS) returns (uint256)',
   'function depositCollateral(uint256 amountCNS)',
+  'function withdrawCollateral(uint256 amountCNS)',
   'function allowOrderForwarding(bool allow)',
   'function getMinAccountOpenCNS() view returns (uint256)',
 ])
