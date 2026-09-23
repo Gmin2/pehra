@@ -4,7 +4,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { View, Image, Modal, Pressable, StyleSheet, useWindowDimensions } from "react-native";
 import { Text } from "./Text";
-import Svg, { Rect, Path, Circle, G, Line, Defs, LinearGradient, Stop, Mask, Text as SvgText } from "react-native-svg";
+import Svg, { Rect, Path, Circle, G, Line, Defs, LinearGradient, Stop, Mask, ClipPath, Image as SvgImage, Text as SvgText } from "react-native-svg";
+import { coinImages } from "./Coin";
 import Animated, {
   FadeIn,
   FadeOut,
@@ -456,8 +457,7 @@ function Art({ kind, width }: { kind: Lesson["art"]; width: number }) {
             <Rect x={155} y={103} width={552} height={700} rx={118} fill="none" stroke={rail} strokeWidth={26} />
             <Rect x={330} y={148} width={187} height={56} rx={28} fill={soft} />
             <Rect x={197} y={384} width={453} height={300} rx={32} fill={soft} />
-            <Circle cx={250} cy={486} r={30} fill="#ffffff40" />
-            <Logo name="monad" cx={250} cy={486} size={32} />
+            <SvgImage href={coinImages.MON} x={220} y={456} width={60} height={60} />
             <SvgText x={296} y={480} fontSize={28} fontWeight="700" fill="white">MON long</SvgText>
             <SvgText x={296} y={510} fontSize={21} fill="#ffffffaa">3x · 100 AUSD</SvgText>
             <SvgText x={226} y={578} fontSize={21} fill="#ffffffcc">distance to liquidation</SvgText>
@@ -473,26 +473,41 @@ function Art({ kind, width }: { kind: Lesson["art"]; width: number }) {
       )}
       {kind === "session" && (
         <G>
-          <Fade id="f2" from={0.72} />
+          <Fade id="f2" from={0.66} />
           <G mask="url(#f2)">
-            <Rect x={92} y={-120} width={660} height={900} rx={120} fill="none" stroke={softer} strokeWidth={30} />
-            <Rect x={149} y={466} width={550} height={250} rx={30} fill={softer} />
-            {["add margin", "your order", "stop loss", "take profit"].map((t, i) => (
-              <G key={t}>
-                <SvgText x={214} y={528 + i * 47} fontSize={26} fill="#ffffff80" textAnchor="middle">{i + 1}</SvgText>
-                <SvgText x={241} y={528 + i * 47} fontSize={27} fill="white">{t}</SvgText>
-                <Line x1={241} x2={430} y1={544 + i * 47} y2={544 + i * 47} stroke="#ffffff26" strokeWidth={2} />
-                <SvgText x={472} y={528 + i * 47} fontSize={26} fill="#ffffff80" textAnchor="middle">{i + 5}</SvgText>
-                <SvgText x={500} y={528 + i * 47} fontSize={27} fill="white">{["1 AUSD", "100 MON", "−6%", "+12%"][i]}</SvgText>
-                <Line x1={500} x2={690} y1={544 + i * 47} y2={544 + i * 47} stroke="#ffffff26" strokeWidth={2} />
+            <Rect x={96} y={-140} width={655} height={940} rx={120} fill="none" stroke={softer} strokeWidth={30} />
+            <Rect x={150} y={452} width={548} height={260} rx={30} fill={softer} />
+            {[
+              ["add margin", "+1 AUSD"],
+              ["your order", "100 MON"],
+              ["stop loss", "−6%"],
+              ["take profit", "+12%"],
+            ].map(([a, b], i) => (
+              <G key={a}>
+                <SvgText x={206} y={514 + i * 46} fontSize={25} fill="#ffffff80" textAnchor="middle">{i + 1}</SvgText>
+                <SvgText x={232} y={514 + i * 46} fontSize={27} fontWeight="600" fill="white">{a}</SvgText>
+                <SvgText x={640} y={514 + i * 46} fontSize={25} fill="#ffffffb3" textAnchor="end">{b}</SvgText>
+                <Line x1={232} x2={640} y1={530 + i * 46} y2={530 + i * 46} stroke="#ffffff22" strokeWidth={2} />
               </G>
             ))}
           </G>
-          <Circle cx={423} cy={228} r={168} fill="none" stroke="#ffffff45" strokeWidth={3} />
-          <Coin cx={187} cy={228} r={58} o={0.45} logo="btc" />
-          <Coin cx={662} cy={228} r={58} o={0.45} logo="eth" />
-          <Coin cx={282} cy={228} r={82} o={0.95} logo="ausd" />
-          <Coin cx={559} cy={228} r={82} o={0.95} logo="monad" />
+          <Defs>
+            {[["cb", 170, 228, 54], ["cl", 288, 228, 74], ["cr", 558, 228, 74], ["ce", 676, 228, 54]].map(([id, cx, cy, r]) => (
+              <ClipPath key={id as string} id={id as string}>
+                <Circle cx={cx as number} cy={cy as number} r={r as number} />
+              </ClipPath>
+            ))}
+          </Defs>
+          <Circle cx={423} cy={228} r={176} fill="none" stroke="#ffffff40" strokeWidth={3} />
+          {/* the row of real coins, outer two faded like family's, each with a thin paper ring */}
+          <SvgImage href={coinImages.BTC} x={116} y={174} width={108} height={108} clipPath="url(#cb)" />
+          <SvgImage href={coinImages.ETH} x={622} y={174} width={108} height={108} clipPath="url(#ce)" />
+          <Circle cx={170} cy={228} r={54} fill={violet} opacity={0.5} />
+          <Circle cx={676} cy={228} r={54} fill={violet} opacity={0.5} />
+          <Circle cx={288} cy={228} r={80} fill={violet} />
+          <SvgImage href={coinImages.AUSD} x={214} y={154} width={148} height={148} clipPath="url(#cl)" />
+          <Circle cx={558} cy={228} r={80} fill={violet} />
+          <SvgImage href={coinImages.MON} x={484} y={154} width={148} height={148} clipPath="url(#cr)" />
           <Circle cx={423} cy={228} r={112} fill="#ffffff3a" />
           <Circle cx={423} cy={228} r={100} fill="white" />
           <G transform="translate(423 228) rotate(-40)">
@@ -625,12 +640,8 @@ export function LessonTray({
 // welcome: three open positions fanned like family's card stack, the front one lifts in with its
 // distance to liquidation. it shows what pehra is before any sentence does.
 function MarketCoin({ logo, size = 30 }: { logo: string; size?: number }) {
-  return (
-    <Svg width={size} height={size}>
-      <Circle cx={size / 2} cy={size / 2} r={size / 2} fill="#ffffff33" />
-      <Logo name={logo} cx={size / 2} cy={size / 2} size={size * 0.58} />
-    </Svg>
-  );
+  const symbol = logo === "monad" ? "MON" : logo.toUpperCase();
+  return <Image source={coinImages[symbol] ?? coinImages.MON} style={{ width: size, height: size, borderRadius: size / 2 }} />;
 }
 export function PositionStack({ width }: { width: number }) {
   const rise = useSharedValue(26),
