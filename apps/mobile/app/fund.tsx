@@ -20,6 +20,7 @@ import { signIn, type Session } from "../src/account";
 import { walletBalances, pool, fundFromUsdc, depositAusd, withdrawToUsdc, testUsdc, waitFinal, ensureGas, type Wallet, type Moved } from "../src/fund";
 import type { PairState } from "@pehra/perpl";
 import { Tray } from "../src/ui/Trade";
+import { reportActivity } from "../src/guard";
 import { CountUp, Roll } from "../src/ui/Position";
 
 const ink = "#28243E",
@@ -80,6 +81,10 @@ export default function Fund() {
       const [s, fundedAt] = await Promise.all([session(), address ? ensureGas(address, w?.mon ?? 0) : Promise.resolve(undefined)]);
       const r = k === "usdc" ? await fundFromUsdc(s, amount, fundedAt) : k === "ausd" ? await depositAusd(s, amount, fundedAt) : await withdrawToUsdc(s, amount, fundedAt);
       log(`fund ${k} ${amount}: ${r.hashes.length} txs, blocks ${r.blocks.join(",")}, ${r.ms}ms`);
+      if (address) {
+        const tx = r.hashes[r.hashes.length - 1];
+        void reportActivity(address, k === "withdraw" ? { kind: "withdrew", amount: r.out, tx, text: `${amount} ausd out of perpl to ${r.out} usdc through agora` } : { kind: "funded", amount: r.out, tx, text: k === "usdc" ? `${amount} usdc to ${r.out} ausd through agora` : `${amount} ausd from your wallet` });
+      }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setMoved(r);
       refresh();

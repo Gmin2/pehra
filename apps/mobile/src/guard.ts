@@ -6,7 +6,13 @@ import { API } from './trade'
 
 type Wire = { types: Record<string, { name: string; type: string }[]>; domain: { name: string; version: string; chainId: string; verifyingContract?: `0x${string}`; salt?: `0x${string}` }; primaryType: string; message: Record<string, unknown> }
 export type PositionHealth = { pid: number; side: string; entry: number; mark: number; liq: number; distance: number; collateral: number; size: number; symbol: string; lv: number; mkt: number; stop?: number; take?: number }
-export type GuardEvent = { at: number; pid?: number; symbol?: string; kind: 'watch' | 'warn' | 'add' | 'added' | 'failed' | 'session' | 'opened' | 'closed' | 'bracket' | 'manual'; text: string; distancePct?: number; addAusd?: number; price?: number }
+export type Snapshot = { distancePct: number; collateral: number }
+export type GuardEvent = {
+  at: number; pid?: number; symbol?: string
+  kind: 'watch' | 'warn' | 'add' | 'added' | 'failed' | 'session' | 'opened' | 'closed' | 'bracket' | 'manual' | 'funded' | 'withdrew'
+  text: string; distancePct?: number; addAusd?: number; price?: number; amount?: number; pnl?: number
+  side?: string; lv?: number; before?: Snapshot; after?: Snapshot; tx?: string
+}
 export type GuardState = { enrolled: boolean; live?: boolean; balance?: number; settings?: { enabled: boolean; thresholdPct: number; targetPct: number; minAddAusd: number; maxAddAusdPerDay: number }; health?: PositionHealth[]; events?: GuardEvent[] }
 
 const post = async <T,>(path: string, body: unknown): Promise<T> => {
@@ -36,3 +42,7 @@ export const relayCloseAll = (address: string) => post<{ closed: number }>('/clo
 export const relayClose = (address: string, pid: number) => post<{ price: number; pnl: number; collateral: number }>('/close', { address, pid })
 export const relayBrackets = (address: string, pid: number, b: { stop?: number; take?: number }) => post<{ stop?: number; take?: number }>('/brackets', { address, pid, ...b })
 export const relayAddMargin = (address: string, pid: number, ausd: number) => post<{ health?: { distance: number; collateral: number } }>('/guard/add', { address, pid, ausd })
+
+// the phone's own agora batches go into the same history as the guard's actions
+export const reportActivity = (address: string, e: { kind: 'funded' | 'withdrew'; amount: number; tx?: string; text: string }) =>
+  post<{ ok: boolean }>('/activity', { address, ...e }).catch(() => ({ ok: false }))
