@@ -152,7 +152,8 @@ export default function Fund() {
             right={<Pill label="testnet" />}
             onPress={drip === "idle" ? askTestUsdc : undefined}
           />
-          <Option index={3} icon={<Glyph name="credit-cards" size={30} color={faint} />} title="bank or another chain" sub="agora routes · needs a verified account" right={<Text style={{ fontSize: 11.5, fontWeight: "600", color: faint }}>later</Text>} dim onPress={() => a.toast("agora routes need a verified account, that comes after testnet")} />
+          <Option index={3} icon={<Glyph name="circle-arrow-down" size={30} />} title="from another wallet" sub="your address and qr, for usdc, ausd or mon" onPress={() => a.go("/receive")} />
+          <Option index={4} icon={<Glyph name="credit-cards" size={30} color={faint} />} title="bank or another chain" sub="agora routes · needs a verified account" right={<Text style={{ fontSize: 11.5, fontWeight: "600", color: faint }}>later</Text>} dim onPress={() => a.toast("agora routes need a verified account, that comes after testnet")} />
         </View>
         {p && (
           <Animated.View entering={FadeIn.delay(500)}>
