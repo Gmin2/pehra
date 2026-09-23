@@ -9,6 +9,8 @@ import Animated, { Easing, ReduceMotion, useAnimatedProps, useAnimatedStyle, use
 import { Text } from "./Text";
 import { Coin } from "./Coin";
 import { PehraBird } from "./PehraBird";
+import { glyphs } from "./glyphs";
+import { tint } from "./Glyph";
 import type { LiveMarket } from "../live";
 import type { PositionHealth } from "../guard";
 
@@ -24,14 +26,13 @@ const spring = { duration: 700, dampingRatio: 0.75, reduceMotion: ReduceMotion.S
 
 export const distanceColor = (away: number, threshold: number) => (away < threshold ? red : away < 15 ? amber : green);
 
-// nucleo's shield-check, filled, the check cut out in the background colour
+// the guard's mark: the two tone shield (glyphs.ts) with nucleo's check cut through it
 export function Shield({ size = 14, color = violet, cut = "white" }: { size?: number; color?: string; cut?: string }) {
+  const g = glyphs.shield;
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Path
-        d="M20.3777 12.9014L21 4.5L20.4499 4.445C17.508 4.1508 14.6445 3.32223 12 2C9.35553 3.32223 6.49199 4.1508 3.55006 4.44499L3 4.5L3.62236 12.9014C3.85658 16.0632 5.73712 18.8685 8.57285 20.2864L12.0001 22L15.4272 20.2864C18.263 18.8685 20.1435 16.0632 20.3777 12.9014Z"
-        fill={color}
-      />
+      <Path d={g.back[0].d} fill={tint(color)} />
+      <Path d={g.front[0].d} fill={color} />
       <Path d="M8.5 12L11 14.5L16 9.5" stroke={cut} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" fill="none" />
     </Svg>
   );

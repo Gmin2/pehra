@@ -173,7 +173,7 @@ export default function Portfolio() {
               <View style={{ gap: 10, marginHorizontal: -8, paddingTop: 4 }}>
                 {health.map((h) => (
                   <Animated.View key={h.pid} layout={LinearTransition.duration(300)}>
-                    <Tap onPress={() => openTrade(h.symbol)} onPressIn={() => prefetchCandles(sorted.find((x) => x.symbol === h.symbol)?.market)} accessibilityLabel={`${h.symbol} ${h.side}`}>
+                    <Tap onPress={() => { Haptics.selectionAsync(); a.go(`/position?pid=${h.pid}`); }} onPressIn={() => prefetchCandles(sorted.find((x) => x.symbol === h.symbol)?.market)} accessibilityLabel={`${h.symbol} ${h.side}`}>
                       <PositionCard h={h} threshold={threshold} />
                     </Tap>
                   </Animated.View>

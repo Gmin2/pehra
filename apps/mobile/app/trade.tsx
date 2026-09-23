@@ -256,7 +256,7 @@ export default function Trade() {
         <Tap
           onPress={() => {
             setTray(false);
-            a.go("/portfolio");
+            a.go(opened ? `/position?pid=${opened.pid}` : "/portfolio");
           }}
           innerStyle={{ marginTop: 18, height: 54, borderRadius: 27, backgroundColor: ink, alignItems: "center", justifyContent: "center" }}
         >
