@@ -32,7 +32,7 @@ export class Guard {
     this.log = log
     this.market = new MarketDataSocket('testnet')
     if (existsSync(KEYS)) for (const s of JSON.parse(readFileSync(KEYS, 'utf8')) as Stored[]) this.stored.set(s.address.toLowerCase(), s)
-    if (existsSync(EVENTS)) for (const [a, list] of Object.entries(JSON.parse(readFileSync(EVENTS, 'utf8')) as Record<string, GuardEvent[]>)) this.events.set(a, list)
+    if (existsSync(EVENTS)) for (const [a, list] of Object.entries(JSON.parse(readFileSync(EVENTS, 'utf8')) as Record<string, GuardEvent[]>)) this.events.set(a, list.filter(e => e.kind !== 'session'))
   }
   private eventsTimer: ReturnType<typeof setTimeout> | null = null
   private persistEvents() {
@@ -72,10 +72,13 @@ export class Guard {
   private persist() { writeFileSync(KEYS, JSON.stringify([...this.stored.values()], null, 2)) }
 
   private emit(addr: string, e: Omit<GuardEvent, 'at'>) {
-    const list = this.events.get(addr) ?? []
-    list.unshift({ at: Date.now(), ...e })
-    this.events.set(addr, list.slice(0, 200))
-    this.persistEvents()
+    // reconnects happen every minute or so (perpl's ping timeout), they go to the log, not the history
+    if (e.kind !== 'session') {
+      const list = this.events.get(addr) ?? []
+      list.unshift({ at: Date.now(), ...e })
+      this.events.set(addr, list.slice(0, 200))
+      this.persistEvents()
+    }
     this.log(`guard ${addr.slice(0, 8)} ${e.kind} ${e.text}`)
     // the phone hears about warnings and margin adds, sessions and attempts stay in the log
     if (e.kind === 'warn') void sendPush(addr, 'pehra: close to liquidation', e.text, { kind: e.kind, pid: String(e.pid ?? ''), action: 'add' })
