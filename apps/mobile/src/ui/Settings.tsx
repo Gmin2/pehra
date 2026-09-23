@@ -3,6 +3,7 @@
 // for where the guard brings a position back to; and the daily limit as coin stacks.
 import { useEffect, useMemo, useState } from "react";
 import { View } from "react-native";
+import Svg, { Ellipse, G } from "react-native-svg";
 import Animated, { useAnimatedStyle, useSharedValue, withRepeat, withSequence, withSpring, withTiming, ZoomIn, ReduceMotion } from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { scheduleOnRN } from "react-native-worklets";
@@ -115,22 +116,44 @@ export function Ruler({ riders, value, onChange, fixed, mode, min = 1, max = MAX
   );
 }
 
-// the daily limit as stacks of five, dropping in with a bounce
+// the daily limit as stacks of five coins, each coin a rim and a face with a ring, dropping in
+const COIN_FACE = "#C9B25A",
+  COIN_RIM = "#8C7A2E",
+  COIN_RING = "#EADFA8";
+function Stack({ size }: { size: number }) {
+  const h = size * 0.34,
+    gap = size * 0.2;
+  const coins = 5,
+    total = h + gap * (coins - 1) + 4;
+  return (
+    <Svg width={size + 2} height={total}>
+      {Array.from({ length: coins }, (_, i) => {
+        const y = total - h / 2 - 2 - i * gap;
+        return (
+          <G key={i}>
+            <Ellipse cx={size / 2 + 1} cy={y + 3} rx={size / 2} ry={h / 2} fill={COIN_RIM} />
+            <Ellipse cx={size / 2 + 1} cy={y} rx={size / 2} ry={h / 2} fill={COIN_FACE} />
+            <Ellipse cx={size / 2 + 1} cy={y} rx={size * 0.32} ry={h * 0.3} fill="none" stroke={COIN_RING} strokeWidth={1.3} />
+          </G>
+        );
+      })}
+    </Svg>
+  );
+}
 export function CoinStacks({ amount }: { amount: number }) {
   const stacks = Math.max(1, Math.round(amount / 5));
-  const size = stacks > 6 ? 30 : 44;
+  const size = stacks > 6 ? 30 : 48;
   return (
-    <View style={{ backgroundColor: "white", borderRadius: 24, height: 150, paddingHorizontal: 12, alignItems: "center", justifyContent: "flex-end", paddingBottom: 18 }}>
+    <View style={{ backgroundColor: "white", borderRadius: 24, height: 150, paddingHorizontal: 12, alignItems: "center", justifyContent: "flex-end", paddingBottom: 20 }}>
       <Text style={{ position: "absolute", top: 12, fontSize: 11.5, fontWeight: "600", color: faint }}>each stack is 5 ausd</Text>
-      <View style={{ flexDirection: "row", gap: stacks > 6 ? 4 : 14, alignItems: "flex-end" }}>
+      <View style={{ flexDirection: "row", gap: stacks > 6 ? 5 : 16, alignItems: "flex-end" }}>
         {Array.from({ length: stacks }, (_, i) => (
-          <Animated.View key={i + ":" + stacks} entering={ZoomIn.delay(i * 40).springify().damping(12).reduceMotion(ReduceMotion.System)}>
-            {Array.from({ length: 5 }, (_, j) => (
-              <View key={j} style={{ width: size, height: size * 0.36, borderRadius: size, backgroundColor: j === 4 ? "#B8A24E" : "#A89240", borderWidth: 1.2, borderColor: "#8C7A2E", marginTop: j ? -size * 0.22 : 0 }} />
-            ))}
+          <Animated.View key={i + ":" + stacks} entering={ZoomIn.delay(i * 45).springify().damping(12).reduceMotion(ReduceMotion.System)}>
+            <Stack size={size} />
           </Animated.View>
         ))}
       </View>
+      <View style={{ position: "absolute", left: 24, right: 24, bottom: 16, height: 1, backgroundColor: "#EEEAF2" }} />
     </View>
   );
 }

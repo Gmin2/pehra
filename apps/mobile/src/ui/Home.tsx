@@ -100,7 +100,7 @@ function Floater({ m, x, base, scale, top, index }: { m: LiveMarket; x: number; 
           <Coin symbol={m.symbol} size={r * 2} />
         </View>
         <View style={{ position: "absolute", top: pillY + r + ring - 9, width: 44, height: 18, borderRadius: 9, alignItems: "center", justifyContent: "center", backgroundColor: top ? "white" : "#ffffff2e" }}>
-          <Text style={{ fontSize: 10.5, fontWeight: "700", color: top ? green : "white", fontVariant: ["tabular-nums"] }}>{pctLabel(m.change24h)}</Text>
+          <Text style={{ fontSize: 10.5, fontWeight: "700", color: top ? (up ? green : red) : "white", fontVariant: ["tabular-nums"] }}>{pctLabel(m.change24h)}</Text>
         </View>
       </Animated.View>
     </>

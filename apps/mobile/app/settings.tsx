@@ -77,7 +77,7 @@ export default function Settings() {
   };
 
   const row = (glyph: React.ReactNode, label: string, value: string, onPress?: () => void, right?: React.ReactNode, last = false) => (
-    <Tap onPress={onPress} disabled={!onPress && !right} innerStyle={{ flexDirection: "row", alignItems: "center", gap: 14, height: 52, paddingHorizontal: 16, borderBottomWidth: last ? 0 : 1, borderBottomColor: line, marginLeft: 0 }}>
+    <Tap onPress={onPress} innerStyle={{ flexDirection: "row", alignItems: "center", gap: 14, height: 52, paddingHorizontal: 16, borderBottomWidth: last ? 0 : 1, borderBottomColor: line, marginLeft: 0 }}>
       <View style={{ width: 24, alignItems: "center" }}>{glyph}</View>
       <Text style={{ flex: 1, fontSize: 14.5, fontWeight: "500", color: ink }}>{label}</Text>
       {!!value && <Text style={{ fontSize: 14, fontWeight: "600", color: onPress ? ink : muted, fontVariant: ["tabular-nums"] }}>{value}</Text>}
@@ -153,7 +153,7 @@ function Head({ label, value, unit, mark }: { label: string; value: string; unit
       <Text style={{ fontSize: 13.5, fontWeight: "600", color: muted }}>{label}</Text>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginTop: 6 }}>
         {mark ? (
-          <Rough type="circle" padding={4} paddingX={10} strokeWidth={2.2} delay={250} duration={600}>
+          <Rough type="circle" padding={2} paddingX={6} strokeWidth={2.2} delay={250} duration={600}>
             <Roll text={value} style={bigNum} />
           </Rough>
         ) : (

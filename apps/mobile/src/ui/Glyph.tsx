@@ -4,7 +4,11 @@ import Svg, { Path } from "react-native-svg";
 import { glyphs } from "./glyphs";
 
 const tints: Record<string, string> = { "#9E4DFD": "#C9A6FF", "#28243E": "#B9B2C5", "#B4474D": "#F2C6CB", "#23765A": "#B7DCCB", "#9A6B1C": "#F5D48C", "#FFFFFF": "#FFFFFF80" };
-export const tint = (c: string) => tints[c.toUpperCase()] ?? c + "59";
+// the light version of a colour for the back shape; named colours become hex first
+export const tint = (c: string) => {
+  const hex = c.toLowerCase() === "white" ? "#FFFFFF" : c.toLowerCase() === "black" ? "#000000" : c;
+  return tints[hex.toUpperCase()] ?? (hex.startsWith("#") && hex.length === 7 ? hex + "59" : hex);
+};
 
 export function Glyph({ name, size = 20, color = "#9E4DFD", back, front }: { name: string; size?: number; color?: string; back?: string; front?: string }) {
   const g = glyphs[name];
