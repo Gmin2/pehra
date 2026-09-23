@@ -237,7 +237,7 @@ export function SuggestionCard({ s }: { s: Suggestion }) {
           {s.m.symbol.toLowerCase()} {s.side}
         </Text>
         <Text style={{ fontSize: 12, fontWeight: "500", color: muted, fontVariant: ["tabular-nums"] }}>
-          {s.lev}x with {s.margin} ausd · {s.away.toFixed(0)}% from liquidation
+          {s.lev}x · {s.margin} ausd · {s.away.toFixed(0)}% to liquidation
         </Text>
       </View>
       <View style={{ alignItems: "flex-end", gap: 8 }}>
