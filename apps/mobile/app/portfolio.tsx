@@ -67,7 +67,7 @@ function MarketRow({ m, onPress }: { m: LiveMarket; onPress: () => void }) {
       <Coin symbol={m.symbol} />
       <View style={{ flex: 1, gap: 4 }}>
         <Text style={{ fontSize: 16, fontWeight: "600", color: ink }}>{m.symbol.toLowerCase()}</Text>
-        <Text style={{ fontSize: 13, color: muted, fontWeight: "500" }}>up to {Math.round(10000 / m.market.config.initial_margin / 10) / 10}x · funding {(m.fundingRate * 100).toFixed(3)}%</Text>
+        <Text style={{ fontSize: 13, color: muted, fontWeight: "500" }}>up to {Math.round(m.market.config.initial_margin / 10) / 10}x · funding {(m.fundingRate * 100).toFixed(3)}%</Text>
       </View>
       <View style={{ alignItems: "flex-end", gap: 4 }}>
         <Text style={{ fontSize: 16, fontWeight: "600", color: ink, fontVariant: ["tabular-nums"] }}>${price(m, m.mark)}</Text>
