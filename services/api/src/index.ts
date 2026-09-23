@@ -179,7 +179,7 @@ const server = Bun.serve({
       const address = m[1]
       if (!guard.has(address)) return json({ enrolled: false })
       const ts = guard.session(address)
-      return json({ enrolled: true, live: !!ts, settings: guard.settings(address), balance: ts ? fromCns(ts.account?.b ?? '0') : null, health: guard.health(address), events: guard.recent(address) })
+      return json({ enrolled: true, live: !!ts, settings: guard.settings(address), balance: ts ? fromCns(ts.account?.b ?? '0') : null, health: guard.health(address), events: guard.recent(address, 200) })
     }
     if (m && req.method === 'POST') {
       const body = await req.json().catch(() => ({})) as Partial<GuardSettings>
@@ -212,6 +212,12 @@ const server = Bun.serve({
       } catch (e) {
         return json({ error: e instanceof Error ? e.message : 'order failed' }, 500)
       }
+    }
+    if (url.pathname === '/activity' && req.method === 'POST') {
+      const body = await req.json().catch(() => ({})) as { address?: string; kind?: string; amount?: number; tx?: string; text?: string }
+      if (!body.address || !isAddress(body.address) || (body.kind !== 'funded' && body.kind !== 'withdrew') || !body.amount) return json({ error: 'bad request' }, 400)
+      guard.record(body.address, { kind: body.kind, amount: body.amount, tx: body.tx, text: (body.text ?? '').slice(0, 200) })
+      return json({ ok: true })
     }
     if (url.pathname === '/close' && req.method === 'POST') {
       const body = await req.json().catch(() => ({})) as { address?: string; pid?: number }

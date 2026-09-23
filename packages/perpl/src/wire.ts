@@ -82,7 +82,8 @@ export type OrderRequest = {
   bf?: number
 }
 
-export type AccountEvent = { et: number; a?: string; txid?: string }
+// at.txid is the chain transaction behind the event, hex without the 0x
+export type AccountEvent = { et: number; a?: string; txid?: string; at?: { b: number; t: number; tx?: number; txid?: string; l?: number } }
 export type Account = { id: number; fw: boolean; fr: boolean; ft: number; lfr: number; b: string; lb: string; h?: AccountEvent[] }
 export type Wallet = { addr: string; n: number; fl: number; as: Account[]; sn: number }
 

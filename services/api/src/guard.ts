@@ -6,11 +6,19 @@ import type { Hex } from 'viem'
 import { sendPush } from './push'
 import {
   decide, defaultGuardSettings, getContext, MarketDataSocket, positionHealth, TradingSocket, fromCns, fromPrice, fromSize, toCns, toLeverage, toPrice, toSize, Trigger,
-  type Context, type Decision, type Enrolled, type GuardSettings, type Health, type Market, type Position,
+  type AccountUpdateFrame, type Context, type Decision, type Enrolled, type GuardSettings, type Health, type Market, type Position,
 } from '@pehra/perpl'
 
-// guard kinds: warn, add, added, failed, session. the user's own actions: opened, closed, bracket, manual (a margin add)
-export type GuardEvent = { at: number; pid?: number; symbol?: string; kind: 'watch' | 'warn' | 'add' | 'added' | 'failed' | 'session' | 'opened' | 'closed' | 'bracket' | 'manual'; text: string; distancePct?: number; addAusd?: number; price?: number }
+// guard kinds: warn, add, added, failed, session. the user's own actions: opened, closed, bracket, manual
+// (a margin add), and funded / withdrew which the phone reports after its own agora batch.
+// margin adds carry the position before and after, and anything that settled on chain its tx.
+export type Snapshot = { distancePct: number; collateral: number }
+export type GuardEvent = {
+  at: number; pid?: number; symbol?: string
+  kind: 'watch' | 'warn' | 'add' | 'added' | 'failed' | 'session' | 'opened' | 'closed' | 'bracket' | 'manual' | 'funded' | 'withdrew'
+  text: string; distancePct?: number; addAusd?: number; price?: number; amount?: number; pnl?: number
+  side?: string; lv?: number; before?: Snapshot; after?: Snapshot; tx?: string
+}
 type Stored = { address: Hex; key: Enrolled; settings: GuardSettings; enrolledAt: number }
 
 const KEYS = new URL('../data/guard-keys.json', import.meta.url)
@@ -86,6 +94,9 @@ export class Guard {
     if (e.kind === 'failed') void sendPush(addr, 'pehra could not add margin', e.text, { kind: e.kind, pid: String(e.pid ?? ''), action: 'add' })
   }
 
+  // the phone's own chain actions (agora funds and withdrawals) join the same history
+  record(address: string, e: Omit<GuardEvent, 'at'>) { this.emit(address.toLowerCase(), e) }
+
   recent(address: string, n = 50) { return (this.events.get(address.toLowerCase()) ?? []).slice(0, n) }
 
   session(address: string) { return this.sessions.get(address.toLowerCase()) ?? null }
@@ -154,10 +165,18 @@ export class Guard {
     const ausd = fromCns(d.addCns ?? '0')
     this.emit(addr, { kind: 'add', pid: pos.pid, symbol: m.symbol, text: `${m.symbol} ${d.health.side} ${(d.health.distance * 100).toFixed(2)}% from liquidation, adding ${ausd.toFixed(2)} AUSD`, distancePct: d.health.distance * 100, addAusd: ausd })
     try {
+      const txP = this.nextTx(ts)
       const r = await ts.addMargin(pos, d.addCns ?? '0')
       const after = r.position ? positionHealth(r.position, m, this.market.states.get(pos.mkt)?.mrk ?? pos.ep) : null
       this.addedToday.set(addr, { day, ausd: addedToday + ausd })
-      this.emit(addr, { kind: 'added', pid: pos.pid, symbol: m.symbol, text: `collateral now ${after ? after.collateral.toFixed(4) : '?'} AUSD, ${after ? (after.distance * 100).toFixed(2) : '?'}% from liquidation`, distancePct: after ? after.distance * 100 : undefined, addAusd: ausd })
+      const tx = await txP
+      this.emit(addr, {
+        kind: 'added', pid: pos.pid, symbol: m.symbol, side: d.health.side, lv: pos.lv, tx,
+        text: `collateral now ${after ? after.collateral.toFixed(4) : '?'} AUSD, ${after ? (after.distance * 100).toFixed(2) : '?'}% from liquidation`,
+        distancePct: after ? after.distance * 100 : undefined, addAusd: ausd,
+        before: { distancePct: d.health.distance * 100, collateral: d.health.collateral },
+        after: after ? { distancePct: after.distance * 100, collateral: after.collateral } : undefined,
+      })
     } catch (e) {
       this.emit(addr, { kind: 'failed', pid: pos.pid, symbol: m.symbol, text: `margin add failed: ${e instanceof Error ? e.message : String(e)}` })
     }
@@ -170,10 +189,25 @@ export class Guard {
     const m = this.ctx.markets.find(x => x.symbol === symbol)
     if (!m) throw new Error('no market ' + symbol)
     // size arrives in coins, perpl wants it scaled by the market's size decimals
+    const txP = this.nextTx(ts)
     const result = await ts.openMarket({ mkt: m.id, side, size: toSize(m, size), leverage: toLeverage(leverage) })
     const o = result.order
-    if (o?.st === 4) this.emit(address.toLowerCase(), { kind: 'opened', pid: result.position?.pid, symbol: m.symbol, price: fromPrice(m, o.fp ?? 0), text: `${side} ${fromSize(m, o.fs ?? 0)} ${m.symbol} at ${leverage}x, filled at ${fromPrice(m, o.fp ?? 0)}` })
+    if (o?.st === 4) void txP.then(tx => this.emit(address.toLowerCase(), { kind: 'opened', pid: result.position?.pid, symbol: m.symbol, side, lv: leverage * 100, tx, amount: fromSize(m, o.fs ?? 0), price: fromPrice(m, o.fp ?? 0), text: `${side} ${fromSize(m, o.fs ?? 0)} ${m.symbol} at ${leverage}x, filled at ${fromPrice(m, o.fp ?? 0)}` }))
     return { market: m, result }
+  }
+
+  // perpl's account update after a settled action lists the chain event with its txid. the first one
+  // with a txid after the call is the proof for that action
+  private nextTx(ts: TradingSocket, ms = 4000): Promise<string | undefined> {
+    return new Promise(resolve => {
+      const timer = setTimeout(() => { off(); resolve(undefined) }, ms)
+      const off = ts.onFrame(f => {
+        if (f.mt !== 21) return
+        const id = (f as AccountUpdateFrame).h?.map(e => e.at?.txid ?? e.txid).find(Boolean)
+        const tx = id ? (id.startsWith('0x') ? id : '0x' + id) : undefined
+        if (tx) { clearTimeout(timer); off(); resolve(tx) }
+      })
+    })
   }
 
   private pos(address: string, pid: number) {
@@ -189,12 +223,13 @@ export class Guard {
   async closePosition(address: string, pid: number) {
     const { ts, pos, m } = this.pos(address, pid)
     const entry = fromPrice(m, pos.ep), size = fromSize(m, pos.s), side = pos.sd === 1 ? 'long' : 'short'
+    const txP = this.nextTx(ts)
     const r = await ts.closeMarket(pos)
     const o = r.order
     if (o?.st !== 4) throw new Error('close did not fill, status ' + (o?.st ?? r.status?.status.code))
     const exit = fromPrice(m, o.fp ?? 0)
     const pnl = (side === 'long' ? 1 : -1) * (exit - entry) * size
-    this.emit(address.toLowerCase(), { kind: 'closed', pid, symbol: m.symbol, price: exit, text: `closed ${side} ${size} ${m.symbol} at ${exit}, ${pnl >= 0 ? '+' : '-'}${Math.abs(pnl).toFixed(2)} AUSD` })
+    void txP.then(tx => this.emit(address.toLowerCase(), { kind: 'closed', pid, symbol: m.symbol, side, lv: pos.lv, tx, amount: size, pnl, price: exit, text: `closed ${side} ${size} ${m.symbol} at ${exit}, ${pnl >= 0 ? '+' : '-'}${Math.abs(pnl).toFixed(2)} AUSD` }))
     return { price: exit, pnl, collateral: fromCns(pos.c) }
   }
 
@@ -217,9 +252,13 @@ export class Guard {
     if (!pos) throw new Error('no such position')
     const m = this.ctx.markets.find(x => x.id === pos.mkt)
     if (!m) throw new Error('no market')
+    const mark = this.market.states.get(pos.mkt)?.mrk ?? pos.ep
+    const before = positionHealth(pos, m, mark)
+    const txP = this.nextTx(ts)
     const r = await ts.addMargin(pos, toCns(ausd))
     const after = r.position ? positionHealth(r.position, m, this.market.states.get(pos.mkt)?.mrk ?? pos.ep) : null
-    this.emit(address.toLowerCase(), { kind: 'manual', pid, symbol: m.symbol, text: `you added ${ausd.toFixed(2)} AUSD, collateral now ${after ? after.collateral.toFixed(4) : '?'} AUSD, ${after ? (after.distance * 100).toFixed(2) : '?'}% from liquidation`, addAusd: ausd, distancePct: after ? after.distance * 100 : undefined })
+    const tx = await txP
+    this.emit(address.toLowerCase(), { kind: 'manual', pid, symbol: m.symbol, side: before.side, lv: pos.lv, tx, before: { distancePct: before.distance * 100, collateral: before.collateral }, after: after ? { distancePct: after.distance * 100, collateral: after.collateral } : undefined, text: `you added ${ausd.toFixed(2)} AUSD, collateral now ${after ? after.collateral.toFixed(4) : '?'} AUSD, ${after ? (after.distance * 100).toFixed(2) : '?'}% from liquidation`, addAusd: ausd, distancePct: after ? after.distance * 100 : undefined })
     return after
   }
 
