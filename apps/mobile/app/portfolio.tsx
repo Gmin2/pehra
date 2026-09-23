@@ -54,7 +54,7 @@ function Header({ address, open }: { address?: string; open: number }) {
       </Tap>
       <View style={space.row}>
         <IconButton name="bell" label="Guard activity" onPress={() => a.go("/activity")} />
-        <IconButton name="scan" label="Fund" onPress={() => a.go("/receive")} />
+        <IconButton name="scan" label="Fund" onPress={() => a.go("/fund")} />
       </View>
     </View>
   );
@@ -208,7 +208,7 @@ export default function Portfolio() {
         )}
       </ScrollView>
       <View style={[s.footer, { flexDirection: "row", gap: 12 }]}>
-        <Button style={{ flex: 1 }} variant="secondary" onPress={() => a.go("/receive")}>
+        <Button style={{ flex: 1 }} variant="secondary" onPress={() => a.go("/fund")}>
           fund
         </Button>
         <Button style={{ flex: 1 }} variant="black" onPress={() => openTrade(sorted[0]?.symbol ?? "MON")}>

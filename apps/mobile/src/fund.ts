@@ -21,12 +21,13 @@ export async function walletBalances(address: Address): Promise<Wallet> {
 
 export const pool = (): Promise<PairState> => pairState(publicClient('testnet'))
 
-export type Moved = { ms: number; hashes: `0x${string}`[]; block: bigint; out: number }
+export type Moved = { ms: number; hashes: `0x${string}`[]; blocks: bigint[]; block: bigint; out: number }
 
 async function run(s: Session, calls: ReturnType<typeof depositCalls>, out: number): Promise<Moved> {
   const t0 = Date.now()
   const sent = await sendBatch(publicClient('testnet'), s.account, calls)
-  return { ms: Date.now() - t0, hashes: sent.map((x) => x.hash), block: sent[sent.length - 1].receipt.blockNumber, out }
+  const blocks = sent.map((x) => x.receipt.blockNumber)
+  return { ms: Date.now() - t0, hashes: sent.map((x) => x.hash), blocks, block: blocks[blocks.length - 1], out }
 }
 
 export async function fundFromUsdc(s: Session, usdc: number) {
@@ -51,4 +52,13 @@ export async function testUsdc(address: Address) {
   const j = (await r.json()) as { usdc?: number; error?: string; ms?: number }
   if (!r.ok && j.error !== 'cooldown') throw new Error(j.error ?? 'drip failed')
   return j
+}
+
+// monad is final a few blocks after inclusion; the landed tray ticks when the chain is three past it
+export async function waitFinal(block: bigint) {
+  const pub = publicClient('testnet')
+  for (let i = 0; i < 40; i++) {
+    if ((await pub.getBlockNumber()) >= block + 3n) return
+    await new Promise((r) => setTimeout(r, 300))
+  }
 }
