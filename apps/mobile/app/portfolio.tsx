@@ -43,7 +43,7 @@ function Header({ address, open }: { address?: string; open: number }) {
   }, [open, eyes]);
   return (
     <View style={[space.between, { height: 64, paddingHorizontal: 20 }]}>
-      <Tap onPress={() => a.go("/wallet")} innerStyle={[space.row, { gap: 10 }]}>
+      <Tap onPress={() => a.go("/settings")} innerStyle={[space.row, { gap: 10 }]}>
         <View style={{ backgroundColor: dusk, borderRadius: 14, padding: 3 }}>
           <PehraBird size={30} open={eyes} shift={glance} />
         </View>

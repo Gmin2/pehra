@@ -46,3 +46,6 @@ export const relayAddMargin = (address: string, pid: number, ausd: number) => po
 // the phone's own agora batches go into the same history as the guard's actions
 export const reportActivity = (address: string, e: { kind: 'funded' | 'withdrew'; amount: number; tx?: string; text: string }) =>
   post<{ ok: boolean }>('/activity', { address, ...e }).catch(() => ({ ok: false }))
+
+export type GuardPatch = Partial<{ enabled: boolean; thresholdPct: number; targetPct: number; maxAddAusdPerDay: number }>
+export const updateGuard = (address: string, patch: GuardPatch) => post<{ settings: NonNullable<GuardState['settings']> }>(`/guard/${address}`, patch)
