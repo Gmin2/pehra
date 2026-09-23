@@ -25,6 +25,7 @@ import {
 } from "../src/ui/Onboarding";
 import { createAccount, signIn, type Session } from "../src/account";
 import { prepareAccount } from "../src/trade";
+import { money } from "../src/live";
 import { enrollGuard } from "../src/guard";
 import { registerPush } from "../src/push";
 import { log } from "../src/log";
@@ -78,6 +79,7 @@ export default function Onboarding() {
     next = a.setOnboarding,
     [terms, setTerms] = useState<number[]>([]),
     [progress, setProgress] = useState(""),
+    [balance, setBalance] = useState(100),
     [error, setError] = useState(""),
     [tray, setTray] = useState(false),
     [guardOn, setGuardOn] = useState(false),
@@ -116,10 +118,12 @@ export default function Onboarding() {
       Haptics.selectionAsync();
       setPhase(1);
       const t1 = Date.now();
-      await prepareAccount(sess, (p) => {
+      const info = await prepareAccount(sess, (p) => {
         if (p === "opening your perpl account") setPhase(2);
         log(`onboarding: ${p}`);
       });
+      // a returning account shows what it really holds, a new one the 100 it was opened with
+      setBalance(Number(info.balanceCns) / 1e6);
       log(`onboarding: ready in ${Date.now() - t1}ms`);
       setPhase(3);
       await new Promise((r) => setTimeout(r, 450));
@@ -196,12 +200,12 @@ export default function Onboarding() {
               <View style={{ paddingHorizontal: 32, paddingTop: 28, alignItems: "center", gap: 8 }}>
                 <Text style={{ fontSize: 22, fontWeight: "600", letterSpacing: -0.5, color: ink, textAlign: "center" }}>trade perps without watching the chart</Text>
                 <Text style={[space.copy, { textAlign: "center", fontSize: 15, lineHeight: 21 }]}>
-                  Face id in, dollars in, and a guard that keeps you from getting liquidated at 3am.
+                  a passkey in, dollars in, and a guard that keeps you from getting liquidated at 3am.
                 </Text>
               </View>
               <View style={{ paddingHorizontal: 24, paddingTop: 26, gap: 12 }}>
-                <ChoiceCard icon="plus" color={accent} title="create account" subtitle="Make a passkey and open a funded testnet account." onPress={() => next("terms")} />
-                <ChoiceCard icon="key" color={ink} title="sign in" subtitle="Use the passkey you already made on this or another phone." onPress={() => create(true)} />
+                <ChoiceCard icon="plus" color={accent} title="create account" subtitle="make a passkey and open a funded testnet account." onPress={() => next("terms")} />
+                <ChoiceCard icon="key" color={ink} title="sign in" subtitle="use the passkey you already made on this or another phone." onPress={() => create(true)} />
               </View>
             </View>
           )}
@@ -237,10 +241,10 @@ export default function Onboarding() {
           )}
           {step === "ready" && (
             <View style={{ flex: 1, justifyContent: "center", paddingTop: 70, gap: 22 }}>
-              <HighlightTitle before="Your account is " word="funded" after="." />
+              <HighlightTitle before="your account is " word="funded" after="." />
               <View>
-                <AccountCard width={width} address={address} balance="100 AUSD" pill="turn on guard" onPill={() => setTray(true)} />
-                <Tooltip width={width} title="turn on the guard" body="Most liquidations happen while you are away. The guard steps in first." />
+                <AccountCard width={width} address={address} balance={money(balance) + " AUSD"} pill="turn on guard" onPill={() => setTray(true)} />
+                <Tooltip width={width} title="turn on the guard" body="most liquidations happen while you’re away. the guard steps in first." />
               </View>
             </View>
           )}
@@ -248,9 +252,9 @@ export default function Onboarding() {
             <View style={{ flex: 1, justifyContent: "center", paddingTop: 70, gap: 22 }}>
               <Success />
               <Text style={{ fontSize: 20, fontWeight: "600", textAlign: "center", color: ink }}>{guardOn ? "the guard is watching" : "you’re all set"}</Text>
-              <AccountCard width={width} address={address} balance="100 AUSD" badge={guardOn ? "guard on" : "ready"} glyph="pehra-mark-paper" />
+              <AccountCard width={width} address={address} balance={money(balance) + " AUSD"} badge={guardOn ? "guard on" : "ready"} glyph="pehra-mark-paper" />
               <Text style={[space.copy, { textAlign: "center", fontSize: 14, paddingHorizontal: 40 }]}>
-                {guardOn ? "It will tell you before anything goes wrong." : "You can turn on the guard later from its tab."}
+                {guardOn ? "it will tell you before anything goes wrong." : "you can turn the guard on later in settings."}
               </Text>
             </View>
           )}
