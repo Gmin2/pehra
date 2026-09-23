@@ -3,7 +3,7 @@ import { Glyph as TwoTone, glyphFor } from "./Glyph";
 import { View, Image, Pressable, StyleSheet, type ViewStyle, type StyleProp, type PressableProps, TextInput, type TextInputProps } from "react-native";
 import { Text } from "./Text";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { SvgXml } from "react-native-svg";
+import Svg, { SvgXml, Path } from "react-native-svg";
 import Animated, {
   FadeIn,
   FadeOut,
@@ -96,6 +96,24 @@ export function Tap({
     </Pressable>
   );
 }
+// back, open and close: a violet mark on a soft violet circle. every other icon is a two tone glyph
+const MARK_PATHS: Record<string, string> = {
+  back: "M14.5 6 L8.5 12 L14.5 18",
+  chevron: "M9.5 6 L15.5 12 L9.5 18",
+  close: "M7 7 L17 17 M17 7 L7 17",
+};
+export function Mark({ name, size = 38 }: { name: "back" | "chevron" | "close"; size?: number }) {
+  return (
+    <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: "#EFE5FF", alignItems: "center", justifyContent: "center" }}>
+      <Svg width={size * 0.5} height={size * 0.5} viewBox="0 0 24 24">
+        <Path d={MARK_PATHS[name]} stroke="#9E4DFD" strokeWidth={2.6} fill="none" strokeLinecap="round" strokeLinejoin="round" />
+      </Svg>
+    </View>
+  );
+}
+// the open mark at row size
+export const Chevron = () => <Mark name="chevron" size={26} />;
+
 export function IconButton({
   name,
   label,
@@ -120,7 +138,7 @@ export function IconButton({
         justifyContent: "center",
       }}
     >
-      <Icon name={name} color={color || colors.muted} size={size} />
+      {name === "back" || name === "close" || name === "chevron" ? <Mark name={name} /> : <Icon name={name} color={color || "#9E4DFD"} size={size} />}
     </Tap>
   );
 }
@@ -551,15 +569,15 @@ export function Tabs({ active }: { active: string }) {
       {[
         ["activity", "history"],
         ["portfolio", "wallet"],
-      ].map(([path, icon]) => (
-        <IconButton
-          key={path}
-          name={icon}
-          label={path === "portfolio" ? "Wallet" : path}
-          color={active === path ? colors.ink : "#bcbcbc"}
-          onPress={() => a.go("/" + path)}
-        />
-      ))}
+      ].map(([path, icon]) => {
+        const on = active === path;
+        return (
+          <Tap key={path} onPress={() => a.go("/" + path)} accessibilityLabel={path === "portfolio" ? "home" : path} innerStyle={{ alignItems: "center", gap: 3, paddingHorizontal: 18, paddingTop: 6 }}>
+            <TwoTone name={glyphFor[icon]} size={24} back={on ? "#C9A6FF" : "#E4E0EA"} front={on ? "#9E4DFD" : "#C9C4D1"} />
+            <Text style={{ fontSize: 11, fontWeight: on ? "700" : "600", color: on ? "#9E4DFD" : "#C9C4D1" }}>{path === "portfolio" ? "home" : path}</Text>
+          </Tap>
+        );
+      })}
     </View>
   );
 }

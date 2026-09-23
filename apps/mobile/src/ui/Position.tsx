@@ -23,6 +23,7 @@ import * as Haptics from "expo-haptics";
 import { Text } from "./Text";
 import { Coin } from "./Coin";
 import { Glyph } from "./Glyph";
+import { Chevron } from "./components";
 import type { Point } from "../candles";
 
 export const violet = "#9E4DFD",
@@ -80,7 +81,7 @@ export function CoinRing({ symbol, long, away, pulse }: { symbol: string; long: 
 export function Roll({ text, style }: { text: string; style: object }) {
   return (
     <View style={{ overflow: "hidden" }}>
-      <Animated.Text key={text} entering={FadeInDown.springify().damping(18).reduceMotion(ReduceMotion.System)} exiting={FadeOutUp.duration(160)} style={style}>
+      <Animated.Text key={text} entering={FadeInDown.duration(220).reduceMotion(ReduceMotion.System)} exiting={FadeOutUp.duration(160)} style={style}>
         {text}
       </Animated.Text>
     </View>
@@ -170,11 +171,7 @@ export function Row({ glyph, label, value, color = ink, onPress, index = 0, back
       <Glyph name={glyph} size={22} color={glyph === "flame" ? red : violet} back={back} />
       <Text style={{ flex: 1, fontSize: 14, fontWeight: "500", color: muted }}>{label}</Text>
       {typeof value === "string" ? <Roll text={value} style={{ fontFamily: "Manrope_600SemiBold", fontSize: 14, color }} /> : value}
-      {onPress && (
-        <Svg width={12} height={12} viewBox="0 0 12 12">
-          <Path d="M4.25 10.25 L8.5 6 L4.25 1.75" stroke={faint} strokeWidth={1.8} fill="none" strokeLinecap="round" strokeLinejoin="round" />
-        </Svg>
-      )}
+      {onPress && <Chevron />}
     </View>
   );
   return (

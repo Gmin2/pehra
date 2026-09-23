@@ -7,7 +7,7 @@ import { View, ScrollView } from "react-native";
 import { Stack } from "expo-router";
 import Animated, { FadeIn, FadeInDown, ReduceMotion, useAnimatedStyle, useSharedValue, withTiming, Easing } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
-import { Screen, Tap, IconButton } from "../src/ui/components";
+import { Screen, Tap, IconButton, Chevron } from "../src/ui/components";
 import { Text } from "../src/ui/Text";
 import { Coin } from "../src/ui/Coin";
 import { Glyph } from "../src/ui/Glyph";
@@ -200,7 +200,7 @@ function Option({ icon, title, sub, right, onPress, dim, index }: { icon: React.
           <Text style={{ fontSize: 12, fontWeight: "500", color: muted, fontVariant: ["tabular-nums"] }}>{sub}</Text>
         </View>
         {right}
-        {onPress && !dim && <Text style={{ fontSize: 18, color: faint, marginLeft: 4 }}>›</Text>}
+        {onPress && !dim && <Chevron />}
       </Tap>
     </Animated.View>
   );

@@ -7,7 +7,7 @@ import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import Animated, { FadeInDown, ReduceMotion, useSharedValue } from "react-native-reanimated";
 import { getPerplAccount, publicClient } from "@pehra/perpl";
-import { Screen, Tap, IconButton } from "../src/ui/components";
+import { Screen, Tap, IconButton, Chevron } from "../src/ui/components";
 import { Text } from "../src/ui/Text";
 import { Glyph } from "../src/ui/Glyph";
 import { Rough } from "../src/ui/Rough";
@@ -81,7 +81,7 @@ export default function Settings() {
       <View style={{ width: 24, alignItems: "center" }}>{glyph}</View>
       <Text style={{ flex: 1, fontSize: 14.5, fontWeight: "500", color: ink }}>{label}</Text>
       {!!value && <Text style={{ fontSize: 14, fontWeight: "600", color: onPress ? ink : muted, fontVariant: ["tabular-nums"] }}>{value}</Text>}
-      {right ?? (onPress ? <Text style={{ fontSize: 18, color: faint }}>›</Text> : null)}
+      {right ?? (onPress ? <Chevron /> : null)}
     </Tap>
   );
 
