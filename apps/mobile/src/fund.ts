@@ -21,13 +21,15 @@ export async function walletBalances(address: Address): Promise<Wallet> {
 
 export const pool = (): Promise<PairState> => pairState(publicClient('testnet'))
 
-export type Moved = { ms: number; hashes: `0x${string}`[]; blocks: bigint[]; block: bigint; out: number }
+// plain numbers only: this goes into react state, and a bigint there crashes the dev build when it
+// gets serialized ("Do not know how to serialize a BigInt", the black screen after a fund)
+export type Moved = { ms: number; hashes: `0x${string}`[]; blocks: number[]; block: number; out: number }
 
 // fundedAt: the block a gas top-up landed in, monad lets new money be spent three blocks later
 async function run(s: Session, calls: ReturnType<typeof depositCalls>, out: number, fundedAt?: bigint): Promise<Moved> {
   const t0 = Date.now()
   const sent = await sendBatch(publicClient('testnet'), s.account, calls, { fundedAt })
-  const blocks = sent.map((x) => x.receipt.blockNumber)
+  const blocks = sent.map((x) => Number(x.receipt.blockNumber))
   return { ms: Date.now() - t0, hashes: sent.map((x) => x.hash), blocks, block: blocks[blocks.length - 1], out }
 }
 
@@ -56,10 +58,10 @@ export async function testUsdc(address: Address) {
 }
 
 // monad is final a few blocks after inclusion; the landed tray ticks when the chain is three past it
-export async function waitFinal(block: bigint) {
+export async function waitFinal(block: number) {
   const pub = publicClient('testnet')
   for (let i = 0; i < 40; i++) {
-    if ((await pub.getBlockNumber()) >= block + 3n) return
+    if (Number(await pub.getBlockNumber()) >= block + 3) return
     await new Promise((r) => setTimeout(r, 300))
   }
 }
