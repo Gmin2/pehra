@@ -9,7 +9,7 @@ import { Screen, Tap, IconButton, MorphText, s } from "../src/ui/components";
 import { Text } from "../src/ui/Text";
 import { Coin } from "../src/ui/Coin";
 import { useApp } from "../src/ui/store";
-import { useMarkets, useAccount, pct, price as fmtPrice, money } from "../src/live";
+import { useMarkets, useAccount, pct, money } from "../src/live";
 import { useCandles, type Range } from "../src/candles";
 import { relayOrder } from "../src/guard";
 import { log } from "../src/log";
@@ -39,7 +39,7 @@ export default function Trade() {
     [marginText, setMarginText] = useState("10"),
     [lev, setLev] = useState(3),
     [phase, setPhase] = useState<Phase>("idle"),
-    [elapsed, setElapsed] = useState(0),
+    [since, setSince] = useState(0),
     [fillMs, setFillMs] = useState(0),
     [entry, setEntry] = useState<number | undefined>(undefined),
     [error, setError] = useState(""),
@@ -68,15 +68,13 @@ export default function Trade() {
   const guard = side === "long" ? liq / (1 - threshold) : liq / (1 + threshold);
   const away = mark > 0 ? Math.abs(mark - liq) / mark : 0;
   const tight = away < threshold * 2;
-  const fmt = (v: number) => "$" + (m ? fmtPrice(m, v) : v.toFixed(2));
+  const decimals = m?.priceDecimals ?? 2;
+  const fmt = useCallback((v: number) => "$" + v.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }), [decimals]);
   const sym = symbol.toLowerCase();
   const ok = !!m && !!address && margin > 0 && margin <= balance && size > 0 && away > threshold;
 
-  const onDot = useCallback((x: number, y: number) => {
-    dot.current = { x, y };
-  }, []);
-
-  // where the rocket starts and lands, in the root view's coordinates
+  // where the rocket starts and lands, in the root view's coordinates. measured ahead of the tap,
+  // whenever the layout or the price dot moves, so the tap never waits on it
   const measure = () =>
     new Promise<void>((done) => {
       root.current?.measureInWindow((rx, ry) => {
@@ -89,23 +87,22 @@ export default function Trade() {
         });
       });
     });
-
-  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
-  useEffect(() => () => void (timer.current && clearInterval(timer.current)), []);
+  const onDot = useCallback((x: number, y: number) => {
+    dot.current = { x, y };
+    requestAnimationFrame(() => void measure());
+  }, []);
 
   const place = async () => {
     if (!ok || !m || !address) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await measure();
-    flight.press(f);
-    setPhase("sending");
     const t0 = Date.now();
-    timer.current = setInterval(() => setElapsed((Date.now() - t0) / 1000), 100);
+    flight.press(f);
+    setSince(t0);
+    setPhase("sending");
     try {
       const [r] = await Promise.all([relayOrder(address, m.symbol, side, size, lev), wait(380)]);
       if (!r.filled) throw new Error(typeof r.reason === "string" ? r.reason : "not filled");
       const ms = Date.now() - t0;
-      if (timer.current) clearInterval(timer.current);
       setFillMs(ms);
       log(`trade ${m.symbol} ${side} ${size} at ${lev}x filled ${r.price} in ${ms}ms`);
       flight.launch(f, () => {
@@ -115,7 +112,6 @@ export default function Trade() {
         setTimeout(() => setTray(true), 1000);
       });
     } catch (e) {
-      if (timer.current) clearInterval(timer.current);
       log(`trade ${m.symbol} ${side} ${size} at ${lev}x failed: ${e instanceof Error ? e.message : e}`);
       flight.fizzle(f);
       setError(e instanceof Error ? e.message : "order failed");
@@ -142,7 +138,7 @@ export default function Trade() {
   return (
     <Screen>
       <Stack.Screen options={{ animation: "slide_from_right" }} />
-      <View ref={root} style={{ flex: 1 }} collapsable={false}>
+      <View ref={root} style={{ flex: 1 }} collapsable={false} onLayout={() => void measure()}>
         <View style={{ height: 60, flexDirection: "row", alignItems: "center", paddingHorizontal: 12 }}>
           <IconButton name="back" label="Back" onPress={a.back} color={ink} />
           <View style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, marginRight: 40 }}>
@@ -239,10 +235,11 @@ export default function Trade() {
           <TradeButton
             phase={phase}
             f={f}
+            since={since}
             disabled={!ok}
             onPress={place}
             label={!address ? "no account" : margin > balance ? "not enough ausd" : away <= threshold ? "too close to liquidation" : `${side} ${sym} · ${money(margin * lev, 0)} ausd`}
-            detail={phase === "sending" ? `filling ${elapsed.toFixed(1)}s` : phase === "filled" ? `filled in ${(fillMs / 1000).toFixed(1)}s` : `didn’t fill · ${error}`}
+            detail={phase === "filled" ? `filled in ${(fillMs / 1000).toFixed(1)}s` : `didn’t fill · ${error}`}
           />
         </View>
         <FlightLayer f={f} from={from} to={to} />

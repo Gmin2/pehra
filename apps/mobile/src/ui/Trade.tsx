@@ -1,7 +1,7 @@
 // the trade page's pieces: the price chart in the violet card with the guard and liquidation band,
 // the range and side switches, the leverage slider, and the rocket that carries the order from the
 // button to the price. the look is tmp/claude/preview/trade-b2.png, the motion trade-rocket.mp4.
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
 import { View, Modal, Pressable, StyleSheet, type LayoutChangeEvent } from "react-native";
 import Svg, { Path, Rect, Line, Defs, LinearGradient, Stop, Pattern } from "react-native-svg";
 import Animated, {
@@ -116,7 +116,7 @@ export type ChartProps = {
   fmt: (v: number) => string;
   onDot?: (x: number, y: number) => void;
 };
-export function PriceChart({ points, width, mark, liq, guard, side, entry, fmt, onDot }: ChartProps) {
+export const PriceChart = memo(function PriceChart({ points, width, mark, liq, guard, side, entry, fmt, onDot }: ChartProps) {
   const long = side === "long";
   const top = long ? 22 : 22 + 36 + 18,
     zoneTop = long ? top + PRICE_H + 18 : 18,
@@ -231,7 +231,7 @@ export function PriceChart({ points, width, mark, liq, guard, side, entry, fmt, 
       </View>
     </GestureDetector>
   );
-}
+});
 
 // leverage as a slider that snaps to its stops, a haptic on each
 export function LeverageSlider({ stops, value, onChange }: { stops: number[]; value: number; onChange: (v: number) => void }) {
@@ -364,7 +364,7 @@ function Spark({ f, at, i }: { f: Flight; at: Pt; i: number }) {
   return <Animated.View style={[{ position: "absolute", left: 0, top: 0, width: size, height: size, borderRadius: size, backgroundColor: ["white", "#FFD37A", "#C9A6FF"][i % 3] }, style]} />;
 }
 
-export function FlightLayer({ f, from, to }: { f: Flight; from: Pt | null; to: Pt | null }) {
+export const FlightLayer = memo(function FlightLayer({ f, from, to }: { f: Flight; from: Pt | null; to: Pt | null }) {
   const a = from ?? { x: 0, y: 0 },
     b = to ?? { x: 0, y: 0 };
   const cx = a.x - 60,
@@ -407,12 +407,20 @@ export function FlightLayer({ f, from, to }: { f: Flight; from: Pt | null; to: P
       </Animated.View>
     </View>
   );
-}
+});
 
 // the button under it all: the bolt squashes as it's pressed, the button narrows to a pill with a live
 // timer while the order is out, then widens again green with the fill time, or red with the reason
 export type Phase = "idle" | "sending" | "filled" | "failed";
-export function TradeButton({ phase, label, detail, f, onPress, disabled }: { phase: Phase; label: string; detail: string; f: Flight; onPress: () => void; disabled?: boolean }) {
+function Elapsed({ since }: { since: number }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 100);
+    return () => clearInterval(t);
+  }, []);
+  return <>filling {(Math.max(0, now - since) / 1000).toFixed(1)}s</>;
+}
+export const TradeButton = memo(function TradeButton({ phase, label, detail, since, f, onPress, disabled }: { phase: Phase; label: string; detail: string; since: number; f: Flight; onPress: () => void; disabled?: boolean }) {
   const [w, setW] = useState(0);
   const narrow = useSharedValue(0);
   useEffect(() => {
@@ -439,13 +447,13 @@ export function TradeButton({ phase, label, detail, f, onPress, disabled }: { ph
             </View>
           )}
           <Text numberOfLines={1} style={{ fontSize: 16, fontWeight: phase === "filled" ? "700" : "600", color: "white", fontVariant: ["tabular-nums"] }}>
-            {phase === "idle" ? label : detail}
+            {phase === "idle" ? label : phase === "sending" ? <Elapsed since={since} /> : detail}
           </Text>
         </Tap>
       </Animated.View>
     </View>
   );
-}
+});
 
 function Spinner() {
   const r = useSharedValue(0);
