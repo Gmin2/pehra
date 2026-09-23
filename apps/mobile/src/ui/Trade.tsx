@@ -21,7 +21,7 @@ import * as Haptics from "expo-haptics";
 import { Text } from "./Text";
 import { Tap } from "./components";
 import { Shield } from "./Home";
-import { glyphs } from "./glyphs";
+import { Glyph } from "./Glyph";
 import type { Point } from "../candles";
 
 export const violet = "#9E4DFD",
@@ -34,21 +34,6 @@ export const violet = "#9E4DFD",
   line = "#EEEAF2",
   well = "#F0EDF3";
 const spring = { duration: 380, dampingRatio: 0.8, reduceMotion: ReduceMotion.System };
-
-export function Glyph({ name, size = 20, back = violet, front = ink }: { name: string; size?: number; back?: string; front?: string }) {
-  const g = glyphs[name];
-  if (!g) return null;
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24">
-      {g.back.map((d, i) => (
-        <Path key={"b" + i} d={d} fill={back} />
-      ))}
-      {g.front.map((d, i) => (
-        <Path key={"f" + i} d={d} fill={front} />
-      ))}
-    </Svg>
-  );
-}
 
 // a white pill that slides under the chosen option
 export function Segmented<T extends string>({

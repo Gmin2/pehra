@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Glyph as TwoTone, glyphFor } from "./Glyph";
 import { View, Image, Pressable, StyleSheet, type ViewStyle, type StyleProp, type PressableProps, TextInput, type TextInputProps } from "react-native";
 import { Text } from "./Text";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -37,6 +38,7 @@ export function Icon({
         •••
       </Text>
     );
+  if (glyphFor[name]) return <TwoTone name={glyphFor[name]} size={size} color={color} />;
   return (
     <SvgXml
       xml={(icons[name] || icons.info)
