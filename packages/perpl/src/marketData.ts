@@ -34,6 +34,13 @@ export class MarketDataSocket {
   }
 
   on(fn: Handler) { this.handlers.add(fn); return () => this.handlers.delete(fn) }
+
+  // add or drop streams on an open socket, each call counts against the 10 requests a minute
+  subscribe(streams: string[], on = true) {
+    if (this.ws?.readyState !== WebSocket.OPEN) return false
+    this.ws.send(JSON.stringify({ mt: MT.subscribe, subs: streams.map(stream => ({ stream, subscribe: on })) }))
+    return true
+  }
   close() { this.ws?.close() }
 
   static streams(chainId: number) {

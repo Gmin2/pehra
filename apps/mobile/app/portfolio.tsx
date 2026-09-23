@@ -95,7 +95,7 @@ export default function Portfolio() {
   }, [health.length]);
   const openTrade = (symbol: string) => {
     Haptics.selectionAsync();
-    a.toast(`${symbol.toLowerCase()} ticket is the next screen`);
+    a.go(`/trade?symbol=${symbol}`);
   };
   return (
     <Screen>

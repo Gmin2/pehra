@@ -99,7 +99,11 @@ export type TradingFrame = StatusFrame | HeartbeatFrame | WalletSnapshotFrame | 
 
 export type MarketStateFrame = { mt: 9; sid: number; sn: number; d: Record<string, MarketState> }
 export type SubscribedFrame = { mt: 6; sn: number; subs: { stream: string; sid: number; status: { code: number } }[] }
-export type MarketDataFrame = MarketStateFrame | SubscribedFrame | HeartbeatFrame | OtherFrame
+// candles come as a snapshot of the last 256 then updates to the newest one or two. prices are wire
+// units, t is the candle's start in ms, r its length in seconds
+export type Candle = { t: number; o: number; c: number; h: number; l: number; v: string; n: number }
+export type CandlesFrame = { mt: 11 | 12; sid: number; sn: number; r: number; d: Candle[] }
+export type MarketDataFrame = MarketStateFrame | SubscribedFrame | HeartbeatFrame | CandlesFrame | OtherFrame
 export type Position = { pid: number; mkt: number; sd: number; s: number; ep: number; c: string; lv: number; st?: number; sr?: number; cpnl?: string }
 export type Order = { oid: number; rq: number; mkt: number; t: number; st: number; sr: number; fr?: number; p: number; s: number; fs?: number; fp?: number; tp?: number; tpc?: number; lp?: number; r?: boolean }
 export type MarketState = { orl: number; mrk: number; lst: number; mid: number; bid: number; ask: number; prv: number; dv: number; dva: string; oi: number; tvl: string }
