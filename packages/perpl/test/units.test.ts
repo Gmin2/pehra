@@ -29,8 +29,10 @@ describe('wire units', () => {
   })
   test('margin and liquidation distance', () => {
     expect(marginFor(mon, 100, 0.02658, 5)).toBeCloseTo(0.5316, 6)
-    // 5x long, 5% maintenance: 20% minus 5% below entry
-    expect(freshLiquidationPrice(mon, 'long', 1, 5)).toBeCloseTo(0.85, 9)
-    expect(freshLiquidationPrice(mon, 'short', 1, 5)).toBeCloseTo(1.15, 9)
+    // mon's maintenance_margin 500 is 5x, so 20%. at 3x: a third minus a fifth from entry
+    expect(freshLiquidationPrice(mon, 'long', 1, 3)).toBeCloseTo(1 - (1 / 3 - 0.2), 9)
+    expect(freshLiquidationPrice(mon, 'short', 1, 3)).toBeCloseTo(1 + (1 / 3 - 0.2), 9)
+    // btc's 2500 is 25x, the 4% of perpl's worked example
+    expect(freshLiquidationPrice(btc, 'long', 100_000, 10)).toBeCloseTo(94_000, 6)
   })
 })

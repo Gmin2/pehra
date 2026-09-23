@@ -1,12 +1,12 @@
 import type { Market } from './rest'
 import type { Position } from './wire'
-import { fromCns, fromPrice, fromSize, toCns } from './units'
+import { fromCns, fromPrice, fromSize, marginFraction, toCns } from './units'
 
 // perpl's own formula (docs.perpl.xyz, liquidation): p_liq = p_entry + s * (c_mmr - c_deposit) / size,
-// c_mmr = p_entry * size * maintenance fraction, s is 1 for longs and -1 for shorts. funding is left out.
+// c_mmr = p_entry * size * maintenance fraction (from the market's maintenance_margin, see units.ts), s is 1 for longs and -1 for shorts. funding is left out.
 // checked against their example: 1 btc at 100k with 10k deposit and 4% maintenance liquidates at 94k.
-export function liquidationPrice(side: 'long' | 'short', entry: number, size: number, collateral: number, maintenanceBps: number) {
-  const mmr = entry * size * (maintenanceBps / 10_000)
+export function liquidationPrice(side: 'long' | 'short', entry: number, size: number, collateral: number, maintenanceMargin: number) {
+  const mmr = entry * size * marginFraction(maintenanceMargin)
   const s = side === 'long' ? 1 : -1
   return entry + (s * (mmr - collateral)) / size
 }
@@ -17,9 +17,9 @@ export function liquidationDistance(side: 'long' | 'short', mark: number, liq: n
 }
 
 // collateral to add so the distance becomes target, given the current mark. zero when already there.
-export function marginToReach(side: 'long' | 'short', target: number, mark: number, entry: number, size: number, collateral: number, maintenanceBps: number) {
+export function marginToReach(side: 'long' | 'short', target: number, mark: number, entry: number, size: number, collateral: number, maintenanceMargin: number) {
   const wantLiq = side === 'long' ? mark * (1 - target) : mark * (1 + target)
-  const mmr = entry * size * (maintenanceBps / 10_000)
+  const mmr = entry * size * marginFraction(maintenanceMargin)
   // solve p_liq = entry + s (mmr - c) / size for c
   const s = side === 'long' ? 1 : -1
   const wantCollateral = mmr - (s * (wantLiq - entry) * size)

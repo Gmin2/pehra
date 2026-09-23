@@ -19,9 +19,15 @@ export function marginFor(m: Market, sizeHuman: number, priceHuman: number, leve
   return (sizeHuman * priceHuman) / leverage
 }
 
+// perpl sends both margins as a leverage in hundredths, like order leverage: initial_margin 1500 is
+// 15x, so 1/15 of the notional. maintenance_margin 2500 is 25x, a 4% maintenance fraction, which is
+// what their btc worked example uses.
+export const marginFraction = (hundredths: number) => 100 / hundredths
+export const maxLeverage = (m: Market) => m.config.initial_margin / 100
+
 // where a fresh position at this leverage liquidates, before any pnl. the full formula is in guard.ts
 export function freshLiquidationPrice(m: Market, side: 'long' | 'short', entry: number, leverage: number) {
-  const mm = m.config.maintenance_margin / 10_000
+  const mm = marginFraction(m.config.maintenance_margin)
   const move = 1 / leverage - mm
   return side === 'long' ? entry * (1 - move) : entry * (1 + move)
 }

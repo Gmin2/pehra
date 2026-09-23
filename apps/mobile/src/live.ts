@@ -16,7 +16,7 @@ export type LiveMarket = {
   openInterest: number
   priceDecimals: number
   sizeDecimals: number
-  maintenanceBps: number
+  maintenanceMargin: number
   market: Market
 }
 
@@ -34,7 +34,7 @@ function shape(m: Market, s: MarketState | undefined): LiveMarket {
     change24h: prev > 0 ? ((mark - prev) / prev) * 100 : 0,
     fundingRate: m.funding.rate / 1_000_000,
     openInterest: st.oi,
-    priceDecimals: m.config.price_decimals, sizeDecimals: m.config.size_decimals, maintenanceBps: m.config.maintenance_margin,
+    priceDecimals: m.config.price_decimals, sizeDecimals: m.config.size_decimals, maintenanceMargin: m.config.maintenance_margin,
     market: m,
   }
 }
