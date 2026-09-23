@@ -140,15 +140,15 @@ function Block({ rank, h, x, w, base, index, m, r }: { rank: number; h: number; 
     drop = useSharedValue(0);
   const order = rank === 3 ? 0 : rank === 2 ? 1 : 2;
   useEffect(() => {
-    rise.set(withDelay(order * 110, withSpring(1, { duration: 520, dampingRatio: 0.7, reduceMotion: ReduceMotion.System })));
+    rise.set(withDelay(order * 60, withTiming(1, { duration: 360, easing: Easing.out(Easing.cubic), reduceMotion: ReduceMotion.System })));
   }, [rise, order]);
   useEffect(() => {
     if (!m) return;
     drop.set(0);
-    drop.set(withDelay(300 + order * 110, withSpring(1, { duration: 560, dampingRatio: 0.55, reduceMotion: ReduceMotion.System })));
+    drop.set(withDelay(220 + order * 60, withTiming(1, { duration: 300, easing: Easing.out(Easing.quad), reduceMotion: ReduceMotion.System })));
   }, [m?.symbol, drop, order]);
   const block = useAnimatedStyle(() => ({ height: h * rise.get(), top: base - h * rise.get() }));
-  const onTop = useAnimatedStyle(() => ({ opacity: drop.get() > 0.02 ? 1 : 0, transform: [{ translateY: base - h - (1 - drop.get()) * 40 }] }));
+  const onTop = useAnimatedStyle(() => ({ opacity: drop.get(), transform: [{ translateY: base - h - (1 - drop.get()) * 8 }] }));
   const up = (m?.change24h ?? 0) >= 0;
   return (
     <>

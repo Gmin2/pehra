@@ -75,7 +75,7 @@ function MarketRow({ m, index, onPress }: { m: LiveMarket; index: number; onPres
   const room = roomAt3(m);
   const col = room < 15 ? "#9A6B1C" : green;
   return (
-    <Animated.View entering={FadeInDown.delay(index * 45).springify().damping(20).reduceMotion(ReduceMotion.System)} layout={LinearTransition.springify().damping(22)}>
+    <Animated.View entering={FadeIn.delay(index * 30).duration(200).reduceMotion(ReduceMotion.System)} layout={LinearTransition.duration(220).reduceMotion(ReduceMotion.System)}>
       <Tap onPress={onPress} onPressIn={() => prefetchCandles(m.market)} accessibilityLabel={`${m.symbol} perp`} innerStyle={{ height: 68, flexDirection: "row", alignItems: "center", gap: 12 }}>
         <Coin symbol={m.symbol} />
         <View style={{ flex: 1, gap: 7 }}>
@@ -178,7 +178,7 @@ export default function Portfolio() {
                 <View style={[space.row, { gap: 6 }]}>
                   <Text style={{ fontSize: 17, fontWeight: "600", color: tab === t ? ink : "#B9B2C5" }}>{t}</Text>
                   {t === "positions" && health.length > 0 && (
-                    <Animated.View key={health.length} entering={ZoomIn.springify().damping(14)}>
+                    <Animated.View key={health.length} entering={FadeIn.duration(180)}>
                       <View style={{ minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 6, backgroundColor: tab === t ? ink : "#B9B2C5", alignItems: "center", justifyContent: "center" }}>
                         <Text style={{ fontSize: 11.5, fontWeight: "700", color: "white", fontVariant: ["tabular-nums"] }}>{health.length}</Text>
                       </View>
@@ -215,7 +215,7 @@ export default function Portfolio() {
                 <Text style={{ fontSize: 13, fontWeight: "600", color: muted, marginHorizontal: 8, marginBottom: 2 }}>nothing open. a place to start:</Text>
                 {suggestions.length === 0 && <GhostRow />}
                 {suggestions.map((x, i) => (
-                  <Animated.View key={x.m.id} entering={FadeInDown.delay(i * 80).springify().damping(18).reduceMotion(ReduceMotion.System)}>
+                  <Animated.View key={x.m.id} entering={FadeIn.delay(i * 40).duration(220).reduceMotion(ReduceMotion.System)}>
                     <Tap
                       onPressIn={() => prefetchCandles(x.m.market)}
                       onPress={() => {
