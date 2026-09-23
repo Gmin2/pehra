@@ -3,7 +3,7 @@
 // can ask for test usdc, and agora routes (bank or another chain) sit greyed as the later lane. the
 // amount opens in a tray, and the money landing is a tray of real block ticks (fund-c.png).
 import { useCallback, useEffect, useRef, useState } from "react";
-import { View, ScrollView, TextInput } from "react-native";
+import { View, ScrollView } from "react-native";
 import { Stack } from "expo-router";
 import Animated, { FadeIn, FadeInDown, ReduceMotion, useAnimatedStyle, useSharedValue, withTiming, Easing } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
@@ -17,10 +17,10 @@ import { useApp } from "../src/ui/store";
 import { money } from "../src/live";
 import { log } from "../src/log";
 import { signIn, type Session } from "../src/account";
-import { walletBalances, pool, fundFromUsdc, depositAusd, withdrawToUsdc, testUsdc, waitFinal, type Wallet, type Moved } from "../src/fund";
+import { walletBalances, pool, fundFromUsdc, depositAusd, withdrawToUsdc, testUsdc, waitFinal, ensureGas, type Wallet, type Moved } from "../src/fund";
 import type { PairState } from "@pehra/perpl";
 import { Tray } from "../src/ui/Trade";
-import { CountUp } from "../src/ui/Position";
+import { CountUp, Roll } from "../src/ui/Position";
 
 const ink = "#28243E",
   muted = "#706A7D",
@@ -72,14 +72,13 @@ export default function Fund() {
   };
 
   const go = async (k: Kind, amount: number) => {
-    setKind(null);
     setMoved(null);
     setFinal(false);
     setFailed("");
     setLanding({ kind: k, amount });
     try {
-      const s = await session();
-      const r = k === "usdc" ? await fundFromUsdc(s, amount) : k === "ausd" ? await depositAusd(s, amount) : await withdrawToUsdc(s, amount);
+      const [s, fundedAt] = await Promise.all([session(), address ? ensureGas(address, w?.mon ?? 0) : Promise.resolve(undefined)]);
+      const r = k === "usdc" ? await fundFromUsdc(s, amount, fundedAt) : k === "ausd" ? await depositAusd(s, amount, fundedAt) : await withdrawToUsdc(s, amount, fundedAt);
       log(`fund ${k} ${amount}: ${r.hashes.length} txs, blocks ${r.blocks.join(",")}, ${r.ms}ms`);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setMoved(r);
@@ -164,8 +163,14 @@ export default function Fund() {
         </Tap>
       </View>
 
-      <AmountTray kind={kind} max={kind === "usdc" ? w?.usdc ?? 0 : kind === "ausd" ? w?.ausd ?? 0 : w?.perpl ?? 0} onClose={() => setKind(null)} onGo={go} />
-      <LandedTray landing={landing} moved={moved} final={final} failed={failed} onClose={() => setLanding(null)} onTrade={() => { setLanding(null); a.go("/portfolio"); }} />
+      {/* one tray for both steps: android draws a second modal black if it opens while the first closes */}
+      <Tray visible={!!kind || !!landing} onClose={() => { if (!landing || moved || failed) { setKind(null); setLanding(null); } }}>
+        {landing ? (
+          <LandedBody landing={landing} moved={moved} final={final} failed={failed} onClose={() => { setKind(null); setLanding(null); }} onTrade={() => { setKind(null); setLanding(null); a.go("/portfolio"); }} />
+        ) : kind ? (
+          <AmountBody kind={kind} max={kind === "usdc" ? w?.usdc ?? 0 : kind === "ausd" ? w?.ausd ?? 0 : w?.perpl ?? 0} onGo={go} />
+        ) : null}
+      </Tray>
     </Screen>
   );
 }
@@ -197,18 +202,17 @@ function Option({ icon, title, sub, right, onPress, dim, index }: { icon: React.
 }
 
 // how much: the amount big, a few quick picks, one line about the rate, one button
-function AmountTray({ kind, max, onClose, onGo }: { kind: Kind | null; max: number; onClose: () => void; onGo: (k: Kind, amount: number) => void }) {
+function AmountBody({ kind, max, onGo }: { kind: Kind; max: number; onGo: (k: Kind, amount: number) => void }) {
   const [text, setText] = useState("");
   useEffect(() => {
-    if (kind) setText(String(Math.min(25, Math.floor(max))));
+    setText(String(Math.min(25, Math.floor(max))));
   }, [kind]);
-  if (!kind) return null;
   const c = kindCopy[kind],
     amount = Number(text) || 0,
     ok = amount > 0 && amount <= max + 1e-9;
   const quick = [10, 25].filter((x) => x < max);
   return (
-    <Tray visible={!!kind} onClose={onClose}>
+    <Animated.View entering={FadeIn.duration(180)}>
       <View style={{ paddingHorizontal: 8, gap: 4 }}>
         <Text style={{ fontSize: 22, fontWeight: "700", color: ink }}>{c.title}</Text>
         <Text style={{ fontSize: 13.5, fontWeight: "500", color: muted }}>
@@ -216,8 +220,7 @@ function AmountTray({ kind, max, onClose, onGo }: { kind: Kind | null; max: numb
         </Text>
       </View>
       <View style={{ alignItems: "center", marginTop: 20, flexDirection: "row", justifyContent: "center" }}>
-        <Text style={{ fontFamily: "Manrope_700Bold", fontSize: 50, color: amount > max ? red : ink }}>$</Text>
-        <TextInput autoFocus value={text} onChangeText={(t) => setText(t.replace(/[^0-9.]/g, ""))} keyboardType="decimal-pad" accessibilityLabel="Amount" style={{ fontFamily: "Manrope_700Bold", fontSize: 50, color: amount > max ? red : ink, padding: 0, minWidth: 40 }} />
+        <Roll text={"$" + (text || "0")} style={{ fontFamily: "Manrope_700Bold", fontSize: 50, color: amount > max ? red : text ? ink : faint, letterSpacing: -1 }} />
       </View>
       <Text style={{ textAlign: "center", marginTop: 4, fontSize: 13.5, fontWeight: "600", color: muted }}>
         {kind === "ausd" ? `${amount} ausd straight into perpl` : kind === "usdc" ? `${amount} usdc → ${amount} ausd at 1.0000, no fee` : `${amount} ausd → ${amount} usdc at 1.0000, no fee`}
@@ -228,10 +231,32 @@ function AmountTray({ kind, max, onClose, onGo }: { kind: Kind | null; max: numb
         ))}
         <Chip label="max" on={amount === Math.floor(max * 100) / 100} onPress={() => setText(String(Math.floor(max * 100) / 100))} />
       </View>
-      <Tap onPress={ok ? () => onGo(kind, amount) : undefined} innerStyle={{ marginTop: 20, height: 54, borderRadius: 27, backgroundColor: ok ? ink : faint, alignItems: "center", justifyContent: "center" }}>
+      <Pad value={text} onChange={setText} />
+      <Tap onPress={ok ? () => onGo(kind, amount) : undefined} innerStyle={{ marginTop: 8, height: 54, borderRadius: 27, backgroundColor: ok ? ink : faint, alignItems: "center", justifyContent: "center" }}>
         <Text style={{ fontSize: 16, fontWeight: "600", color: "white" }}>{ok ? `${c.verb} ${amount} ${kind === "withdraw" ? "usdc" : "ausd"}` : amount > max ? "more than you have" : "enter an amount"}</Text>
       </Tap>
-    </Tray>
+    </Animated.View>
+  );
+}
+
+// the number pad, light, inside the tray so no keyboard ever covers it
+function Pad({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const press = (k: string) => {
+    Haptics.selectionAsync();
+    if (k === "back") return onChange(value.slice(0, -1));
+    if (k === "." && value.includes(".")) return;
+    if (value.includes(".") && value.split(".")[1].length >= 2) return;
+    if (value.replace(".", "").length >= 7) return;
+    onChange(value === "0" && k !== "." ? k : (value || (k === "." ? "0" : "")) + k);
+  };
+  return (
+    <View style={{ flexDirection: "row", flexWrap: "wrap", marginTop: 14 }}>
+      {["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "back"].map((k) => (
+        <Tap key={k} onPress={() => press(k)} accessibilityLabel={k === "back" ? "delete" : k} style={{ width: "33.33%" }} innerStyle={{ height: 52, alignItems: "center", justifyContent: "center" }}>
+          {k === "back" ? <Text style={{ fontSize: 22, fontWeight: "600", color: ink }}>‹</Text> : <Text style={{ fontSize: 24, fontWeight: "600", color: ink }}>{k}</Text>}
+        </Tap>
+      ))}
+    </View>
   );
 }
 
@@ -245,7 +270,7 @@ function Chip({ label, on, onPress }: { label: string; on?: boolean; onPress: ()
 
 // the money landing: the coins with a line that fills across, the amount counting up, and three ticks
 // that land with the real blocks
-function LandedTray({ landing, moved, final, failed, onClose, onTrade }: { landing: { kind: Kind; amount: number } | null; moved: Moved | null; final: boolean; failed: string; onClose: () => void; onTrade: () => void }) {
+function LandedBody({ landing, moved, final, failed, onClose, onTrade }: { landing: { kind: Kind; amount: number }; moved: Moved | null; final: boolean; failed: string; onClose: () => void; onTrade: () => void }) {
   const flow = useSharedValue(0);
   const eyes = useSharedValue(0.3),
     glance = useSharedValue(0);
@@ -257,7 +282,6 @@ function LandedTray({ landing, moved, final, failed, onClose, onTrade }: { landi
   }, [landing, moved, flow, eyes]);
   const bar1 = useAnimatedStyle(() => ({ width: `${Math.min(1, flow.get() * 2) * 100}%` }));
   const bar2 = useAnimatedStyle(() => ({ width: `${Math.max(0, flow.get() * 2 - 1) * 100}%` }));
-  if (!landing) return null;
   const k = landing.kind,
     chain = k === "withdraw" ? ["pehra", "AUSD", "USDC"] : k === "usdc" ? ["USDC", "AUSD", "pehra"] : ["AUSD", "pehra"];
   const node = (c: string) =>
@@ -275,7 +299,7 @@ function LandedTray({ landing, moved, final, failed, onClose, onTrade }: { landi
         ? [["into perpl", moved ? `block …${String(moved.blocks[1]).slice(-3)}` : ""]]
         : [["out of perpl", moved ? `block …${String(moved.blocks[0]).slice(-3)}` : ""], ["swapped at agora", moved ? `1:1 · block …${String(moved.blocks[2]).slice(-3)}` : ""]];
   return (
-    <Tray visible onClose={onClose}>
+    <Animated.View entering={FadeIn.duration(220)}>
       <View style={{ backgroundColor: "white", borderRadius: 24, paddingVertical: 22, alignItems: "center", gap: 14 }}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
           {chain.map((c, i) => (
@@ -314,7 +338,7 @@ function LandedTray({ landing, moved, final, failed, onClose, onTrade }: { landi
       <Tap onPress={moved ? onTrade : onClose} innerStyle={{ marginTop: 20, height: 54, borderRadius: 27, backgroundColor: ink, alignItems: "center", justifyContent: "center" }}>
         <Text style={{ fontSize: 16, fontWeight: "600", color: "white" }}>{failed ? "close" : moved ? (k === "withdraw" ? "done" : "trade with it") : "working…"}</Text>
       </Tap>
-    </Tray>
+    </Animated.View>
   );
 }
 

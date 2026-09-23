@@ -4,7 +4,6 @@
 import { useEffect, useState } from 'react'
 import { fromPrice, MarketDataSocket, type Candle, type CandlesFrame, type Market, type SubscribedFrame } from '@pehra/perpl'
 import { marketData, warmChain } from './warm'
-import { log } from './log'
 
 export type Range = '1h' | '1d' | '1w' | '1m'
 // candle length in seconds and how many make the range
@@ -30,7 +29,7 @@ const pending = new Set<string>()
 const streamFor = (m: Market, range: Range) => MarketDataSocket.streams(10143).candles(m.id, ranges[range].res)
 
 function hook(ws: MarketDataSocket) {
-  if (ws !== ownSocket) hooked = ws
+  hooked = ws
   if (hookedAll.has(ws)) return
   hookedAll.add(ws)
   // the snapshot can arrive before the subscribe ack that names its sid, so it waits for it
@@ -62,40 +61,22 @@ function hook(ws: MarketDataSocket) {
   })
 }
 
-function ensure(stream: string, tries = 0) {
+// the warm socket keeps every stream it was asked for and resubscribes after a drop, so asking once
+// is enough even while it is down
+function ensure(stream: string) {
   warmChain()
   const ws = marketData()
-  // a new warm socket starts with none of our streams
-  if (ws && hooked && hooked !== ws) { live.length = 0; sids.clear() }
-  if (ws && live.includes(stream) && hooked === ws) return
-  if (!ws || !ws.subscribe([stream])) {
-    if (tries < 20) setTimeout(() => ensure(stream, tries + 1), 150)
-    else own(stream)
-    return
-  }
+  if (!ws) return
+  if (hooked && hooked !== ws) { live.length = 0; sids.clear() }
   hook(ws)
+  if (live.includes(stream)) return
+  ws.subscribe([stream])
   live.push(stream)
   if (live.length > 6) {
     const old = live.shift()!
     ws.subscribe([old], false)
     cache.delete(old)
   }
-}
-
-// the warm socket never came up: open one just for candles rather than leave the chart empty
-let ownSocket: MarketDataSocket | null = null
-function own(stream: string) {
-  log(`candles falling back to their own socket for ${stream}`)
-  if (!ownSocket) {
-    ownSocket = new MarketDataSocket('testnet')
-    const ws = ownSocket
-    hook(ws)
-    ws.connect([stream]).catch(() => { ownSocket = null })
-    live.push(stream)
-    return
-  }
-  if (ownSocket.subscribe([stream])) live.push(stream)
-  else setTimeout(() => own(stream), 300)
 }
 
 export function prefetchCandles(m: Market | undefined, range: Range = '1d') {

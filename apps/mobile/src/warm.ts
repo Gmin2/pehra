@@ -23,7 +23,8 @@ export function warmChain() {
   if (!market) {
     market = new MarketDataSocket('testnet')
     const s = MarketDataSocket.streams(10143)
-    market.connect([s.heartbeat, s.marketState]).catch(() => { market = null })
+    // a failed first open keeps retrying inside the socket, so the same instance stays
+    market.connect([s.heartbeat, s.marketState]).catch(() => log('market data first open failed, retrying'))
     const opened = Date.now()
     let lastHead = 0
     const watch = setInterval(() => {

@@ -16,5 +16,7 @@ export const fonts: Record<string, string> = {
 export function Text(props: TextProps) {
   const flat = StyleSheet.flatten(props.style) ?? {};
   const weight = String(flat.fontWeight ?? "400");
-  return <RNText {...props} style={[props.style, { fontFamily: fonts[weight] ?? fonts["400"], fontWeight: "normal" }]} />;
+  // a style that names its manrope face directly keeps it
+  const family = flat.fontFamily ?? fonts[weight] ?? fonts["400"];
+  return <RNText {...props} style={[props.style, { fontFamily: family, fontWeight: "normal" }]} />;
 }

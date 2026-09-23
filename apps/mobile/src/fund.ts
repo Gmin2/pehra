@@ -23,33 +23,34 @@ export const pool = (): Promise<PairState> => pairState(publicClient('testnet'))
 
 export type Moved = { ms: number; hashes: `0x${string}`[]; blocks: bigint[]; block: bigint; out: number }
 
-async function run(s: Session, calls: ReturnType<typeof depositCalls>, out: number): Promise<Moved> {
+// fundedAt: the block a gas top-up landed in, monad lets new money be spent three blocks later
+async function run(s: Session, calls: ReturnType<typeof depositCalls>, out: number, fundedAt?: bigint): Promise<Moved> {
   const t0 = Date.now()
-  const sent = await sendBatch(publicClient('testnet'), s.account, calls)
+  const sent = await sendBatch(publicClient('testnet'), s.account, calls, { fundedAt })
   const blocks = sent.map((x) => x.receipt.blockNumber)
   return { ms: Date.now() - t0, hashes: sent.map((x) => x.hash), blocks, block: blocks[blocks.length - 1], out }
 }
 
-export async function fundFromUsdc(s: Session, usdc: number) {
+export async function fundFromUsdc(s: Session, usdc: number, fundedAt?: bigint) {
   const pub = publicClient('testnet')
   const inWire = parseUnits(usdc.toFixed(6), AGORA.testnet.usdcDecimals)
   const out = await quote(pub, inWire, 'usdc')
-  return run(s, fundCalls(s.address, inWire, out), Number(formatUnits(out, 6)))
+  return run(s, fundCalls(s.address, inWire, out), Number(formatUnits(out, 6)), fundedAt)
 }
 
-export const depositAusd = (s: Session, ausd: number) => run(s, depositCalls(parseUnits(ausd.toFixed(6), 6)), ausd)
+export const depositAusd = (s: Session, ausd: number, fundedAt?: bigint) => run(s, depositCalls(parseUnits(ausd.toFixed(6), 6)), ausd, fundedAt)
 
-export async function withdrawToUsdc(s: Session, ausd: number) {
+export async function withdrawToUsdc(s: Session, ausd: number, fundedAt?: bigint) {
   const pub = publicClient('testnet')
   const inWire = parseUnits(ausd.toFixed(6), 6)
   const out = await quote(pub, inWire, 'ausd')
-  return run(s, withdrawCalls(s.address, inWire, out), Number(formatUnits(out, AGORA.testnet.usdcDecimals)))
+  return run(s, withdrawCalls(s.address, inWire, out), Number(formatUnits(out, AGORA.testnet.usdcDecimals)), fundedAt)
 }
 
 // testnet only: 50 usdc, the swapper role and gas from the server
 export async function testUsdc(address: Address) {
   const r = await fetch(`${API}/drip/usdc`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ address }) })
-  const j = (await r.json()) as { usdc?: number; error?: string; ms?: number }
+  const j = (await r.json()) as { usdc?: number; error?: string; ms?: number; block?: string; txs?: string[] }
   if (!r.ok && j.error !== 'cooldown') throw new Error(j.error ?? 'drip failed')
   return j
 }
@@ -61,4 +62,11 @@ export async function waitFinal(block: bigint) {
     if ((await pub.getBlockNumber()) >= block + 3n) return
     await new Promise((r) => setTimeout(r, 300))
   }
+}
+
+// the batch needs about 0.11 MON of gas limits in flight; below 0.2 the server tops it up first
+export async function ensureGas(address: Address, mon: number): Promise<bigint | undefined> {
+  if (mon >= 0.2) return undefined
+  const r = await testUsdc(address)
+  return r.block && r.txs?.length ? BigInt(r.block) : undefined
 }

@@ -2,7 +2,7 @@
 // the range and side switches, the leverage slider, and the rocket that carries the order from the
 // button to the price. the look is tmp/claude/preview/trade-b2.png, the motion trade-rocket.mp4.
 import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
-import { View, Modal, Pressable, StyleSheet, type LayoutChangeEvent } from "react-native";
+import { View, Pressable, StyleSheet, BackHandler, type LayoutChangeEvent } from "react-native";
 import Svg, { Path, Rect, Line, Defs, LinearGradient, Stop, Pattern } from "react-native-svg";
 import Animated, {
   Easing,
@@ -15,7 +15,7 @@ import Animated, {
   withTiming,
   type SharedValue,
 } from "react-native-reanimated";
-import { Gesture, GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { scheduleOnRN } from "react-native-worklets";
 import * as Haptics from "expo-haptics";
 import { Text } from "./Text";
@@ -475,7 +475,9 @@ function Spinner() {
   );
 }
 
-// a tray that springs up over a flat grey, like onboarding's
+// a tray that springs up over a flat grey, like onboarding's. it draws inside the page rather than in
+// a modal window: android loses a modal's surface when the passkey sheet (another activity) opens over
+// it and the tray comes back black. the back button closes it.
 export function Tray({ visible, onClose, children }: { visible: boolean; onClose: () => void; children: ReactNode }) {
   const y = useSharedValue(700),
     alpha = useSharedValue(0);
@@ -503,10 +505,18 @@ export function Tray({ visible, onClose, children }: { visible: boolean; onClose
   );
   const panel = useAnimatedStyle(() => ({ transform: [{ translateY: y.get() }] })),
     backdrop = useAnimatedStyle(() => ({ opacity: alpha.get() * 0.55 }));
+  useEffect(() => {
+    if (!visible) return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      close();
+      return true;
+    });
+    return () => sub.remove();
+  }, [visible]);
   if (!visible) return null;
   return (
-    <Modal transparent visible animationType="none" statusBarTranslucent onRequestClose={close}>
-      <GestureHandlerRootView style={{ flex: 1 }}>
+    <View style={[StyleSheet.absoluteFill, { zIndex: 50, elevation: 50 }]}>
+      <View style={{ flex: 1 }}>
         <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: "#86828F" }, backdrop]}>
           <Pressable accessibilityLabel="Dismiss" style={{ flex: 1 }} onPress={close} />
         </Animated.View>
@@ -518,8 +528,8 @@ export function Tray({ visible, onClose, children }: { visible: boolean; onClose
             </Animated.View>
           </GestureDetector>
         </View>
-      </GestureHandlerRootView>
-    </Modal>
+      </View>
+    </View>
   );
 }
 

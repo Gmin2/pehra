@@ -19,9 +19,10 @@ const REFILL_BELOW = 2_000_000_000n
 const cooldown = new Map<string, number>()
 const usdcCooldown = new Map<string, number>()
 // the fund screen's test money: 50 test usdc (agora's CTK), the swapper role on the pair, and enough MON
-// for the four transaction fund batch (about 0.055 MON of limits at testnet fees)
+// for the fund batch. monad admits a tx only if the balance covers the gas limit times the fee cap of
+// everything pending, and 0.1 MON left the fourth of four waiting on the first (23.9s on the phone)
 const DRIP_USDC = 50n * 10n ** 18n
-const USDC_MON = parseEther('0.1')
+const USDC_MON = parseEther('0.3')
 let refilling = false
 
 // the agora faucet has a cooldown, so the payer keeps its own AUSD stock and tops up in the background
@@ -71,7 +72,7 @@ async function drip(address: Address) {
   }
 }
 
-async function dripUsdc(address: Address) {
+async function dripUsdc(address: Address, withUsdc = true) {
   const a = AGORA.testnet
   const [mon, usdc, swapper, nonce] = await Promise.all([
     pub.getBalance({ address }),
@@ -82,12 +83,12 @@ async function dripUsdc(address: Address) {
   const calls: Call[] = []
   if (!swapper) calls.push({ to: a.whitelister, gas: AGORA_GAS.whitelist, data: encodeFunctionData({ abi: whitelisterAbi, functionName: 'setApprovedSwapper', args: [address] }) })
   if (mon < USDC_MON) calls.push({ to: address, value: USDC_MON - mon, gas: GAS.transfer })
-  if (usdc < DRIP_USDC / 5n) calls.push({ to: a.usdc, gas: GAS.erc20Transfer, data: encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [address, DRIP_USDC] }) })
+  if (withUsdc && usdc < DRIP_USDC / 5n) calls.push({ to: a.usdc, gas: GAS.erc20Transfer, data: encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [address, DRIP_USDC] }) })
   payerNonce = nonce + calls.length
   try {
     const sent = await sendBatch(pub, payer, calls, { nonce })
     const block = sent.reduce((b, x) => (x.receipt.blockNumber > b ? x.receipt.blockNumber : b), 0n)
-    return { txs: sent.map(x => x.hash), block, whitelisted: !swapper, usdc: Number(formatUnits(usdc + (usdc < DRIP_USDC / 5n ? DRIP_USDC : 0n), 18)) }
+    return { txs: sent.map(x => x.hash), block, whitelisted: !swapper, usdc: Number(formatUnits(usdc + (withUsdc && usdc < DRIP_USDC / 5n ? DRIP_USDC : 0n), 18)) }
   } catch (e) {
     payerNonce = null
     throw e
@@ -133,12 +134,13 @@ const server = Bun.serve({
     if (url.pathname === '/drip/usdc' && req.method === 'POST') {
       const body = await req.json().catch(() => ({})) as { address?: string }
       if (!body.address || !isAddress(body.address)) return json({ error: 'bad address' }, 400)
+      // the usdc has a cooldown, the gas and the swapper role do not
       const last = usdcCooldown.get(body.address.toLowerCase()) ?? 0
-      if (Date.now() - last < 10 * 60_000) return json({ error: 'cooldown' }, 429)
+      const withUsdc = Date.now() - last >= 10 * 60_000
       try {
         const t0 = Date.now()
-        const r = await dripUsdc(body.address)
-        usdcCooldown.set(body.address.toLowerCase(), Date.now())
+        const r = await dripUsdc(body.address, withUsdc)
+        if (withUsdc) usdcCooldown.set(body.address.toLowerCase(), Date.now())
         console.log('drip usdc', body.address, r.txs.length, 'txs', r.whitelisted ? 'whitelisted' : '', `${Date.now() - t0}ms`)
         return json({ ...r, block: r.block.toString(), ms: Date.now() - t0 })
       } catch (e) {
