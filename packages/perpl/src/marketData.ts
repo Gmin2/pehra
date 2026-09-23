@@ -37,7 +37,7 @@ export class MarketDataSocket {
 
   // add or drop streams on an open socket, each call counts against the 10 requests a minute
   subscribe(streams: string[], on = true) {
-    if (this.ws?.readyState !== WebSocket.OPEN) return false
+    if (this.ws?.readyState !== 1) return false
     this.ws.send(JSON.stringify({ mt: MT.subscribe, subs: streams.map(stream => ({ stream, subscribe: on })) }))
     return true
   }

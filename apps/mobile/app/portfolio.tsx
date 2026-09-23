@@ -14,6 +14,7 @@ import { colors, space } from "../src/ui/theme";
 import { Coin } from "../src/ui/Coin";
 import { PehraBird } from "../src/ui/PehraBird";
 import { useMarkets, useAccount, money, pct, price, type LiveMarket } from "../src/live";
+import { prefetchCandles } from "../src/candles";
 import type { PositionHealth } from "../src/guard";
 
 const ink = colors.ink,
@@ -61,7 +62,7 @@ function Header({ address, open }: { address?: string; open: number }) {
 function MarketRow({ m, onPress }: { m: LiveMarket; onPress: () => void }) {
   const up = m.change24h >= 0;
   return (
-    <Tap onPress={onPress} accessibilityLabel={`${m.symbol} perp`} innerStyle={{ height: 72, flexDirection: "row", alignItems: "center", gap: 12 }}>
+    <Tap onPress={onPress} onPressIn={() => prefetchCandles(m.market)} accessibilityLabel={`${m.symbol} perp`} innerStyle={{ height: 72, flexDirection: "row", alignItems: "center", gap: 12 }}>
       <Coin symbol={m.symbol} />
       <View style={{ flex: 1, gap: 4 }}>
         <Text style={{ fontSize: 16, fontWeight: "600", color: ink }}>{m.symbol.toLowerCase()}</Text>
@@ -90,6 +91,10 @@ export default function Portfolio() {
   const total = balance === null ? null : balance + inPositions + pnl;
   const open = riskOpenness(health, threshold);
   const sorted = useMemo(() => [...markets].sort((x, y) => (x.symbol === "MON" ? -1 : y.symbol === "MON" ? 1 : 0)), [markets]);
+  const held = health.map((h) => h.symbol).join();
+  useEffect(() => {
+    for (const x of sorted) if (held.includes(x.symbol)) prefetchCandles(x.market);
+  }, [held, sorted.length]);
   useEffect(() => {
     if (health.length && tab === "markets" && a.tab !== "markets") setTab("positions");
   }, [health.length]);
@@ -168,7 +173,7 @@ export default function Portfolio() {
               <View style={{ gap: 10, marginHorizontal: -8, paddingTop: 4 }}>
                 {health.map((h) => (
                   <Animated.View key={h.pid} layout={LinearTransition.duration(300)}>
-                    <Tap onPress={() => openTrade(h.symbol)} accessibilityLabel={`${h.symbol} ${h.side}`}>
+                    <Tap onPress={() => openTrade(h.symbol)} onPressIn={() => prefetchCandles(sorted.find((x) => x.symbol === h.symbol)?.market)} accessibilityLabel={`${h.symbol} ${h.side}`}>
                       <PositionCard h={h} threshold={threshold} />
                     </Tap>
                   </Animated.View>

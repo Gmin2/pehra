@@ -1,8 +1,10 @@
-// price history for the trade chart, straight from perpl's candle stream. the screen opens its own
-// market data socket so the warm one keeps its few subscriptions, and switching range swaps one
-// stream for another on the same socket once it is open.
-import { useEffect, useRef, useState } from 'react'
-import { fromPrice, MarketDataSocket, type Candle, type CandlesFrame, type Market } from '@pehra/perpl'
+// price history for the trade chart, from perpl's candle stream on the market data socket the app
+// already opened at start (a fresh socket costs about two seconds of tls over 5g). candles are kept
+// per stream, so a market seen once opens instantly, and home starts the fetch on the row's press in.
+import { useEffect, useState } from 'react'
+import { fromPrice, MarketDataSocket, type Candle, type CandlesFrame, type Market, type SubscribedFrame } from '@pehra/perpl'
+import { marketData, warmChain } from './warm'
+import { log } from './log'
 
 export type Range = '1h' | '1d' | '1w' | '1m'
 // candle length in seconds and how many make the range
@@ -15,39 +17,108 @@ export const ranges: Record<Range, { res: number; count: number }> = {
 
 export type Point = { t: number; p: number }
 
-export function useCandles(market: Market | undefined, range: Range) {
-  const [points, setPoints] = useState<Point[]>([])
-  const [sock, setSock] = useState<MarketDataSocket | null>(null)
-  const rangeRef = useRef(range)
-  rangeRef.current = range
-  const byTime = useRef(new Map<number, Candle>())
+const cache = new Map<string, Map<number, Candle>>()
+const sids = new Map<number, string>()
+const listeners = new Map<string, Set<() => void>>()
+// perpl allows 16 streams a connection and the warm socket already holds two, so the oldest candle
+// streams are dropped past six
+const live: string[] = []
+let hooked: MarketDataSocket | null = null
+const hookedAll = new WeakSet<MarketDataSocket>()
+const pending = new Set<string>()
 
+const streamFor = (m: Market, range: Range) => MarketDataSocket.streams(10143).candles(m.id, ranges[range].res)
+
+function hook(ws: MarketDataSocket) {
+  if (ws !== ownSocket) hooked = ws
+  if (hookedAll.has(ws)) return
+  hookedAll.add(ws)
+  // the snapshot can arrive before the subscribe ack that names its sid, so it waits for it
+  const early = new Map<number, CandlesFrame>()
+  const take = (c: CandlesFrame) => {
+    const stream = sids.get(c.sid)
+    if (!stream) {
+      if (c.mt === 11) early.set(c.sid, c)
+      return
+    }
+    if (c.mt === 11 || !cache.has(stream)) cache.set(stream, new Map())
+    const byTime = cache.get(stream)!
+    for (const k of c.d) byTime.set(k.t, k)
+    // a snapshot shows at once, updates land every block so they go out at most four times a second
+    if (c.mt === 11) listeners.get(stream)?.forEach(fn => fn())
+    else if (!pending.has(stream)) {
+      pending.add(stream)
+      setTimeout(() => { pending.delete(stream); listeners.get(stream)?.forEach(fn => fn()) }, 250)
+    }
+  }
+  ws.on(f => {
+    if (f.mt === 6)
+      for (const s of (f as SubscribedFrame).subs) {
+        sids.set(s.sid, s.stream)
+        const c = early.get(s.sid)
+        if (c) { early.delete(s.sid); take(c) }
+      }
+    if (f.mt === 11 || f.mt === 12) take(f as CandlesFrame)
+  })
+}
+
+function ensure(stream: string, tries = 0) {
+  warmChain()
+  const ws = marketData()
+  // a new warm socket starts with none of our streams
+  if (ws && hooked && hooked !== ws) { live.length = 0; sids.clear() }
+  if (ws && live.includes(stream) && hooked === ws) return
+  if (!ws || !ws.subscribe([stream])) {
+    if (tries < 20) setTimeout(() => ensure(stream, tries + 1), 150)
+    else own(stream)
+    return
+  }
+  hook(ws)
+  live.push(stream)
+  if (live.length > 6) {
+    const old = live.shift()!
+    ws.subscribe([old], false)
+    cache.delete(old)
+  }
+}
+
+// the warm socket never came up: open one just for candles rather than leave the chart empty
+let ownSocket: MarketDataSocket | null = null
+function own(stream: string) {
+  log(`candles falling back to their own socket for ${stream}`)
+  if (!ownSocket) {
+    ownSocket = new MarketDataSocket('testnet')
+    const ws = ownSocket
+    hook(ws)
+    ws.connect([stream]).catch(() => { ownSocket = null })
+    live.push(stream)
+    return
+  }
+  if (ownSocket.subscribe([stream])) live.push(stream)
+  else setTimeout(() => own(stream), 300)
+}
+
+export function prefetchCandles(m: Market | undefined, range: Range = '1d') {
+  if (m) ensure(streamFor(m, range))
+}
+
+function read(m: Market, range: Range): Point[] {
+  const byTime = cache.get(streamFor(m, range))
+  if (!byTime) return []
+  return [...byTime.values()].sort((a, b) => a.t - b.t).slice(-ranges[range].count).map(k => ({ t: k.t, p: fromPrice(m, k.c) }))
+}
+
+export function useCandles(market: Market | undefined, range: Range) {
+  const [points, setPoints] = useState<Point[]>(() => (market ? read(market, range) : []))
   useEffect(() => {
     if (!market) return
-    const ws = new MarketDataSocket('testnet')
-    let alive = true
-    const off = ws.on(f => {
-      if (f.mt !== 11 && f.mt !== 12) return
-      const c = f as CandlesFrame
-      const want = ranges[rangeRef.current]
-      if (c.r !== want.res) return
-      if (c.mt === 11) byTime.current = new Map()
-      for (const k of c.d) byTime.current.set(k.t, k)
-      const list = [...byTime.current.values()].sort((a, b) => a.t - b.t).slice(-want.count)
-      if (alive) setPoints(list.map(k => ({ t: k.t, p: fromPrice(market, k.c) })))
-    })
-    ws.connect([]).then(() => alive && setSock(ws)).catch(() => {})
-    return () => { alive = false; off(); ws.close(); setSock(null) }
-  }, [market?.id])
-
-  useEffect(() => {
-    if (!market || !sock) return
-    const stream = MarketDataSocket.streams(10143).candles(market.id, ranges[range].res)
-    setPoints([])
-    byTime.current = new Map()
-    sock.subscribe([stream])
-    return () => { sock.subscribe([stream], false) }
-  }, [range, sock, market?.id])
-
+    const stream = streamFor(market, range)
+    setPoints(read(market, range))
+    const fn = () => setPoints(read(market, range))
+    if (!listeners.has(stream)) listeners.set(stream, new Set())
+    listeners.get(stream)!.add(fn)
+    ensure(stream)
+    return () => void listeners.get(stream)?.delete(fn)
+  }, [market?.id, range])
   return points
 }

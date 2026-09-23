@@ -200,8 +200,8 @@ export const PriceChart = memo(function PriceChart({ points, width, mark, liq, g
               {scrub !== null && <Line x1={sx} x2={sx} y1={top} y2={top + PRICE_H} stroke="white" strokeOpacity={0.4} strokeWidth={1} />}
             </>
           )}
-          {series.length === 0 && <Line x1={0} x2={pw} y1={top + PRICE_H / 2} y2={top + PRICE_H / 2} stroke="white" strokeOpacity={0.35} strokeWidth={2} strokeDasharray="2 8" strokeLinecap="round" />}
         </Svg>
+        {series.length === 0 && <ChartSkeleton top={top} width={pw} />}
         {pill(guardY, amber, "guard " + fmt(guard), true)}
         {pill(liqY, red, "liq " + fmt(liq))}
         {series.length > 1 && (
@@ -232,6 +232,25 @@ export const PriceChart = memo(function PriceChart({ points, width, mark, liq, g
     </GestureDetector>
   );
 });
+
+// while the first candles come in: a row of soft bars where the line will be, breathing
+function ChartSkeleton({ top, width }: { top: number; width: number }) {
+  const k = useSharedValue(0);
+  useEffect(() => {
+    k.set(withRepeat(withTiming(1, { duration: 900 }), -1, true));
+  }, [k]);
+  const s = useAnimatedStyle(() => ({ opacity: 0.5 + 0.5 * k.get() }));
+  const n = 24,
+    gap = 4,
+    bw = (width - gap * (n - 1)) / n;
+  return (
+    <Animated.View style={[{ position: "absolute", left: 0, top, width, height: PRICE_H, flexDirection: "row", alignItems: "flex-end", gap }, s]}>
+      {Array.from({ length: n }, (_, i) => (
+        <View key={i} style={{ width: bw, height: PRICE_H * (0.35 + 0.25 * Math.sin(i / 3.2) + 0.12 * Math.sin(i * 1.7)), borderTopLeftRadius: 4, borderTopRightRadius: 4, backgroundColor: "#ffffff1f" }} />
+      ))}
+    </Animated.View>
+  );
+}
 
 // leverage as a slider that snaps to its stops, a haptic on each
 export function LeverageSlider({ stops, value, onChange }: { stops: number[]; value: number; onChange: (v: number) => void }) {
