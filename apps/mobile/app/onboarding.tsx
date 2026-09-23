@@ -26,7 +26,7 @@ import {
 import { createAccount, signIn, type Session } from "../src/account";
 import { prepareAccount } from "../src/trade";
 import { money } from "../src/live";
-import { enrollGuard } from "../src/guard";
+import { enrollGuard, guardState } from "../src/guard";
 import { registerPush } from "../src/push";
 import { log } from "../src/log";
 import { setOnboarded } from "../src/keys";
@@ -34,38 +34,38 @@ import { setOnboarded } from "../src/keys";
 // family's onboarding from the reference recordings: choose, terms, working grid, ready card with
 // its tooltip, education trays, the completed card with confetti. only the words are pehra's.
 const TERMS = [
-  "I understand that perps are leveraged. A small move in price can close my position.",
-  "I understand that the guard adds margin within limits I set, and that I can turn it off.",
-  "I understand that my passkey is my account and pehra never holds my keys.",
-  "I understand that this is monad testnet, with test dollars on perpl testnet.",
+  "i understand that perps are leveraged. a small move in price can close my position.",
+  "i understand that the guard adds margin within limits i set, and that i can turn it off.",
+  "i understand that my passkey is my account and pehra never holds my keys.",
+  "i understand that this is monad testnet, with test dollars on perpl testnet.",
 ]
 const LESSONS: Lesson[] = [
   {
     art: "shield",
-    title: ["Most liquidations happen while you’re", { u: "away.", mark: "circle" }],
+    title: ["most liquidations happen while you’re", { u: "away.", mark: "circle" }],
     body: (
       <>
-        When a position runs out of margin, perpl closes it for you, and it rarely waits for you to wake up. The guard
+        when a position runs out of margin, perpl closes it for you, and it rarely waits for you to wake up. the guard
         watches the <Em>distance to liquidation</Em> and adds margin before it gets there.
       </>
     ),
   },
   {
     art: "session",
-    title: ["One signature, and every trade fills in about a", { u: "second.", mark: "underline" }],
+    title: ["one signature, and every trade fills in about a", { u: "second.", mark: "underline" }],
     body: (
       <>
-        Your passkey lets the guard keep a trading session for you. It adds margin and places your orders, no wallet
-        popup, no gas. You can turn it off any time.
+        your passkey lets the guard keep a trading session for you. it adds margin and places your orders, no wallet
+        popup, no gas. you can turn it off any time.
       </>
     ),
   },
   {
     art: "lock",
-    title: ["Your money stays", { u: "yours.", mark: "highlight" }],
+    title: ["your money stays", { u: "yours.", mark: "highlight" }],
     body: (
       <>
-        The guard can add margin, but it can never withdraw. Only your passkey moves money out of your account, and it
+        the guard can add margin, but it can never withdraw. only your passkey moves money out of your account, and it
         <Em> asks you every time</Em>.
       </>
     ),
@@ -97,7 +97,7 @@ export default function Onboarding() {
   const fail = (e: unknown) => {
     const msg = e instanceof Error ? e.message : String(e);
     log(`onboarding ${step} failed: ${msg.slice(0, 200)}`);
-    setError(/cancel/i.test(msg) ? "Cancelled. Try again when you are ready." : msg.slice(0, 160));
+    setError(/cancel/i.test(msg) ? "cancelled. try again when you’re ready." : msg.slice(0, 160));
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
   };
   const create = async (existing: boolean) => {
@@ -107,7 +107,7 @@ export default function Onboarding() {
     next("creating");
     try {
       const reuse = existing || !!a.stored;
-      setProgress(reuse ? "Waiting for your passkey…" : "Making your passkey…");
+      setProgress(reuse ? "waiting for your passkey…" : "making your passkey…");
       log(reuse ? "onboarding: sign in with the stored passkey" : "onboarding: creating a passkey");
       const t0 = Date.now();
       const sess = reuse ? await signIn(a.stored ? { credentialId: a.stored.credentialId } : undefined) : await createAccount();
@@ -171,7 +171,18 @@ export default function Onboarding() {
   let action: undefined | { label: string; press: () => void; disabled?: boolean };
   if (step === "terms") action = { label: "i understand, continue", press: () => create(false), disabled: terms.length !== TERMS.length };
   if (step === "ready") action = { label: "turn on the guard", press: () => setTray(true) };
-  if (step === "done") action = { label: "place your first trade", press: () => a.go("/portfolio") };
+  // a new account goes straight to a ticket; one that already holds positions goes home to see them
+  if (step === "done")
+    action = {
+      label: "place your first trade",
+      press: () => {
+        const addr = session.current?.address ?? a.stored?.address;
+        if (!addr) return a.go("/portfolio");
+        guardState(addr)
+          .then((g) => a.go(g.health?.length ? "/portfolio" : "/trade?symbol=MON"))
+          .catch(() => a.go("/portfolio"));
+      },
+    };
   return (
     <Screen>
       {!bare && (
@@ -187,7 +198,7 @@ export default function Onboarding() {
           }
           left={step === "choose" ? "close" : "back"}
           onLeft={() => (step === "terms" ? next("choose") : a.back())}
-          onRight={() => a.open("education", "Your account")}
+          onRight={() => a.open("education", "your account")}
         />
       )}
       <ScrollView contentContainerStyle={{ flexGrow: 1, paddingBottom: 20 }}>

@@ -459,8 +459,8 @@ function Art({ kind, width }: { kind: Lesson["art"]; width: number }) {
             <Rect x={330} y={148} width={187} height={56} rx={28} fill={soft} />
             <Rect x={197} y={384} width={453} height={300} rx={32} fill={soft} />
             <SvgImage href={coinImages.MON} x={220} y={456} width={60} height={60} />
-            <SvgText x={296} y={480} fontSize={28} fontWeight="700" fill="white">MON long</SvgText>
-            <SvgText x={296} y={510} fontSize={21} fill="#ffffffaa">3x · 100 AUSD</SvgText>
+            <SvgText x={296} y={480} fontSize={28} fontWeight="700" fill="white">mon long</SvgText>
+            <SvgText x={296} y={510} fontSize={21} fill="#ffffffaa">3x · 10 ausd</SvgText>
             <SvgText x={226} y={578} fontSize={21} fill="#ffffffcc">distance to liquidation</SvgText>
             <Rect x={226} y={596} width={395} height={16} rx={8} fill="url(#risk)" opacity={0.9} />
             <Circle cx={560} cy={604} r={15} fill="white" />
@@ -555,7 +555,7 @@ export function LessonTray({
   visible,
   onDone,
   onClose,
-  finalLabel = "Continue",
+  finalLabel = "continue",
   startPage = 0,
 }: {
   lessons: Lesson[];
@@ -655,7 +655,7 @@ export function PositionStack({ width }: { width: number }) {
   const front = useAnimatedStyle(() => ({ transform: [{ translateY: reduced ? 0 : rise.get() }] }));
   const w = Math.min(width - 88, 310),
     h = w * 0.58;
-  const fill = useAnimatedStyle(() => ({ width: `${72 * bar.get()}%` }));
+  const fill = useAnimatedStyle(() => ({ width: `${44 * bar.get()}%` }));
   const back = (color: string, top: number, inset: number, label: string, tag: string, fg: string) => (
     <View style={{ position: "absolute", top, left: inset, right: inset, height: h, borderRadius: 20, backgroundColor: color, paddingHorizontal: 16, paddingTop: 5, flexDirection: "row", justifyContent: "space-between" }}>
       <Text style={{ color: fg, fontSize: 11, fontWeight: "600" }}>{label}</Text>
@@ -672,7 +672,7 @@ export function PositionStack({ width }: { width: number }) {
           <MarketCoin logo="monad" />
           <View style={{ flex: 1 }}>
             <Text style={{ color: paper, fontSize: 16, fontWeight: "600" }}>mon long</Text>
-            <Text style={{ color: "#ffffffa6", fontSize: 12, fontWeight: "500" }}>3x · 100 AUSD</Text>
+            <Text style={{ color: "#ffffffa6", fontSize: 12, fontWeight: "500" }}>3x · 10 ausd</Text>
           </View>
           <View style={{ backgroundColor: paper, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4 }}>
             <Text style={{ color: "#23765A", fontSize: 12.5, fontWeight: "700", fontVariant: ["tabular-nums"] }}>+4.2%</Text>
@@ -680,7 +680,7 @@ export function PositionStack({ width }: { width: number }) {
         </View>
         <View style={{ gap: 7 }}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-            <Text style={{ color: "#ffffffcc", fontSize: 12, fontWeight: "500" }}>28% from liquidation</Text>
+            <Text style={{ color: "#ffffffcc", fontSize: 12, fontWeight: "500" }}>13% from liquidation</Text>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
               <Icon name="shield" size={12} color={paper} />
               <Text style={{ color: paper, fontSize: 12, fontWeight: "600" }}>guarded</Text>

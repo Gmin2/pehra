@@ -20,6 +20,15 @@ const RANGES = ["1h", "1d", "1w", "1m"] as const;
 const SIDES = ["long", "short"] as const;
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// perpl's reasons in plain words for the button
+function plain(msg: string) {
+  if (/AmountExceedsAvailableBalance|insufficient/i.test(msg)) return "not enough ausd free";
+  if (/no live session/i.test(msg)) return "the guard is reconnecting, try again";
+  if (/timed out/i.test(msg)) return "perpl didn’t answer, try again";
+  if (/not filled|OrderDoesNotExist/i.test(msg)) return "no one took the other side";
+  return "try again";
+}
+
 function stopsFor(max: number) {
   const s = [1, 2, 3, 5, 10, 15, 20].filter((x) => x <= max);
   if (!s.includes(max)) s.push(max);
@@ -114,7 +123,7 @@ export default function Trade() {
     } catch (e) {
       log(`trade ${m.symbol} ${side} ${size} at ${lev}x failed: ${e instanceof Error ? e.message : e}`);
       flight.fizzle(f);
-      setError(e instanceof Error ? e.message : "order failed");
+      setError(plain(e instanceof Error ? e.message : String(e)));
       setPhase("failed");
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       setTimeout(() => {
