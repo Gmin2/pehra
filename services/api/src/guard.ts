@@ -5,7 +5,7 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import type { Hex } from 'viem'
 import { sendPush } from './push'
 import {
-  decide, defaultGuardSettings, getContext, MarketDataSocket, positionHealth, TradingSocket, fromCns, toCns, toLeverage,
+  decide, defaultGuardSettings, getContext, MarketDataSocket, positionHealth, TradingSocket, fromCns, toCns, toLeverage, toSize,
   type Context, type Decision, type Enrolled, type GuardSettings, type Health, type Market, type Position,
 } from '@pehra/perpl'
 
@@ -95,15 +95,15 @@ export class Guard {
   }
 
   // the whole guard is this function, run on every position update and every mark tick
-  health(address: string): Health[] {
+  health(address: string): (Health & { symbol: string; lv: number; mkt: number })[] {
     const addr = address.toLowerCase()
     const ts = this.sessions.get(addr)
     if (!ts || !this.ctx) return []
-    const out: Health[] = []
+    const out: (Health & { symbol: string; lv: number; mkt: number })[] = []
     for (const pos of ts.positions.values()) {
       const m = this.ctx.markets.find(x => x.id === pos.mkt)
       const state = this.market.states.get(pos.mkt)
-      if (m && state) out.push(positionHealth(pos, m, state.mrk))
+      if (m && state) out.push({ ...positionHealth(pos, m, state.mrk), symbol: m.symbol, lv: pos.lv, mkt: pos.mkt })
     }
     return out
   }
@@ -149,7 +149,8 @@ export class Guard {
     if (!ts || !this.ctx) throw new Error('no live session')
     const m = this.ctx.markets.find(x => x.symbol === symbol)
     if (!m) throw new Error('no market ' + symbol)
-    return { market: m, result: await ts.openMarket({ mkt: m.id, side, size, leverage: toLeverage(leverage) }) }
+    // size arrives in coins, perpl wants it scaled by the market's size decimals
+    return { market: m, result: await ts.openMarket({ mkt: m.id, side, size: toSize(m, size), leverage: toLeverage(leverage) }) }
   }
 
   // a manual add from the phone, the push's "add" action lands here

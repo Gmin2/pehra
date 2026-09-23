@@ -201,9 +201,9 @@ export function Button({
           backgroundColor:
             color ||
             (variant === "secondary"
-              ? "#f2f2f2"
+              ? "#F0EDF3"
               : variant === "black"
-                ? "#1a1a1a"
+                ? "#28243E"
                 : variant === "danger"
                   ? colors.red
                   : colors.blue),
@@ -214,7 +214,7 @@ export function Button({
         <Text
           style={[
             s.buttonText,
-            { color: variant === "secondary" ? "#222" : "white" },
+            { color: variant === "secondary" ? "#28243E" : "#FAF8F2" },
           ]}
         >
           {children}
@@ -633,7 +633,7 @@ export const s = StyleSheet.create({
     height: 58,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderColor: "#eee",
-    backgroundColor: "white",
+    backgroundColor: "#FAF8F2",
   },
   footer: { paddingHorizontal: 24, paddingTop: 12, paddingBottom: 12, gap: 10 },
   overline: {
