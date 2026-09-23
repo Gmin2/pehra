@@ -118,10 +118,21 @@ export class Guard {
   }
 
   // each position with its health and the stop and take profit resting on it (untriggered, st 8)
+  // the last health and balance seen per account, served while perpl's session reconnects (it drops
+  // with a ping timeout about once a minute) so the phone never falls back to an empty account
+  private lastHealth = new Map<string, (Health & { symbol: string; lv: number; mkt: number; stop?: number; take?: number })[]>()
+  private lastBalance = new Map<string, number>()
+  balance(address: string) {
+    const addr = address.toLowerCase()
+    const ts = this.sessions.get(addr)
+    if (ts?.account) this.lastBalance.set(addr, fromCns(ts.account.b))
+    return this.lastBalance.get(addr) ?? null
+  }
+
   health(address: string): (Health & { symbol: string; lv: number; mkt: number; stop?: number; take?: number })[] {
     const addr = address.toLowerCase()
     const ts = this.sessions.get(addr)
-    if (!ts || !this.ctx) return []
+    if (!ts || !this.ctx) return this.lastHealth.get(addr) ?? []
     const out: (Health & { symbol: string; lv: number; mkt: number; stop?: number; take?: number })[] = []
     for (const pos of ts.positions.values()) {
       const m = this.ctx.markets.find(x => x.id === pos.mkt)
@@ -136,6 +147,7 @@ export class Guard {
       }
       out.push({ ...positionHealth(pos, m, state.mrk), symbol: m.symbol, lv: pos.lv, mkt: pos.mkt, stop, take })
     }
+    this.lastHealth.set(addr, out)
     return out
   }
 

@@ -1,6 +1,7 @@
 // the live data the screens read: markets from perpl's context and market data stream, the account,
 // positions and guard events from the server, all as hooks so a screen only re-renders on real change.
 import { useEffect, useRef, useState } from 'react'
+import AsyncStorage from '@react-native-async-storage/async-storage'
 import { getContext, fromPrice, type Market, type MarketState } from '@pehra/perpl'
 import { marketData, warmChain } from './warm'
 import { guardState, type GuardState } from './guard'
@@ -65,17 +66,44 @@ export function useMarkets() {
   return markets
 }
 
-// the account as the server sees it: balance, positions with their health, guard settings and events
+// the account as the server sees it: balance, positions with their health, guard settings and events.
+// the last answer is kept in memory and on disk, so every screen (and a cold start) draws the last known
+// balance at once and the fresh one replaces it a moment later. `stale` is true until then.
+const known = new Map<string, GuardState>()
+const KEY = (a: string) => `pehra-account-${a.toLowerCase()}`
+let saveTimer: ReturnType<typeof setTimeout> | null = null
+function remember(address: string, g: GuardState) {
+  known.set(address.toLowerCase(), g)
+  if (saveTimer) return
+  saveTimer = setTimeout(() => {
+    saveTimer = null
+    const latest = known.get(address.toLowerCase())
+    if (latest) void AsyncStorage.setItem(KEY(address), JSON.stringify(latest)).catch(() => {})
+  }, 3000)
+}
+
 export function useAccount(address: string | null, everyMs = 2000) {
-  const [state, setState] = useState<GuardState | null>(null)
+  const [state, setState] = useState<GuardState | null>(() => (address ? known.get(address.toLowerCase()) ?? null : null))
+  const [stale, setStale] = useState(true)
   const [error, setError] = useState<string | null>(null)
   useEffect(() => {
     if (!address) { setState(null); return }
-    let alive = true
+    let alive = true, fresh = false
+    const cached = known.get(address.toLowerCase())
+    if (cached) setState(cached)
+    else
+      AsyncStorage.getItem(KEY(address))
+        .then(raw => { if (alive && raw && !fresh) setState(JSON.parse(raw) as GuardState) })
+        .catch(() => {})
     const tick = async () => {
       try {
         const g = await guardState(address)
-        if (alive) { setState(g); setError(null) }
+        if (!alive) return
+        fresh = true
+        remember(address, g)
+        setState(g)
+        setStale(g.live === false)
+        setError(null)
       } catch (e) {
         if (alive) setError(e instanceof Error ? e.message : String(e))
       }
@@ -84,7 +112,7 @@ export function useAccount(address: string | null, everyMs = 2000) {
     const timer = setInterval(tick, everyMs)
     return () => { alive = false; clearInterval(timer) }
   }, [address, everyMs])
-  return { account: state, error }
+  return { account: state, stale, error }
 }
 
 export const money = (n: number, digits = 2) => n.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })

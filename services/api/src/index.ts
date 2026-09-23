@@ -192,7 +192,7 @@ const server = Bun.serve({
       const address = m[1]
       if (!guard.has(address)) return json({ enrolled: false })
       const ts = guard.session(address)
-      return json({ enrolled: true, live: !!ts, settings: guard.settings(address), balance: ts ? fromCns(ts.account?.b ?? '0') : null, health: guard.health(address), events: guard.recent(address, 200) })
+      return json({ enrolled: true, live: !!ts, settings: guard.settings(address), balance: guard.balance(address), health: guard.health(address), events: guard.recent(address, 200) })
     }
     if (m && req.method === 'POST') {
       const body = await req.json().catch(() => ({})) as Partial<GuardSettings>
