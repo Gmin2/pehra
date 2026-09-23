@@ -1,0 +1,27 @@
+# a perpl account, from its AccountCreated event
+type Account {
+  id: ID! # perpl account id
+  address: String!
+  createdBlock: Int!
+  createdTx: String!
+}
+
+# one thing that happened to an account on chain: money in or out, a position opened, grown, cut,
+# closed or liquidated, or margin added to a position. amounts stay in perpl's wire units
+# (collateral CNS 6 decimals, price PNS and lots LNS per market) and are shaped in the app.
+type Activity {
+  id: ID! # chain_block_logIndex
+  accountId: BigInt! @index
+  kind: String! # deposit | withdraw | open | increase | decrease | close | liquidated | margin
+  perpId: BigInt
+  side: String # long | short
+  priceWire: BigInt
+  lotWire: BigInt
+  amountCns: BigInt # collateral moved (deposit, withdraw, margin, open deposit)
+  pnlCns: BigInt # realized pnl for decrease, close, liquidated
+  fundingCns: BigInt
+  leverageHdths: BigInt
+  block: Int!
+  timestamp: Int!
+  tx: String!
+}
