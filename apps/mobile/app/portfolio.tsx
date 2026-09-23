@@ -2,11 +2,12 @@
 // two tabs (tokens and collectibles there, markets and positions here), rows that press, and the
 // receive and send footer (fund and trade here). the bird in the header carries the risk.
 import { useEffect, useMemo, useState } from "react";
-import { View, ScrollView } from "react-native";
+import { View, ScrollView, useWindowDimensions } from "react-native";
 import { Stack } from "expo-router";
-import Animated, { FadeIn, LinearTransition, ReduceMotion, useSharedValue, withSpring } from "react-native-reanimated";
+import Animated, { FadeIn, LinearTransition, ReduceMotion, ZoomIn, useSharedValue, withSpring } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
-import { Screen, Tap, Button, MorphText, Tabs, IconButton, Icon, s } from "../src/ui/components";
+import { Screen, Tap, Button, MorphText, Tabs, IconButton, s } from "../src/ui/components";
+import { MarketsArt, PositionsArt, PositionCard, Shield } from "../src/ui/Home";
 import { Text } from "../src/ui/Text";
 import { useApp } from "../src/ui/store";
 import { colors, space } from "../src/ui/theme";
@@ -19,8 +20,7 @@ const ink = colors.ink,
   muted = colors.muted,
   dusk = colors.blue,
   green = colors.green,
-  red = colors.red,
-  amber = "#8A601B";
+  red = colors.red;
 
 // how the bird looks at the account: no positions, asleep. far from liquidation, dozing.
 // getting close, watching. under the guard threshold, alert.
@@ -31,8 +31,6 @@ function riskOpenness(health: PositionHealth[] | undefined, threshold: number) {
   if (worst < 25) return 1;
   return 0.25;
 }
-
-const distanceColor = (pctAway: number, threshold: number) => (pctAway < threshold ? red : pctAway < 15 ? amber : green);
 
 function Header({ address, open }: { address?: string; open: number }) {
   const a = useApp();
@@ -77,59 +75,13 @@ function MarketRow({ m, onPress }: { m: LiveMarket; onPress: () => void }) {
   );
 }
 
-function PositionRow({ h, threshold, onPress }: { h: PositionHealth; threshold: number; onPress: () => void }) {
-  const away = h.distance * 100;
-  const sign = h.side === "long" ? 1 : -1;
-  const pnl = sign * (h.mark - h.entry) * h.size;
-  const pnlPct = h.collateral > 0 ? (pnl / h.collateral) * 100 : 0;
-  const col = distanceColor(away, threshold);
-  const bar = Math.max(0.04, Math.min(1, away / 40));
-  return (
-    <Tap onPress={onPress} accessibilityLabel={`${h.symbol} ${h.side}`} innerStyle={{ paddingVertical: 14, gap: 12 }}>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-        <Coin symbol={h.symbol} />
-        <View style={{ flex: 1, gap: 4 }}>
-          <View style={[space.row, { gap: 8 }]}>
-            <Text style={{ fontSize: 16, fontWeight: "600", color: ink }}>{h.symbol.toLowerCase()}</Text>
-            <View style={{ backgroundColor: h.side === "long" ? "#23765A1f" : "#B4474D1f", borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 }}>
-              <Text style={{ fontSize: 12, fontWeight: "700", color: h.side === "long" ? green : red }}>
-                {h.side} {h.lv / 100}x
-              </Text>
-            </View>
-          </View>
-          <Text style={{ fontSize: 13, color: muted, fontWeight: "500", fontVariant: ["tabular-nums"] }}>
-            {h.size} at {h.entry} · margin {h.collateral.toFixed(2)}
-          </Text>
-        </View>
-        <View style={{ alignItems: "flex-end", gap: 4 }}>
-          <Text style={{ fontSize: 16, fontWeight: "600", color: pnl >= 0 ? green : red, fontVariant: ["tabular-nums"] }}>
-            {pnl >= 0 ? "+" : "−"}${Math.abs(pnl).toFixed(2)}
-          </Text>
-          <Text style={{ fontSize: 13, fontWeight: "600", color: muted, fontVariant: ["tabular-nums"] }}>{pct(pnlPct, 1)}</Text>
-        </View>
-      </View>
-      <View style={{ gap: 6 }}>
-        <View style={space.between}>
-          <Text style={{ fontSize: 12, color: muted, fontWeight: "500" }}>{away.toFixed(1)}% from liquidation</Text>
-          <View style={[space.row, { gap: 4 }]}>
-            <Icon name="shield" size={12} color={col} />
-            <Text style={{ fontSize: 12, fontWeight: "600", color: col }}>{away < threshold ? "guard stepping in" : "guarded"}</Text>
-          </View>
-        </View>
-        <View style={{ height: 5, borderRadius: 3, backgroundColor: "#F0EDF3", overflow: "hidden" }}>
-          <Animated.View layout={LinearTransition.duration(300)} style={{ width: `${bar * 100}%`, height: 5, borderRadius: 3, backgroundColor: col }} />
-        </View>
-      </View>
-    </Tap>
-  );
-}
-
 export default function Portfolio() {
   const a = useApp(),
     address = a.stored?.address ?? a.session?.address ?? null,
     markets = useMarkets(),
     { account } = useAccount(address),
-    [tab, setTab] = useState<"markets" | "positions">("markets");
+    [tab, setTab] = useState<"markets" | "positions">("markets"),
+    { width } = useWindowDimensions();
   const threshold = account?.settings?.thresholdPct ?? 5;
   const health = account?.health ?? [];
   const balance = account?.balance ?? null;
@@ -163,6 +115,9 @@ export default function Portfolio() {
             )}
           </View>
         </Tap>
+        <View style={{ marginHorizontal: -8, marginBottom: 10 }}>
+          {tab === "markets" ? <MarketsArt markets={sorted} width={width - 32} /> : <PositionsArt health={health} markets={sorted} threshold={threshold} open={open} width={width - 32} />}
+        </View>
         <View style={[space.between, { height: 52 }]}>
           <View style={[space.row, { gap: 18 }]}>
             {(["markets", "positions"] as const).map((t) => (
@@ -173,15 +128,21 @@ export default function Portfolio() {
                   Haptics.selectionAsync();
                 }}
               >
-                <Text style={{ fontSize: 17, fontWeight: "600", color: tab === t ? ink : "#B9B2C5" }}>
-                  {t}
-                  {t === "positions" && health.length ? ` ${health.length}` : ""}
-                </Text>
+                <View style={[space.row, { gap: 6 }]}>
+                  <Text style={{ fontSize: 17, fontWeight: "600", color: tab === t ? ink : "#B9B2C5" }}>{t}</Text>
+                  {t === "positions" && health.length > 0 && (
+                    <Animated.View key={health.length} entering={ZoomIn.springify().damping(14)}>
+                      <View style={{ minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 6, backgroundColor: tab === t ? ink : "#B9B2C5", alignItems: "center", justifyContent: "center" }}>
+                        <Text style={{ fontSize: 11.5, fontWeight: "700", color: "white", fontVariant: ["tabular-nums"] }}>{health.length}</Text>
+                      </View>
+                    </Animated.View>
+                  )}
+                </View>
               </Tap>
             ))}
           </View>
           <View style={[space.row, { gap: 6, backgroundColor: account?.live ? "#EFE5FF" : "#F0EDF3", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 }]}>
-            <Icon name="shield" size={12} color={account?.live ? dusk : muted} />
+            <Shield size={13} color={account?.live ? dusk : muted} cut={account?.live ? "#EFE5FF" : "#F0EDF3"} />
             <Text style={{ fontSize: 12, fontWeight: "600", color: account?.live ? dusk : muted }}>{account?.enrolled ? (account.live ? "guard on" : "guard waking") : "guard off"}</Text>
           </View>
         </View>
@@ -204,7 +165,15 @@ export default function Portfolio() {
                 </Button>
               </View>
             ) : (
-              health.map((h) => <PositionRow key={h.pid} h={h} threshold={threshold} onPress={() => openTrade(h.symbol)} />)
+              <View style={{ gap: 10, marginHorizontal: -8, paddingTop: 4 }}>
+                {health.map((h) => (
+                  <Animated.View key={h.pid} layout={LinearTransition.duration(300)}>
+                    <Tap onPress={() => openTrade(h.symbol)} accessibilityLabel={`${h.symbol} ${h.side}`}>
+                      <PositionCard h={h} threshold={threshold} />
+                    </Tap>
+                  </Animated.View>
+                ))}
+              </View>
             )}
           </Animated.View>
         )}
