@@ -188,10 +188,10 @@ export default function Portfolio() {
               </Tap>
             ))}
           </View>
-          <View style={[space.row, { gap: 6, backgroundColor: account?.live ? "#EFE5FF" : "#F0EDF3", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 }]}>
-            <Shield size={13} color={account?.live ? dusk : muted} cut={account?.live ? "#EFE5FF" : "#F0EDF3"} />
-            <Text style={{ fontSize: 12, fontWeight: "600", color: account?.live ? dusk : muted }}>{account?.enrolled ? (account.live ? "guard on" : "guard waking") : "guard off"}</Text>
-          </View>
+          <Tap onPress={() => a.go("/key")} accessibilityLabel="the watch key" innerStyle={[space.row, { gap: 6, backgroundColor: account?.enrolled ? "#EFE5FF" : "#F0EDF3", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 5 }]}>
+            <Shield size={13} color={account?.enrolled ? dusk : muted} cut={account?.enrolled ? "#EFE5FF" : "#F0EDF3"} />
+            <Text style={{ fontSize: 12, fontWeight: "600", color: account?.enrolled ? dusk : muted }}>{account?.enrolled ? "guard on" : "guard off"}</Text>
+          </Tap>
         </View>
         {tab === "markets" ? (
           <Animated.View key="markets" entering={FadeIn.duration(160).reduceMotion(ReduceMotion.System)}>

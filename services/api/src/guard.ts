@@ -68,6 +68,24 @@ export class Guard {
     return this.open(address.toLowerCase())
   }
 
+  // the user takes the key back: the session closes and the stored key is gone. the phone has already
+  // turned order forwarding off onchain, so perpl refuses the key even if a copy survived somewhere
+  revoke(address: string) {
+    const addr = address.toLowerCase()
+    const rec = this.stored.get(addr)
+    if (!rec) return false
+    this.stored.delete(addr)
+    this.persist()
+    const ts = this.sessions.get(addr)
+    this.sessions.delete(addr)
+    ts?.close()
+    this.lastHealth.delete(addr)
+    this.emit(addr, { kind: 'session', text: 'the user revoked the watch key' })
+    return true
+  }
+
+  enrolledAt(address: string) { return this.stored.get(address.toLowerCase())?.enrolledAt ?? null }
+
   updateSettings(address: string, patch: Partial<GuardSettings>) {
     const rec = this.stored.get(address.toLowerCase())
     if (!rec) throw new Error('not enrolled')

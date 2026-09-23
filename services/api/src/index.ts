@@ -1,6 +1,6 @@
 // the pehra server. for now one job: put testnet gas and AUSD into a fresh mera address so the phone
 // can do the perpl setup itself. the dev key pays. later: enrollment proxy, the guard, push.
-import { encodeFunctionData, formatEther, formatUnits, isAddress, parseEther, type Address } from 'viem'
+import { encodeFunctionData, formatEther, formatUnits, isAddress, parseEther, verifyMessage, type Address } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { publicClient, erc20Abi, faucetAbi, AUSD_FAUCET, NETWORKS, GAS, AGORA, AGORA_GAS, whitelisterAbi, isSwapper, pairState, sendBatch, nextNonce, feeCaps, enrollPayload, enrollFinish, fromCns, fromPrice, fromSize, Reason, type Call, type EnrollPayload, type GuardSettings } from '@pehra/perpl'
 import { Guard } from './guard'
@@ -187,12 +187,21 @@ const server = Bun.serve({
         return json({ error: e instanceof Error ? e.message : 'enroll failed' }, 500)
       }
     }
+    // revoking needs the passkey's signature over a fresh message, so nobody else can switch a guard off
+    if (url.pathname === '/guard/revoke' && req.method === 'POST') {
+      const body = await req.json().catch(() => ({})) as { address?: string; at?: number; signature?: string }
+      if (!body.address || !isAddress(body.address) || !body.at || !body.signature) return json({ error: 'bad request' }, 400)
+      if (Math.abs(Date.now() - body.at) > 5 * 60_000) return json({ error: 'stale' }, 400)
+      const ok = await verifyMessage({ address: body.address, message: `revoke the pehra watch key for ${body.address.toLowerCase()} at ${body.at}`, signature: body.signature as `0x${string}` })
+      if (!ok) return json({ error: 'bad signature' }, 401)
+      return json({ revoked: guard.revoke(body.address) })
+    }
     const m = url.pathname.match(/^\/guard\/(0x[0-9a-fA-F]{40})$/)
     if (m && req.method === 'GET') {
       const address = m[1]
       if (!guard.has(address)) return json({ enrolled: false })
       const ts = guard.session(address)
-      return json({ enrolled: true, live: !!ts, settings: guard.settings(address), balance: guard.balance(address), health: guard.health(address), events: guard.recent(address, 200) })
+      return json({ enrolled: true, live: !!ts, enrolledAt: guard.enrolledAt(address), settings: guard.settings(address), balance: guard.balance(address), health: guard.health(address), events: guard.recent(address, 200) })
     }
     if (m && req.method === 'POST') {
       const body = await req.json().catch(() => ({})) as Partial<GuardSettings>

@@ -80,7 +80,8 @@ export default function Trade() {
   const decimals = m?.priceDecimals ?? 2;
   const fmt = useCallback((v: number) => "$" + v.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }), [decimals]);
   const sym = symbol.toLowerCase();
-  const ok = !!m && !!address && margin > 0 && margin <= balance && size > 0 && away > threshold;
+  const keyed = account ? account.enrolled : true;
+  const ok = keyed && !!m && !!address && margin > 0 && margin <= balance && size > 0 && away > threshold;
 
   // where the rocket starts and lands, in the root view's coordinates. measured ahead of the tap,
   // whenever the layout or the price dot moves, so the tap never waits on it
@@ -247,7 +248,7 @@ export default function Trade() {
             since={since}
             disabled={!ok}
             onPress={place}
-            label={!address ? "no account" : margin > balance ? "not enough ausd" : away <= threshold ? "too close to liquidation" : `${side} ${sym} · ${money(margin * lev, 0)} ausd`}
+            label={!address ? "no account" : !keyed ? "turn the guard on to trade" : margin > balance ? "not enough ausd" : away <= threshold ? "too close to liquidation" : `${side} ${sym} · ${money(margin * lev, 0)} ausd`}
             detail={phase === "filled" ? `filled in ${(fillMs / 1000).toFixed(1)}s` : `didn’t fill · ${error}`}
           />
         </View>

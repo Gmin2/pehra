@@ -93,15 +93,17 @@ export default function Settings() {
         <Text style={{ flex: 1, textAlign: "center", marginRight: 40, fontSize: 16, fontWeight: "700", color: ink }}>settings</Text>
       </View>
       <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 28 }}>
-        <Animated.View entering={FadeInDown.duration(360).reduceMotion(ReduceMotion.System)} style={{ backgroundColor: st?.enabled === false ? "#B9B2C5" : violet, borderRadius: 24, padding: 16, flexDirection: "row", alignItems: "center", gap: 14 }}>
+        <Animated.View entering={FadeInDown.duration(360).reduceMotion(ReduceMotion.System)}>
+        <Tap onPress={() => a.go("/key")} innerStyle={{ backgroundColor: st?.enabled === false || (account && !account.enrolled) ? "#B9B2C5" : violet, borderRadius: 24, padding: 16, flexDirection: "row", alignItems: "center", gap: 14 }}>
           <View style={{ width: 56, height: 56, borderRadius: 18, backgroundColor: "#ffffff26", alignItems: "center", justifyContent: "center" }}>
             <PehraBird size={44} open={eyes} shift={glance} />
           </View>
           <View style={{ flex: 1, gap: 3 }}>
-            <Text style={{ fontSize: 16, fontWeight: "700", color: "white" }}>{!st ? "reading the guard" : st.enabled ? "the guard is on" : "the guard is off"}</Text>
-            <Text style={{ fontSize: 12.5, fontWeight: "500", color: "#ffffffcc" }}>{!st ? " " : st.enabled ? (today ? `stepped in ${today === 1 ? "once" : today + " times"} today` : "watching, hasn’t needed to step in") : "your positions are on their own"}</Text>
+            <Text style={{ fontSize: 16, fontWeight: "700", color: "white" }}>{account && !account.enrolled ? "the guard is off" : !st ? "reading the guard" : st.enabled ? "the guard is on" : "the guard is paused"}</Text>
+            <Text style={{ fontSize: 12.5, fontWeight: "500", color: "#ffffffcc" }}>{account && !account.enrolled ? "no watch key. tap to turn it on" : !st ? " " : st.enabled ? (today ? `stepped in ${today === 1 ? "once" : today + " times"} today · its key` : "watching · tap to see its key") : "your positions are on their own"}</Text>
           </View>
           {st && <Toggle on={st.enabled} light onChange={(v) => { Haptics.selectionAsync(); void save({ enabled: v }); }} />}
+        </Tap>
         </Animated.View>
 
         <Text style={{ marginTop: 22, marginBottom: 8, marginLeft: 8, fontSize: 13, fontWeight: "700", color: muted }}>the guard</Text>
