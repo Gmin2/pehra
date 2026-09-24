@@ -59,3 +59,9 @@ the test device is a nothing a069 on android 16 (serial 002956623001358), google
 - perpl grants about 3x on testnet MON whatever leverage is asked; read it off the position
 - a fresh account cannot spend for about four blocks after funding (monad's reserve balance rule), handled in the perpl package
 - the mascot png is purple, on the purple card use the two tone variant
+
+## emulator and videos
+
+in a dev build on an emulator (`__DEV__ && !Device.isDevice`) the account skips the passkey: 32 random bytes in secure store go through the same derivation a passkey's prf output takes (src/account.ts). a real phone and any release build always use the passkey. clear app data to get a fresh test account.
+
+the gear bubble is expo's dev menu "Tools button", dev builds only. turn it off in the dev menu (Tools, "Tools button"), or on a debug install: `adb shell run-as trade.pehra.app` and set `<boolean name="showFab" value="false" />` in `shared_prefs/expo.modules.devmenu.sharedpreferences.xml` with the app stopped.
