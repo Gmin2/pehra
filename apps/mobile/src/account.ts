@@ -13,6 +13,7 @@ import { pbkdf2Sync } from 'react-native-quick-crypto'
 import { wordlist } from '@scure/bip39/wordlists/english.js'
 import { HDKey } from '@scure/bip32'
 import * as SecureStore from 'expo-secure-store'
+import * as Device from 'expo-device'
 
 // same derivation as the mera demo: prf bytes are bip39 entropy, evm key at m/44'/60'/0'/0/0.
 // change this and every user gets a new address, so it never changes.
@@ -59,7 +60,26 @@ function openSession(prfOutput: Uint8Array): Session {
   return { address, session, account: toViemAccount(session) }
 }
 
+// the android emulator has no google account, so no passkey. in a dev build on an emulator the
+// account comes from 32 random bytes kept in secure store and fed through the same derivation a
+// passkey's prf output takes. a real phone and a release build always use the passkey.
+export const testAccount = __DEV__ && !Device.isDevice
+const TEST_PRF = 'pehra.emulator.prf.v1'
+async function testSession(): Promise<Session & { credentialId: string }> {
+  let hex = await SecureStore.getItemAsync(TEST_PRF)
+  if (!hex) {
+    const bytes = crypto.getRandomValues(new Uint8Array(32))
+    hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')
+    await SecureStore.setItemAsync(TEST_PRF, hex)
+  }
+  const prf = new Uint8Array(hex.match(/../g)!.map((h) => parseInt(h, 16)))
+  const s = openSession(prf)
+  await SecureStore.setItemAsync(ACCOUNT_KEY, JSON.stringify({ address: s.address, credentialId: 'emulator' }))
+  return { ...s, credentialId: 'emulator' }
+}
+
 export async function createAccount(): Promise<Session & { credentialId: string }> {
+  if (testAccount) return testSession()
   const res = await createPasskeyWithPrfOutput({
     rp: RP,
     user: { name: 'pehra', displayName: `pehra ${new Date().toISOString().slice(0, 10)}` },
@@ -71,6 +91,7 @@ export async function createAccount(): Promise<Session & { credentialId: string 
 }
 
 export async function signIn(credential?: PasskeyCredentialMetadata): Promise<Session & { credentialId: string }> {
+  if (testAccount) return testSession()
   const res = await getPasskeyPrfOutput({ rpId: RP.id, credential, webAuthnClient: reactNativeWebAuthnClient })
   const s = openSession(res.prfOutput)
   await SecureStore.setItemAsync(ACCOUNT_KEY, JSON.stringify({ address: s.address, credentialId: res.credentialId }))
