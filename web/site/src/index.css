@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+/* brand/tokens.json */
+@theme {
+  --font-sans: "Manrope", system-ui, sans-serif;
+  --font-hand: "Caveat", "Manrope", cursive;
+
+  --color-dusk: #9e4dfd;
+  --color-accent: #8a3ceb;
+  --color-paper: #faf8f2;
+  --color-ink: #28243e;
+  --color-mist: #efe5ff;
+  --color-muted: #706a7d;
+  --color-faint: #b9b2c5;
+  --color-line: #ddd8e6;
+  --color-panel: #f0edf3;
+  --color-pos: #23765a;
+  --color-neg: #b4474d;
+  --color-warn: #8a601b;
+  --color-night: #1d1a2b;
+
+  /* tailark keyframes */
+  --animate-breathing: breathing 3s ease-in-out infinite;
+}
+
+@keyframes breathing {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+}
+
+@font-face {
+  font-family: "Manrope";
+  src: url("/fonts/Manrope-Variable.ttf") format("truetype");
+  font-weight: 200 800;
+  font-display: swap;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    scroll-behavior: smooth;
+  }
+  body {
+    background: #fff;
+    color: var(--color-muted);
+    font-size: 17px;
+    line-height: 26px;
+    letter-spacing: -0.2px;
+    overflow-x: hidden;
+  }
+  ::selection {
+    background: var(--color-mist);
+    color: var(--color-ink);
+  }
+}
+
+@layer utilities {
+  .h-display {
+    font-weight: 650;
+    color: var(--color-ink);
+    letter-spacing: -0.035em;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
