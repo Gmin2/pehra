@@ -5,6 +5,9 @@ import { privateKeyToAccount } from 'viem/accounts'
 import { publicClient, erc20Abi, faucetAbi, AUSD_FAUCET, NETWORKS, GAS, AGORA, AGORA_GAS, whitelisterAbi, isSwapper, pairState, sendBatch, nextNonce, feeCaps, enrollPayload, enrollFinish, fromCns, fromPrice, fromSize, Reason, type Call, type EnrollPayload, type GuardSettings } from '@pehra/perpl'
 import { Guard } from './guard'
 import { serve } from './serve'
+import { rulesRoute } from './rules'
+import { startBeats } from './proof'
+import { verify, writeRun } from './runs'
 import { pushReady, registerToken, sendPush } from './push'
 
 const key = process.env.DEV_PRIVATE_KEY
@@ -109,6 +112,26 @@ async function chainHistory(address: string) {
   return { accountId: id, rows: r.data.Activity }
 }
 
+
+// once an hour the chain's head hash goes onchain as calldata of a tiny self transfer from the payer. that
+// timestamps the proof outside our database, rewriting history would break the match with monadscan
+const ANCHOR_MS = 3600_000
+async function anchor() {
+  const v = verify()
+  if (!v.ok) { console.error('anchor skipped, chain broken at', v.at, v.why); return }
+  if (!v.rows) return
+  const nonce = payerNonce ?? await nextNonce(pub, payer.address)
+  payerNonce = nonce + 1
+  try {
+    const [s] = await sendBatch(pub, payer, [{ to: payer.address, data: `0x${v.head}`, gas: 60_000n }], { nonce })
+    writeRun({ kind: 'anchor', body: { head: v.head, rows: v.rows, tx: s.hash, block: Number(s.receipt.blockNumber) } })
+    console.log(`anchored ${v.rows} runs, head ${v.head.slice(0, 12)} in ${s.hash}`)
+  } catch (e) {
+    payerNonce = null
+    console.error('anchor failed', e instanceof Error ? e.message : e)
+  }
+}
+
 const guard = new Guard()
 const pendingEnroll = new Map<string, EnrollPayload>()
 
@@ -120,6 +143,8 @@ const server = serve({
   async fetch(req) {
     const url = new URL(req.url)
     if (url.pathname === '/health') return json({ ok: true, payer: payer.address })
+    const rules = await rulesRoute(req, url, guard)
+    if (rules) return rules
     // the phone mirrors its on screen log here, so a dev can tail it instead of reading the screen
     if (url.pathname === '/log' && req.method === 'POST') {
       const body = await req.json().catch(() => ({})) as { line?: string }
@@ -264,6 +289,9 @@ const server = serve({
     return json({ error: 'not found' }, 404)
   },
 })
+startBeats(() => guard.beat())
+setTimeout(() => void anchor(), 30_000)
+setInterval(() => void anchor(), ANCHOR_MS)
 void guard.start().catch(e => console.error('guard failed to start', e instanceof Error ? e.message : e))
 void refill()
 void feeCaps(pub)

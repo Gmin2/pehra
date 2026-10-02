@@ -45,9 +45,14 @@ export type Decision = { action: 'none' | 'warn' | 'add'; health: Health; addCns
 
 // the one rule: under the threshold, add enough to get back to the target, within the budget.
 export function decide(h: Health, settings: GuardSettings, market: Market, availableAusd: number, addedTodayAusd: number): Decision {
+  return decideMm(h, settings, market.config.maintenance_margin, availableAusd, addedTodayAusd)
+}
+
+// the same with the market's maintenance margin as a number, so the rules engine and replay can call it
+export function decideMm(h: Health, settings: GuardSettings, maintenanceMargin: number, availableAusd: number, addedTodayAusd: number): Decision {
   if (h.distance * 100 >= settings.thresholdPct) return { action: 'none', health: h, reason: `distance ${(h.distance * 100).toFixed(2)}% above ${settings.thresholdPct}%` }
   if (!settings.enabled) return { action: 'warn', health: h, reason: 'guard is off, warning only' }
-  const need = marginToReach(h.side, settings.targetPct / 100, h.mark, h.entry, h.size, h.collateral, market.config.maintenance_margin)
+  const need = marginToReach(h.side, settings.targetPct / 100, h.mark, h.entry, h.size, h.collateral, maintenanceMargin)
   const budget = Math.min(availableAusd, settings.maxAddAusdPerDay - addedTodayAusd)
   const amount = Math.min(Math.max(need, settings.minAddAusd), budget)
   if (amount <= 0) return { action: 'warn', health: h, reason: budget <= 0 ? 'daily budget or balance exhausted' : 'nothing to add' }
