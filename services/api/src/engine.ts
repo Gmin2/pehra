@@ -196,6 +196,17 @@ export class Engine {
 
   active() { return this.rules.size }
 
+  // the escape hatch and the kill switch: every rule of the account stops acting, the ones sending finish
+  pauseAll(owner: string, why: string) {
+    let n = 0
+    for (const r of this.rules.values()) {
+      if (r.owner !== owner.toLowerCase() || (r.state !== 'armed' && r.state !== 'held')) continue
+      move(r, 'paused', why)
+      n++
+    }
+    return n
+  }
+
   // the owner ends a rule. not while it is sending, the answer settles first
   cancel(owner: string, id: string, why = 'cancelled by the owner'): { ok: true } | { ok: false; why: string } {
     const r = this.rules.get(id)
