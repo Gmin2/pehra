@@ -1,6 +1,7 @@
 // the proof screen's data, computed only from the runs table. a beat row every minute says the engine was
 // alive and what it saw, a gap between beats longer than two minutes is downtime and is shown as such.
 // latency is reported as percentiles per segment so it is clear where the time went
+import { monitorEventLoopDelay } from 'node:perf_hooks'
 import { db } from './db'
 import { writeRun, verify, type Run } from './runs'
 
@@ -9,8 +10,17 @@ const GAP_MS = 2 * BEAT_MS
 
 type Beat = { evaluations: number; accounts: number; live: number; reconnects: number; lastTickAgoMs: number | null; rules: number }
 
+// how long node's event loop stalled in the last minute. a stall past a second or two is enough for perpl
+// to see a late pong and drop sessions, so it is recorded next to the reconnect count
+const loop = monitorEventLoopDelay({ resolution: 20 })
+loop.enable()
+
 export function startBeats(read: () => Beat) {
-  const t = setInterval(() => writeRun({ kind: 'beat', body: read() }), BEAT_MS)
+  const t = setInterval(() => {
+    const lag = { loopP99Ms: Math.round(loop.percentile(99) / 1e6), loopMaxMs: Math.round(loop.max / 1e6) }
+    loop.reset()
+    writeRun({ kind: 'beat', body: { ...read(), ...lag } })
+  }, BEAT_MS)
   return () => clearInterval(t)
 }
 

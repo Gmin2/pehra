@@ -15,7 +15,7 @@ const positions = new Map<number, Position>([[1, pos(1, '5000000')], [2, pos(2, 
 const ts = { account: { id: 1, b: '0' }, positions, orders: new Map() } as unknown as TradingSocket
 const engine = new Engine({
   market: { states: new Map(), head: 0 } as unknown as MarketDataSocket,
-  ctx: () => null, session: () => ts, emit: () => {}, nextTx: async () => undefined, log: () => {},
+  ctx: () => null, session: () => ts, emit: () => {}, nextTx: async () => undefined, book: () => undefined, history: async () => [], log: () => {},
 })
 
 test('reconcile settles unknown margin adds from the collateral perpl holds now', () => {
