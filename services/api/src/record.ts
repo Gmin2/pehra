@@ -2,7 +2,7 @@
 // one tick row per market per block from market state, and every market's book every 10s. the live books
 // are also what the slicer reads (build-plan day 4)
 import { Book, type BookFrame, type Context, type MarketDataSocket, type MarketStateFrame, type SubscribedFrame } from '@pehra/perpl'
-import { db } from './db'
+import { db, tx } from './db'
 
 const BOOK_EVERY_MS = 10_000
 
@@ -43,19 +43,26 @@ export class Recorder {
     if (!ctx) return
     const block = this.market.head
     const at = Date.now()
-    for (const [id, s] of Object.entries(f.d)) {
-      const m = ctx.markets.find(x => x.id === Number(id))
-      if (!m) continue
-      const k = 10 ** m.config.price_decimals
-      q.tick.run(m.id, block, at, s.mrk / k, s.lst / k, s.bid / k, s.ask / k)
-      this.ticks++
-    }
+    // one transaction per frame, not one commit per market
+    tx(() => {
+      for (const [id, s] of Object.entries(f.d)) {
+        const m = ctx.markets.find(x => x.id === Number(id))
+        if (!m) continue
+        const k = 10 ** m.config.price_decimals
+        q.tick.run(m.id, block, at, s.mrk / k, s.lst / k, s.bid / k, s.ask / k)
+        this.ticks++
+      }
+    })
   }
 
   private snapshot() {
     const ctx = this.ctx()
     if (!ctx) return
     const at = Date.now()
+    tx(() => this.writeBooks(ctx, at))
+  }
+
+  private writeBooks(ctx: Context, at: number) {
     for (const [mkt, book] of this.books) {
       const m = ctx.markets.find(x => x.id === mkt)
       if (!m) continue

@@ -19,7 +19,7 @@ describe('escape hatch calls', () => {
     expect(descs.map(d => [d.perpId, d.orderType, d.pricePNS, d.lotLNS, d.immediateOrCancel])).toEqual([[64n, 2, 3230n, 200n, true], [32n, 3, 262500n, 5n, true]])
     expect(descs[0].orderDescId).toBe(1_790_000_000_000n)
     expect(descs[1].orderDescId).toBe(1_790_000_000_001n)
-    expect(calls[1].gas).toBe(900_000n)
+    expect(calls[1].gas).toBe(760_000n)
   })
 
   test('without positions only the forwarding switch goes out, or nothing', () => {

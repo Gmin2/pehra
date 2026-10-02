@@ -1,13 +1,14 @@
 // the rules engine's store. rules, the orders it meant to send (intents), the perpl orders it owns, every
-// run as a hash chained receipt, and our own record of mark prices and books for replay. wal plus
-// synchronous full because an intent row is the one thing we cannot lose between a send and a crash
+// run as a hash chained receipt, and our own record of mark prices and books for replay. wal with
+// synchronous normal: a crashed process loses nothing, only a power cut can lose the last commit. full
+// synced the disk on every tick row and stalled node long enough that perpl's pongs went out late
 import { DatabaseSync } from 'node:sqlite'
 
 const path = process.env.PEHRA_DB ?? new URL('../data/pehra.db', import.meta.url).pathname
 
 export const db = new DatabaseSync(path)
 db.exec('pragma journal_mode = wal')
-db.exec('pragma synchronous = full')
+db.exec('pragma synchronous = normal')
 db.exec('pragma foreign_keys = on')
 
 // node's sqlite has no transaction helper. everything inside fn commits together or not at all

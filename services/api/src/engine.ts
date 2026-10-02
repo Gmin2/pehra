@@ -2,7 +2,7 @@
 // market, and what step() asks for is carried out through one send queue per account. every state change
 // and every result is a run row (runs.ts). a session that is reconnecting defers its rules, it never acts
 // on a position map it cannot trust.
-import { Rule, step, modeOf, nextSlice, Book, type HistoryOrder, positionHealth, toCns, fromCns, toSize, fromSize, fromPrice, OrderType, Flag, Reason, type Context, type GuardSettings, type Market, type MarketDataSocket, type Mem, type Position, type RuleState, type Tick, type TradingSocket, type Intent } from '@pehra/perpl'
+import { Rule, step, modeOf, nextSlice, Book, type HistoryOrder, positionHealth, toCns, fromCns, toSize, fromSize, fromPrice, OrderType, Flag, Reason, type Context, type GuardSettings, type Market, type MarketDataSocket, type Mem, type Order, type Position, type RuleState, type Tick, type TradingSocket, type Intent } from '@pehra/perpl'
 import { db } from './db'
 import { writeRun } from './runs'
 import { move } from './state'
@@ -73,6 +73,7 @@ export class Engine {
   private deferred = new Set<string>()
   // intents on the wire right now. reconcile leaves them and their rules alone, the answer is coming
   private inflight = new Map<string, string>()
+  private resizing = new Set<number>()
   evaluations = 0
   lastTickAt = 0
 
@@ -149,11 +150,37 @@ export class Engine {
     this.deps.log(`rule ${r.id} ladder resting, ${placed} steps`)
   }
 
+  // cancel a step and place it again at its intended size, same price and floor
+  private async resizeStep(r: Stored, row: OrderRow, o: Order, want: number) {
+    if (r.rule.kind !== 'ladder') return
+    const ts = this.deps.session(r.owner)
+    const m = this.deps.ctx()?.markets.find(x => x.id === r.rule.mkt)
+    const pos = ts?.positions.get(r.rule.pid)
+    const st = r.rule.steps[Number(row.step.slice(1))]
+    if (!ts?.account || !m || !pos || !st) return
+    const c = await ts.cancel(o)
+    if (c.order?.st !== 5) throw new Error(`cancel refused ${c.order ? Reason[c.order.sr] ?? c.order.sr : 'no answer'}`)
+    const k = 10 ** m.config.price_decimals
+    const res = await ts.takeProfit(pos, Math.round(st.px * k), { floor: Math.round(st.floor * k), size: Math.min(want, pos.s) })
+    if (!res.order || res.order.st !== 8) { q.orderState.run('gone', row.size, r.id, row.step); throw new Error('replace refused') }
+    q.putOrder.run(r.id, row.step, r.owner, res.order.oid, pos.pid, row.size, st.px, Math.round(st.px * k), res.order.tpc ?? 0, 'resting')
+    writeRun({ owner: r.owner, rule: r.id, kind: 'note', body: { text: `${row.step} back to ${fromSize(m, Math.min(want, pos.s))} ${m.symbol}`, oid: res.order.oid } })
+  }
+
   // perpl's order history says whether the backstop fired and what its close sold, the open orders do not
-  private async attribute(r: Stored, row: OrderRow) {
-    const hist = await this.deps.history(r.owner)
-    const fired = hist.find(o => o.oid === row.oid && o.st === 10)
-    if (!fired?.at) { if (row.state !== 'resting') return; q.orderState.run('gone', row.size, r.id, row.step); return }
+  private async attribute(r: Stored, row: OrderRow, tries = 5) {
+    // perpl's history can lag the socket by a few seconds, so a missing execution is asked again before
+    // the order is called gone
+    let hist: HistoryOrder[] = []
+    let fired: HistoryOrder | undefined
+    for (let i = 0; i < tries; i++) {
+      hist = await this.deps.history(r.owner)
+      fired = hist.find(o => o.oid === row.oid && o.st === 10)
+      if (fired?.at) break
+      if (hist.some(o => o.oid === row.oid && o.st === 5)) break
+      await new Promise(res => setTimeout(res, 3000))
+    }
+    if (!fired?.at) { q.orderState.run('gone', row.size, r.id, row.step); return }
     const child = hist.find(o => o.at?.b === fired.at?.b && o.st === 4 && (o.t === 3 || o.t === 4) && o.oid !== row.oid)
     const m = this.deps.ctx()?.markets.find(x => x.id === r.rule.mkt)
     q.orderState.run('fired', row.size, r.id, row.step)
@@ -169,10 +196,22 @@ export class Engine {
   // a ladder's steps fire on perpl. each one perpl executed is recorded once, the ladder ends when none rest
   private reconcileSteps(r: Stored, ts: TradingSocket) {
     const rows = (q.ordersOf.all(r.id) as OrderRow[]).filter(x => x.step !== 'backstop')
+    const m = this.deps.ctx()?.markets.find(x => x.id === r.rule.mkt)
+    const pos = ts.positions.get(r.rule.pid)
     for (const row of rows) {
       if (row.state !== 'resting') continue
       const o = ts.orders.get(row.oid)
-      if (o && o.st === 8) continue
+      if (o && o.st === 8) {
+        // after a partial close perpl sets every linked trigger to the whole remaining position (sr 31), a
+        // later step would then sell everything. put it back to its share, never above what is held
+        const want = m && pos ? Math.min(toSize(m, row.size), pos.s) : 0
+        if (m && pos && o.os !== undefined && o.os !== want && !this.resizing.has(row.oid)) {
+          this.resizing.add(row.oid)
+          writeRun({ owner: r.owner, rule: r.id, kind: 'reconcile', body: { step: row.step, oid: row.oid, perplSize: fromSize(m, o.os), want: fromSize(m, want), why: 'perpl resized the step with the position, putting its share back' } })
+          void this.lane(r.owner, () => this.resizeStep(r, row, o, want)).catch(e => this.deps.log(`resize ${r.id} ${row.step} failed: ${e instanceof Error ? e.message : e}`)).finally(() => this.resizing.delete(row.oid))
+        }
+        continue
+      }
       row.state = 'checking'
       q.orderState.run('checking', row.size, r.id, row.step)
       void this.lane(r.owner, () => this.attribute(r, { ...row, state: 'resting' })).catch(e => this.deps.log(`step history for ${r.id} failed: ${e instanceof Error ? e.message : e}`))

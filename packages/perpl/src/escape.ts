@@ -16,20 +16,16 @@ export const escapeAbi = parseAbi([
 const CLOSE_LONG = 2, CLOSE_SHORT = 3
 // a close far enough from the mark to fill in a moving market, the same 5% perpl's own rescue page uses
 const AWAY_BPS = 500n
-// gas a direct close used (g9), with room
-export const CLOSE_GAS = 450_000n
+// a direct close used about 310k (g9). monad charges the gas limit, not the gas used, so the limit stays close
+export const CLOSE_GAS = 380_000n
 
 export type Open = { perpId: number; long: boolean; lots: bigint; mark: bigint }
 
 // every open position the account holds, read straight from the exchange
 export async function openPositions(pub: PublicClient, accountId: bigint, perpIds: number[], net: Network = 'testnet'): Promise<Open[]> {
   const exchange = NETWORKS[net].exchange
-  const out: Open[] = []
-  for (const perpId of perpIds) {
-    const [info, mark] = await pub.readContract({ address: exchange, abi: escapeAbi, functionName: 'getPositionV2', args: [BigInt(perpId), accountId] })
-    if (info.lotLNS > 0n && info.accountId === accountId) out.push({ perpId, long: info.positionType === 0, lots: info.lotLNS, mark })
-  }
-  return out
+  const read = await Promise.all(perpIds.map(perpId => pub.readContract({ address: exchange, abi: escapeAbi, functionName: 'getPositionV2', args: [BigInt(perpId), accountId] })))
+  return read.flatMap(([info, mark], i) => (info.lotLNS > 0n && info.accountId === accountId ? [{ perpId: perpIds[i], long: info.positionType === 0, lots: info.lotLNS, mark }] : []))
 }
 
 // forwarding off (optional) then one ioc close per position, in one batch. ids start past now, so they are
