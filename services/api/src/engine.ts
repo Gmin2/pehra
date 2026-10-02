@@ -2,7 +2,7 @@
 // market, and what step() asks for is carried out through one send queue per account. every state change
 // and every result is a run row (runs.ts). a session that is reconnecting defers its rules, it never acts
 // on a position map it cannot trust.
-import { Rule, step, modeOf, positionHealth, toCns, fromCns, type Context, type GuardSettings, type Market, type MarketDataSocket, type Mem, type Position, type RuleState, type Tick, type TradingSocket, type Intent } from '@pehra/perpl'
+import { Rule, step, modeOf, positionHealth, toCns, fromCns, toSize, fromSize, fromPrice, OrderType, Flag, Reason, type Context, type GuardSettings, type Market, type MarketDataSocket, type Mem, type Position, type RuleState, type Tick, type TradingSocket, type Intent } from '@pehra/perpl'
 import { db } from './db'
 import { writeRun } from './runs'
 import { move } from './state'
@@ -87,6 +87,15 @@ export class Engine {
 
   active() { return this.rules.size }
 
+  // the owner ends a rule. not while it is sending, the answer settles first
+  cancel(owner: string, id: string, why = 'cancelled by the owner'): { ok: true } | { ok: false; why: string } {
+    const r = this.rules.get(id)
+    if (!r || r.owner !== owner.toLowerCase()) return { ok: false, why: 'no such active rule for this account' }
+    if (r.state === 'firing' || r.state === 'working') return { ok: false, why: 'the rule is acting right now, try again in a moment' }
+    this.finish(r, why)
+    return { ok: true }
+  }
+
   exists(id: string) { return q.exists.get(id) !== undefined }
 
   list(owner: string) {
@@ -150,9 +159,15 @@ export class Engine {
     move(r, 'firing', intents.map(i => i.kind).join(', '), () => q.fired.run(Date.now(), r.id))
     r.fires++
     void this.lane(r.owner, async () => {
-      for (const i of intents) await this.carry(r, i, { t0: tick.at, b0: tick.block, t1 })
+      let held: string | undefined
+      for (const i of intents) { const out = await this.carry(r, i, { t0: tick.at, b0: tick.block, t1 }); if (out) held = out }
       if (done) this.finish(r, done)
-      else move(r, 'armed', 'carried out')
+      else if (held) {
+        // nothing sold: forget that it fired, so it can act again once the book allows it (build-plan day 4)
+        r.mem = { ...r.mem, fired: undefined }
+        q.saveMem.run(JSON.stringify(r.mem), Date.now(), r.id)
+        move(r, 'held', held)
+      } else move(r, 'armed', 'carried out')
     }).catch(e => {
       writeRun({ owner: r.owner, rule: r.id, kind: 'error', body: { error: e instanceof Error ? e.message : String(e) } })
       if (r.state === 'firing') move(r, 'failed', e instanceof Error ? e.message : String(e))
@@ -162,7 +177,7 @@ export class Engine {
 
   // one intent, carried out on the account's lane. it is written before it is sent and settled from
   // perpl's answer. a timeout leaves it unknown for reconcile, nothing here ever sends it again
-  private async carry(r: Stored, i: Intent, stamps: { t0: number; b0: number; t1: number }) {
+  private async carry(r: Stored, i: Intent, stamps: { t0: number; b0: number; t1: number }): Promise<string | void> {
     const t2 = Date.now()
     if (i.kind === 'note') {
       writeRun({ owner: r.owner, rule: r.id, kind: 'note', body: { text: i.text, stamps: { ...stamps, t2 } } })
@@ -177,7 +192,51 @@ export class Engine {
     const before = positionHealth(pos, m, mark)
     const id = `${r.id}:${r.fires}`
     if (i.kind === 'add') return this.addMargin(r, id, ts, pos, m, before, i.ausd, i.why, { ...stamps, t2 })
-    throw new Error(`${i.kind} is not wired yet`)
+    if (i.kind === 'close') return this.close(r, id, ts, pos, m, i.size, i.floor, i.why, { ...stamps, t2 })
+  }
+
+  // a close sent as an ioc limit at the floor, so it can never fill worse than the floor (spike g3). the
+  // size is never more than the live position, perpl rejects a close bigger than the position (g5)
+  private async close(r: Stored, id: string, ts: TradingSocket, pos: Position, m: Market, size: number, floor: number, why: string, stamps: Record<string, number>): Promise<string | void> {
+    const k = 10 ** m.config.price_decimals
+    const want = Math.min(toSize(m, size), pos.s)
+    openIntent({ id, rule: r.id, owner: r.owner, kind: 'close', pid: pos.pid, size: fromSize(m, want), floor, stamps, body: { before: { size: fromSize(m, pos.s) }, why } })
+    this.inflight.set(id, r.id)
+    try {
+      const t3 = Date.now()
+      const txP = this.deps.nextTx(ts)
+      const p = ts.send({ mkt: m.id, t: pos.sd === 1 ? OrderType.closeLong : OrderType.closeShort, p: Math.round(floor * k), s: want, fl: Flag.ioc, lv: 0, lp: pos.pid })
+      sentAs(id, ts.lastRq)
+      crashAt('sent')
+      let res
+      try { res = await p } catch (e) {
+        const st = { ...stamps, t3, t4: Date.now() }
+        settle(id, 'unknown', { stamps: st })
+        writeRun({ owner: r.owner, rule: r.id, kind: 'unknown', body: { intent: id, kind: 'close', error: e instanceof Error ? e.message : String(e), stamps: st } })
+        return
+      }
+      const t5 = Date.now()
+      crashAt('acked')
+      const o = res.order
+      const filled = o ? fromSize(m, o.fs ?? 0) : 0
+      if (!o || filled === 0) {
+        const st = { ...stamps, t3, t4: t5 }
+        const reason = o ? Reason[o.sr] ?? `sr ${o.sr}` : res.status?.status.msg ?? `status ${res.status?.status.code}`
+        settle(id, 'rejected', { stamps: st, oid: o?.oid })
+        writeRun({ owner: r.owner, rule: r.id, kind: 'reject', body: { intent: id, kind: 'close', floor, reason, stamps: st } })
+        this.deps.log(`rule ${r.id} close at floor ${floor} filled nothing: ${reason}`)
+        this.deps.emit(r.owner, { kind: 'failed', pid: pos.pid, symbol: m.symbol, text: `stop held at the floor ${floor}, nothing sold (${reason})` })
+        return `nothing sold at the floor ${floor}: ${reason}`
+      }
+      const landed = await txP
+      const price = fromPrice(m, o.fp ?? 0)
+      const st = { ...stamps, t3, t4: t5, t5, ...(landed?.block ? { b6: landed.block } : {}) }
+      settle(id, 'filled', { fill: filled, tx: landed?.tx, oid: o.oid, stamps: st })
+      writeRun({ owner: r.owner, rule: r.id, kind: 'fill', body: { intent: id, kind: 'close', size: filled, price, floor, tx: landed?.tx ?? null, stamps: st } })
+      const side = pos.sd === 1 ? 'long' : 'short'
+      this.deps.emit(r.owner, { kind: 'closed', pid: pos.pid, symbol: m.symbol, side, lv: pos.lv, tx: landed?.tx, amount: filled, price, text: `stop sold ${filled} ${m.symbol} at ${price}, never below ${floor}` })
+      this.deps.log(`rule ${r.id} close ${filled} at ${price}, floor ${floor}`)
+    } finally { this.inflight.delete(id) }
   }
 
   private async addMargin(r: Stored, id: string, ts: TradingSocket, pos: Position, m: Market, before: ReturnType<typeof positionHealth>, ausd: number, why: string, stamps: Record<string, number>) {
@@ -235,12 +294,18 @@ export class Engine {
       const body = JSON.parse(it.body) as { before?: Snap }
       let state: 'filled' | 'rejected' | 'void'
       let why: string
-      if (!pos) { state = 'void'; why = 'the position is gone' }
+      if (!pos) { state = it.kind === 'close' ? 'filled' : 'void'; why = it.kind === 'close' ? 'the position is gone, the close or another took it' : 'the position is gone' }
       else if (it.kind === 'add') {
         const now = fromCns(pos.c)
         const was = body.before?.collateral ?? now
         state = now >= was + (it.size ?? 0) * 0.9 ? 'filled' : 'rejected'
         why = `collateral was ${was.toFixed(4)}, now ${now.toFixed(4)}`
+      } else if (it.kind === 'close') {
+        const m = this.deps.ctx()?.markets.find(x => x.id === pos.mkt)
+        const now = m ? fromSize(m, pos.s) : 0
+        const was = (body as { before?: { size?: number } }).before?.size ?? now
+        state = was - now >= (it.size ?? 0) * 0.9 ? 'filled' : 'rejected'
+        why = `size was ${was}, now ${now}`
       } else { state = 'rejected'; why = 'unknown kind, left for a person' }
       settle(it.id, state, { fill: state === 'filled' ? it.size ?? undefined : undefined, stamps: { ...JSON.parse(it.stamps), reconciled: Date.now() } })
       writeRun({ owner, rule: it.rule, kind: 'reconcile', body: { intent: it.id, was: it.state, now: state, why } })

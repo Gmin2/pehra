@@ -7,7 +7,7 @@ import { writeRun } from './runs'
 export const moves: Record<RuleState, RuleState[]> = {
   draft: ['armed', 'done'],
   armed: ['firing', 'paused', 'done'],
-  firing: ['working', 'armed', 'failed', 'done'],
+  firing: ['working', 'armed', 'held', 'failed', 'done'],
   working: ['working', 'held', 'done', 'failed', 'paused'],
   held: ['working', 'done', 'paused'],
   done: [],

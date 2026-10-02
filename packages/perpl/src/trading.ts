@@ -172,7 +172,17 @@ export class TradingSocket {
   }
 
   // the low level send. every order goes through here so rq stays monotonic.
-  send(fields: Omit<OrderRequest, 'mt' | 'sn' | 'rq' | 'acc' | 'lb'> & { acc?: number; lb?: number }, opts: { pid?: number } = {}) {
+  send(fields: Omit<OrderRequest, 'mt' | 'sn' | 'rq' | 'acc' | 'lb'> & { acc?: number; lb?: number }, opts: { pid?: number } = {}): Promise<OrderResult> {
+    return this.sendOnce(fields, opts).then(r => {
+      // the account's order ids only go up, and a direct onchain order may have used a timestamp as its id
+      // (spike g9). OrderDescIdTooLow is a definite "nothing happened", so jump past now and send once more
+      if (r.order?.st !== 7 || r.order.sr !== 32) return r
+      this.rq = Math.max(this.rq, Date.now())
+      return this.sendOnce(fields, opts)
+    })
+  }
+
+  private sendOnce(fields: Omit<OrderRequest, 'mt' | 'sn' | 'rq' | 'acc' | 'lb'> & { acc?: number; lb?: number }, opts: { pid?: number }) {
     if (!this.ws || !this.account) throw new Error('not connected')
     const sn = ++this.sn
     const rq = ++this.rq

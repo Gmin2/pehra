@@ -214,4 +214,23 @@ describe('trading socket', () => {
     expect(sock.sent.filter(f => f.mt === 1).length).toBe(0)
     ts.close()
   })
+  test('OrderDescIdTooLow is answered once more with an id past now, other rejections are not resent', async () => {
+    const { ts, sock } = await open()
+    const p = ts.openMarket({ mkt: 64, side: 'long', size: 1, leverage: 100 })
+    const first = sock.sent[sock.sent.length - 1]
+    sock.serverSend({ mt: 24, d: [{ oid: 0, rq: first.rq, mkt: 64, t: 1, st: 7, sr: 32, p: 0, s: 1 }] })
+    await tick()
+    const second = sock.sent[sock.sent.length - 1]
+    expect(second.rq as number).toBeGreaterThanOrEqual(Date.now() - 1000)
+    expect(second).toMatchObject({ t: 1, s: 1, mkt: 64 })
+    sock.serverSend({ mt: 24, d: [{ oid: 5, rq: second.rq, mkt: 64, t: 1, st: 4, sr: 43, p: 0, s: 1, fs: 1, fp: 3400 }] })
+    expect((await p).order?.st).toBe(4)
+    const q = ts.openMarket({ mkt: 64, side: 'long', size: 1, leverage: 100 })
+    const third = sock.sent[sock.sent.length - 1]
+    const count = sock.sent.length
+    sock.serverSend({ mt: 24, d: [{ oid: 0, rq: third.rq, mkt: 64, t: 1, st: 7, sr: 34, p: 0, s: 1 }] })
+    expect((await q).order?.sr).toBe(34)
+    expect(sock.sent.length).toBe(count)
+    ts.close()
+  })
 })
