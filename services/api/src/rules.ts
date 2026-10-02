@@ -13,6 +13,11 @@ export async function rulesRoute(req: Request, url: URL, guard: Guard): Promise<
   if (url.pathname === '/proof') return json(proof(null))
   const own = url.pathname.match(/^\/proof\/(0x[0-9a-fA-F]{40})$/)
   if (own) return json(proof(own[1]))
+  const c = url.pathname.match(/^\/rules\/(0x[0-9a-fA-F]{40})\/([\w-]+)\/cancel$/)
+  if (c && req.method === 'POST') {
+    const r = guard.engine.cancel(c[1], c[2])
+    return r.ok ? json({ ok: true }) : json({ error: r.why }, 409)
+  }
   const m = url.pathname.match(/^\/rules\/(0x[0-9a-fA-F]{40})$/)
   if (!m) return null
   const address = m[1].toLowerCase()
