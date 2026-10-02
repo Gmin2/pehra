@@ -46,6 +46,9 @@ export class TradingSocket {
 
   get net() { return NETWORKS[this.opts.net ?? 'testnet'] }
 
+  // the request id the last order went out with, an intent records it so reconcile can find the order
+  get lastRq() { return this.rq }
+
   connect() {
     if (this.ready) return this.ready
     this.ready = new Promise<void>((resolve, reject) => {

@@ -29,7 +29,8 @@ create index if not exists rules_state on rules(state);
 create table if not exists intents (
   id text primary key, rule text not null, owner text not null, kind text not null,
   pid integer, size real, floor real, rq integer, oid integer, state text not null,
-  fill real, tx text, at integer not null, stamps text not null default '{}'
+  fill real, tx text, at integer not null, stamps text not null default '{}',
+  body text not null default '{}'
 );
 create index if not exists intents_state on intents(state);
 
@@ -56,3 +57,9 @@ create table if not exists books (
 );
 create index if not exists books_mkt on books(mkt, at);
 `)
+
+// columns added after a table first shipped
+for (const [table, col, def] of [['intents', 'body', "text not null default '{}'"]] as const) {
+  const cols = db.prepare(`pragma table_info(${table})`).all() as { name: string }[]
+  if (!cols.some(c => c.name === col)) db.exec(`alter table ${table} add column ${col} ${def}`)
+}

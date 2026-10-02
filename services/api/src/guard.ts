@@ -9,7 +9,7 @@ import type { Hex } from 'viem'
 import { sendPush } from './push'
 import {
   decide, defaultGuardSettings, getContext, MarketDataSocket, positionHealth, TradingSocket, fromCns, fromPrice, fromSize, toCns, toLeverage, toPrice, toSize, Trigger,
-  type AccountUpdateFrame, type MarketStateFrame, type Context, type Decision, type Enrolled, type GuardSettings, type Health, type Market, type Position, type Live,
+  type AccountUpdateFrame, type MarketStateFrame, type Context, type Enrolled, type GuardSettings, type Health, type Market, type Position, type Live,
 } from '@pehra/perpl'
 
 // guard kinds: warn, add, added, failed, session. the user's own actions: opened, closed, bracket, manual
@@ -50,7 +50,10 @@ export class Guard {
       market: this.market,
       ctx: () => this.ctx,
       session: a => this.sessions.get(a.toLowerCase()) ?? null,
-      addedToday: a => { const t = this.addedToday.get(a.toLowerCase()); return t && t.day === Math.floor(Date.now() / DAY_MS) ? t.ausd : 0 },
+      addedToday: a => this.addedTodayOf(a.toLowerCase()),
+      onAdded: (a, ausd) => { const addr = a.toLowerCase(); this.addedToday.set(addr, { day: Math.floor(Date.now() / DAY_MS), ausd: this.addedTodayOf(addr) + ausd }) },
+      emit: (a, e) => this.emit(a.toLowerCase(), e),
+      nextTx: ts => this.nextTxAt(ts),
       log,
     })
     if (existsSync(KEYS)) for (const s of JSON.parse(readFileSync(KEYS, 'utf8')) as Stored[]) this.stored.set(s.address.toLowerCase(), s)
@@ -74,6 +77,7 @@ export class Guard {
       for (const id of Object.keys((f as MarketStateFrame).d)) this.engine.tick(Number(id))
     })
     for (const addr of this.stored.keys()) void this.open(addr)
+    setInterval(() => { for (const addr of this.sessions.keys()) this.engine.reconcile(addr) }, 30_000)
     this.log(`guard watching ${this.stored.size} accounts`)
   }
 
@@ -84,6 +88,11 @@ export class Guard {
     const ev = this.engine.evaluations
     this.engine.evaluations = 0
     return { evaluations: ev, accounts: this.stored.size, live: this.sessions.size, reconnects: r, lastTickAgoMs: this.engine.lastTickAt ? Date.now() - this.engine.lastTickAt : null, rules: this.engine.active() }
+  }
+
+  private addedTodayOf(addr: string) {
+    const t = this.addedToday.get(addr)
+    return t && t.day === Math.floor(Date.now() / DAY_MS) ? t.ausd : 0
   }
 
   accounts() { return [...this.stored.values()].map(s => ({ address: s.address, settings: s.settings, enrolledAt: s.enrolledAt, live: this.sessions.has(s.address.toLowerCase()) })) }
@@ -120,6 +129,7 @@ export class Guard {
     if (!rec) throw new Error('not enrolled')
     rec.settings = { ...rec.settings, ...patch }
     this.persist()
+    this.engine.syncGuard(address.toLowerCase(), rec.settings)
     this.evaluate(address.toLowerCase())
     return rec.settings
   }
@@ -161,10 +171,22 @@ export class Guard {
       this.emit(addr, { kind: 'session', text: `closed ${code} ${reason}, reopening in ${wait}ms` })
       if (this.stored.has(addr)) setTimeout(() => { if (!this.sessions.has(addr)) void this.open(addr, next).catch(() => {}) }, wait)
     } })
-    ts.onFrame(f => { if (f.mt === 26 || f.mt === 27) this.evaluate(addr) })
+    ts.onFrame(f => {
+      if (f.mt !== 26 && f.mt !== 27) return
+      // listeners run before the socket applies the frame to its maps, so read them a tick later
+      setTimeout(() => {
+        this.evaluate(addr)
+        // a new position gets its guard rule, a closed one lets its rules finish
+        const rec = this.stored.get(addr)
+        if (rec) this.engine.syncGuard(addr, rec.settings)
+      }, 0)
+    })
     await ts.connect()
     signedIn = true
     this.sessions.set(addr, ts)
+    // what a drop or a restart left unknown is settled before any rule on this account acts again
+    this.engine.reconcile(addr)
+    this.engine.syncGuard(addr, rec.settings)
     this.emit(addr, { kind: 'session', text: `signed in, account ${ts.account?.id}, ${ts.positions.size} positions, ${fromCns(ts.account?.b ?? '0')} AUSD` })
     this.evaluate(addr)
     return ts
@@ -204,6 +226,8 @@ export class Guard {
     return out
   }
 
+  // the guard's own loop only warns now: close to liquidation with the guard off, or with the day's budget
+  // spent. margin adds are the engine's, one guard rule per position (engine.syncGuard)
   private evaluate(addr: string) {
     const rec = this.stored.get(addr)
     const ts = this.sessions.get(addr)
@@ -213,37 +237,12 @@ export class Guard {
       const state = this.market.states.get(pos.mkt)
       if (!m || !state) continue
       const h = positionHealth(pos, m, state.mrk)
-      const today = this.addedToday.get(addr)
-      const day = Math.floor(Date.now() / DAY_MS)
-      const addedToday = today && today.day === day ? today.ausd : 0
-      const d = decide(h, rec.settings, m, fromCns(ts.account?.b ?? '0'), addedToday)
-      if (d.action === 'none') continue
+      const d = decide(h, rec.settings, m, fromCns(ts.account?.b ?? '0'), this.addedTodayOf(addr))
+      if (d.action !== 'warn') continue
       const last = this.lastAdd.get(pos.pid) ?? 0
       if (Date.now() - last < COOLDOWN_MS) continue
       this.lastAdd.set(pos.pid, Date.now())
-      if (d.action === 'warn') { this.emit(addr, { kind: 'warn', pid: pos.pid, symbol: m.symbol, text: `${m.symbol} ${h.side} ${(h.distance * 100).toFixed(2)}% from liquidation, ${d.reason}`, distancePct: h.distance * 100 }); continue }
-      void this.act(addr, ts, pos, m, d, day, addedToday)
-    }
-  }
-
-  private async act(addr: string, ts: TradingSocket, pos: Position, m: Market, d: Decision, day: number, addedToday: number) {
-    const ausd = fromCns(d.addCns ?? '0')
-    this.emit(addr, { kind: 'add', pid: pos.pid, symbol: m.symbol, text: `${m.symbol} ${d.health.side} ${(d.health.distance * 100).toFixed(2)}% from liquidation, adding ${ausd.toFixed(2)} AUSD`, distancePct: d.health.distance * 100, addAusd: ausd })
-    try {
-      const txP = this.nextTx(ts)
-      const r = await ts.addMargin(pos, d.addCns ?? '0')
-      const after = r.position ? positionHealth(r.position, m, this.market.states.get(pos.mkt)?.mrk ?? pos.ep) : null
-      this.addedToday.set(addr, { day, ausd: addedToday + ausd })
-      const tx = await txP
-      this.emit(addr, {
-        kind: 'added', pid: pos.pid, symbol: m.symbol, side: d.health.side, lv: pos.lv, tx,
-        text: `collateral now ${after ? after.collateral.toFixed(4) : '?'} AUSD, ${after ? (after.distance * 100).toFixed(2) : '?'}% from liquidation`,
-        distancePct: after ? after.distance * 100 : undefined, addAusd: ausd,
-        before: { distancePct: d.health.distance * 100, collateral: d.health.collateral },
-        after: after ? { distancePct: after.distance * 100, collateral: after.collateral } : undefined,
-      })
-    } catch (e) {
-      this.emit(addr, { kind: 'failed', pid: pos.pid, symbol: m.symbol, text: `margin add failed: ${e instanceof Error ? e.message : String(e)}` })
+      this.emit(addr, { kind: 'warn', pid: pos.pid, symbol: m.symbol, text: `${m.symbol} ${h.side} ${(h.distance * 100).toFixed(2)}% from liquidation, ${d.reason}`, distancePct: h.distance * 100 })
     }
   }
 
@@ -277,13 +276,20 @@ export class Guard {
   // perpl's account update after a settled action lists the chain event with its txid. the first one
   // with a txid after the call is the proof for that action
   private nextTx(ts: TradingSocket, ms = 4000): Promise<string | undefined> {
+    return this.nextTxAt(ts, ms).then(r => r?.tx)
+  }
+
+  // the same with the block the event landed in, for the proof's settle block
+  nextTxAt(ts: TradingSocket, ms = 4000): Promise<{ tx: string; block?: number } | undefined> {
     return new Promise(resolve => {
       const timer = setTimeout(() => { off(); resolve(undefined) }, ms)
       const off = ts.onFrame(f => {
         if (f.mt !== 21) return
-        const id = (f as AccountUpdateFrame).h?.map(e => e.at?.txid ?? e.txid).find(Boolean)
-        const tx = id ? (id.startsWith('0x') ? id : '0x' + id) : undefined
-        if (tx) { clearTimeout(timer); off(); resolve(tx) }
+        const e = (f as AccountUpdateFrame).h?.find(x => x.at?.txid ?? x.txid)
+        const id = e?.at?.txid ?? e?.txid
+        if (!id) return
+        clearTimeout(timer); off()
+        resolve({ tx: id.startsWith('0x') ? id : '0x' + id, block: e?.at?.b })
       })
     })
   }
