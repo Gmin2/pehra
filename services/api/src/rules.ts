@@ -3,10 +3,16 @@
 // rule writes slice (build-plan 7.1), so for now they only arrive from this machine
 import { Rule, validate } from '@pehra/perpl'
 import type { Guard } from './guard'
+import { proof } from './proof'
+import { verify } from './runs'
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
 export async function rulesRoute(req: Request, url: URL, guard: Guard): Promise<Response | null> {
+  if (url.pathname === '/proof/verify') return json(verify())
+  if (url.pathname === '/proof') return json(proof(null))
+  const own = url.pathname.match(/^\/proof\/(0x[0-9a-fA-F]{40})$/)
+  if (own) return json(proof(own[1]))
   const m = url.pathname.match(/^\/rules\/(0x[0-9a-fA-F]{40})$/)
   if (!m) return null
   const address = m[1].toLowerCase()

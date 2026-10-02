@@ -4,6 +4,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { writeAtomic } from './files'
 import { Engine } from './engine'
+import { Recorder } from './record'
 import type { Hex } from 'viem'
 import { sendPush } from './push'
 import {
@@ -38,10 +39,13 @@ export class Guard {
   private ctx: Context | null = null
   private log: (s: string) => void
   engine: Engine
+  recorder: Recorder
+  reconnects = 0
 
   constructor(log: (s: string) => void = console.log) {
     this.log = log
     this.market = new MarketDataSocket('testnet')
+    this.recorder = new Recorder(this.market, () => this.ctx)
     this.engine = new Engine({
       market: this.market,
       ctx: () => this.ctx,
@@ -63,6 +67,7 @@ export class Guard {
     const s = MarketDataSocket.streams(10143)
     await this.market.connect([s.heartbeat, s.marketState])
     this.engine.load()
+    this.recorder.start(this.ctx.markets.filter(m => m.config.is_open).map(m => m.id))
     this.market.on(f => {
       if (f.mt !== 9) return
       for (const addr of this.sessions.keys()) this.evaluate(addr)
@@ -70,6 +75,15 @@ export class Guard {
     })
     for (const addr of this.stored.keys()) void this.open(addr)
     this.log(`guard watching ${this.stored.size} accounts`)
+  }
+
+  // the minute beat's view of the guard and the engine
+  beat() {
+    const r = this.reconnects
+    this.reconnects = 0
+    const ev = this.engine.evaluations
+    this.engine.evaluations = 0
+    return { evaluations: ev, accounts: this.stored.size, live: this.sessions.size, reconnects: r, lastTickAgoMs: this.engine.lastTickAt ? Date.now() - this.engine.lastTickAt : null, rules: this.engine.active() }
   }
 
   accounts() { return [...this.stored.values()].map(s => ({ address: s.address, settings: s.settings, enrolledAt: s.enrolledAt, live: this.sessions.has(s.address.toLowerCase()) })) }
@@ -141,6 +155,7 @@ export class Guard {
     let signedIn = false
     const ts = new TradingSocket({ net: 'testnet', apiKey: rec.key.apiKey, secret: rec.key.secret, onClose: (code, reason) => {
       if (this.sessions.get(addr) === ts) this.sessions.delete(addr)
+      this.reconnects++
       const next = signedIn ? 0 : attempt + 1
       const wait = signedIn ? 0 : Math.min(1000 * 2 ** attempt, 30_000)
       this.emit(addr, { kind: 'session', text: `closed ${code} ${reason}, reopening in ${wait}ms` })

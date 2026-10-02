@@ -46,6 +46,7 @@ export class Engine {
   // rules waiting on a reconnecting session, one deferred run each until it is back
   private deferred = new Set<string>()
   evaluations = 0
+  lastTickAt = 0
 
   constructor(private deps: EngineDeps) {}
 
@@ -66,6 +67,8 @@ export class Engine {
     return s
   }
 
+  active() { return this.rules.size }
+
   exists(id: string) { return q.exists.get(id) !== undefined }
 
   list(owner: string) {
@@ -79,6 +82,7 @@ export class Engine {
   // called on every market state frame for a market. the newest mark wins: if the market is already being
   // evaluated it is marked dirty and evaluated once more afterwards, nothing queues up behind it
   tick(mkt: number) {
+    this.lastTickAt = Date.now()
     if (this.busy.has(mkt)) { this.dirty.add(mkt); return }
     this.busy.add(mkt)
     try { this.evaluateMarket(mkt) } finally {
