@@ -3,7 +3,7 @@
 // and events in data/guard-events.json. the same session relays the phone's own orders, closes and brackets.
 import { existsSync, readFileSync } from 'node:fs'
 import { writeAtomic } from './files'
-import { Engine } from './engine'
+import { Engine, addedToday } from './engine'
 import { Recorder } from './record'
 import type { Hex } from 'viem'
 import { sendPush } from './push'
@@ -34,7 +34,6 @@ export class Guard {
   private sessions = new Map<string, TradingSocket>()
   private events = new Map<string, GuardEvent[]>()
   private lastAdd = new Map<number, number>()
-  private addedToday = new Map<string, { day: number; ausd: number }>()
   private market: MarketDataSocket
   private ctx: Context | null = null
   private log: (s: string) => void
@@ -50,8 +49,6 @@ export class Guard {
       market: this.market,
       ctx: () => this.ctx,
       session: a => this.sessions.get(a.toLowerCase()) ?? null,
-      addedToday: a => this.addedTodayOf(a.toLowerCase()),
-      onAdded: (a, ausd) => { const addr = a.toLowerCase(); this.addedToday.set(addr, { day: Math.floor(Date.now() / DAY_MS), ausd: this.addedTodayOf(addr) + ausd }) },
       emit: (a, e) => this.emit(a.toLowerCase(), e),
       nextTx: ts => this.nextTxAt(ts),
       log,
@@ -90,10 +87,7 @@ export class Guard {
     return { evaluations: ev, accounts: this.stored.size, live: this.sessions.size, reconnects: r, lastTickAgoMs: this.engine.lastTickAt ? Date.now() - this.engine.lastTickAt : null, rules: this.engine.active() }
   }
 
-  private addedTodayOf(addr: string) {
-    const t = this.addedToday.get(addr)
-    return t && t.day === Math.floor(Date.now() / DAY_MS) ? t.ausd : 0
-  }
+  private addedTodayOf(addr: string) { return addedToday(addr) }
 
   accounts() { return [...this.stored.values()].map(s => ({ address: s.address, settings: s.settings, enrolledAt: s.enrolledAt, live: this.sessions.has(s.address.toLowerCase()) })) }
   has(address: string) { return this.stored.has(address.toLowerCase()) }

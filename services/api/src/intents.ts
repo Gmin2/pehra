@@ -15,6 +15,7 @@ const q = {
   sent: db.prepare('update intents set rq = ? where id = ?'),
   open: db.prepare(`select * from intents where owner = ? and state in ('sending', 'unknown') order by at`),
   get: db.prepare('select * from intents where id = ?'),
+  addedSince: db.prepare(`select coalesce(sum(fill), 0) as ausd from intents where owner = ? and kind = 'add' and state = 'filled' and at >= ?`),
 }
 
 export function openIntent(i: { id: string; rule: string; owner: string; kind: string; pid?: number; size?: number; floor?: number; stamps: object; body: object }) {
@@ -29,3 +30,6 @@ export function settle(id: string, state: Exclude<IntentState, 'sending'>, o: { 
 
 export const unsettled = (owner: string) => q.open.all(owner) as IntentRow[]
 export const intent = (id: string) => q.get.get(id) as IntentRow | undefined
+
+// the guard's daily budget comes from what actually filled, so a restart cannot reset it
+export function addedSince(owner: string, since: number) { return (q.addedSince.get(owner, since) as { ausd: number }).ausd }

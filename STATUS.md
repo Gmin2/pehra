@@ -21,6 +21,12 @@ the spikes behind build-plan.md day 1, run on testnet against the payer's perpl 
 - **drops on node:** 3 in the first 5.5 minutes across 7 sessions (bun: 35 in 8). rare enough that instant reconnect plus reconcile carry it.
 - **lost order.** one market open got `status 0` and then nothing: no order frame, `lfr` stayed 39, perpl reused rq 40 for the next order. a timeout is unknown, reconcile reads `lfr` and positions, never a blind resend.
 
+## the engine (oct 2)
+
+- **guard as a rule:** every open position gets a guard rule (`guard-<addr>-<pid>`) from the account's settings, paused while the guard is off. checked on testnet (#649): threshold forced to 40, the engine added 1.0197 ausd once, 29.97% to 45.00% from liquidation, tx 0x9793b4a4…8f35, our code 1ms, perpl 913ms, settled 1 block after the trigger. the daily budget now comes from filled intents in sqlite, a restart cannot reset it.
+- **crash test, both branches:** `DEBUG_CRASH_AT=sent` exits the moment the add is written to the socket: it never reached perpl, reconcile read the collateral unchanged and settled it rejected, the guard retried after its cooldown. `DEBUG_CRASH_AT=acked` exits after perpl confirmed but before we recorded it: reconcile read 5.4517 to 6.4517 and settled it filled, nothing resent. all adds that landed (1.0197 + 1.0 + 1.0) sum to exactly the collateral perpl holds (3.432 to 6.4517).
+- a socket frame reaches listeners before `TradingSocket` applies it to its maps, so guard and engine read positions a tick later (a new position got no guard rule before).
+
 ## earlier (sept 22)
 
 **building: pehra**, the mobile perps app (track 1, agora mobile bounty). second product (track 2, agora cross border payments, "send home") starts only after pehra's guard works.

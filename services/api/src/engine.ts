@@ -6,7 +6,7 @@ import { Rule, step, modeOf, positionHealth, toCns, fromCns, type Context, type 
 import { db } from './db'
 import { writeRun } from './runs'
 import { move } from './state'
-import { openIntent, settle, unsettled, sentAs } from './intents'
+import { openIntent, settle, unsettled, sentAs, addedSince } from './intents'
 import type { GuardEvent } from './guard'
 
 export type Stored = {
@@ -19,8 +19,6 @@ export type EngineDeps = {
   market: MarketDataSocket
   ctx: () => Context | null
   session: (address: string) => TradingSocket | null
-  addedToday: (address: string) => number
-  onAdded: (address: string, ausd: number) => void
   emit: (address: string, e: Omit<GuardEvent, 'at'>) => void
   nextTx: (ts: TradingSocket) => Promise<{ tx: string; block?: number } | undefined>
   log: (s: string) => void
@@ -44,7 +42,12 @@ const q = {
 // a crash at a named point, for the crash test only (DEBUG_CRASH_AT=sent)
 function crashAt(point: string) {
   if (process.env.DEBUG_CRASH_AT === point) { console.log(`DEBUG_CRASH_AT=${point}, exiting`); process.exit(1) }
+  // late: the frame has had time to leave, perpl's answer has not (it takes about 900ms)
+  if (process.env.DEBUG_CRASH_AT === point + '-late') setTimeout(() => { console.log(`DEBUG_CRASH_AT=${point}-late, exiting`); process.exit(1) }, 300)
 }
+
+const DAY_MS = 24 * 3600_000
+export const addedToday = (owner: string, now = Date.now()) => addedSince(owner.toLowerCase(), Math.floor(now / DAY_MS) * DAY_MS)
 
 function fromRow(r: Row): Stored {
   return { id: r.id, owner: r.owner, rule: Rule.parse(JSON.parse(r.body)), state: r.state, mode: r.mode, by: r.by as Stored['by'], mem: JSON.parse(r.mem) as Mem, fires: r.fires, created: r.created, updated: r.updated }
@@ -128,7 +131,7 @@ export class Engine {
       this.deferred.delete(r.id)
       const pos = ts?.positions.get(r.rule.pid)
       const health = pos ? positionHealth(pos, m, state.mrk) : null
-      const view = { health, maintenance: m.config.maintenance_margin, balance: ts?.account ? Number(ts.account.b) / 1e6 : 0, addedToday: this.deps.addedToday(r.owner) }
+      const view = { health, maintenance: m.config.maintenance_margin, balance: ts?.account ? Number(ts.account.b) / 1e6 : 0, addedToday: addedToday(r.owner) }
       const s = step(r.rule, r.mem, tick, view)
       if (JSON.stringify(s.mem) !== JSON.stringify(r.mem)) { r.mem = s.mem; q.saveMem.run(JSON.stringify(s.mem), Date.now(), r.id) }
       if (s.intents.length) this.fire(r, s.intents, tick, s.done)
@@ -200,6 +203,7 @@ export class Engine {
       return
     }
     const t5 = Date.now()
+    crashAt('acked')
     if (!res.position) {
       const st = { ...stamps, t3, t4: t5 }
       settle(id, 'rejected', { stamps: st })
@@ -213,7 +217,6 @@ export class Engine {
     const st = { ...stamps, t3, t4: t5, t5, ...(landed?.block ? { b6: landed.block } : {}) }
     settle(id, 'filled', { fill: ausd, tx, stamps: st })
     writeRun({ owner: r.owner, rule: r.id, kind: 'fill', body: { intent: id, kind: 'add', ausd, before: snap(before), after: snap(after), tx: tx ?? null, stamps: st } })
-    this.deps.onAdded(r.owner, ausd)
     this.deps.emit(r.owner, {
       kind: 'added', pid: pos.pid, symbol: m.symbol, side: before.side, lv: pos.lv, tx,
       text: `collateral now ${after.collateral.toFixed(4)} AUSD, ${(after.distance * 100).toFixed(2)}% from liquidation`,
@@ -242,7 +245,6 @@ export class Engine {
       settle(it.id, state, { fill: state === 'filled' ? it.size ?? undefined : undefined, stamps: { ...JSON.parse(it.stamps), reconciled: Date.now() } })
       writeRun({ owner, rule: it.rule, kind: 'reconcile', body: { intent: it.id, was: it.state, now: state, why } })
       this.deps.log(`reconcile ${it.id}: ${it.state} -> ${state}, ${why}`)
-      if (state === 'filled' && it.kind === 'add') this.deps.onAdded(owner, it.size ?? 0)
     }
     // a rule caught mid fire by a crash goes back to watching once its intents are settled
     for (const r of this.rules.values()) {
