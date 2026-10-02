@@ -244,6 +244,9 @@ export class Guard {
     }
   }
 
+  // the market's symbol as the app shows it, part of what the owner signs
+  symbolOf(mkt: number) { return this.ctx?.markets.find(m => m.id === mkt)?.symbol ?? `market ${mkt}` }
+
   // what a new rule is checked against: the position at the current mark, and how many triggers already
   // rest on the whole account (perpl's cap is per account)
   live(address: string, pid: number, mkt: number): Live | null {

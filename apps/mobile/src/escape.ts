@@ -3,9 +3,9 @@
 // down. forwarding off also pauses every trigger perpl holds and refuses the guard's key until turned back on
 import { getContext, getPerplAccount, publicClient, sendBatch, openPositions, closeAllCalls, type Open } from '@pehra/perpl'
 import type { Session } from './account'
-import { API } from './trade'
 import { ensureGas } from './fund'
 import { log } from './log'
+import { pauseRules } from './rules'
 
 export type EscapeState = 'idle' | 'pausing' | 'closing' | 'confirmed' | 'partial' | 'failed'
 export type EscapeResult = { state: EscapeState; closed: number; left: Open[]; tx?: `0x${string}`; ms: number; error?: string }
@@ -16,8 +16,8 @@ export async function escape(s: Session, o: { forwardingOff: boolean }, onState:
   const t0 = Date.now()
   const pub = publicClient('testnet')
   onState('pausing')
-  // best effort, the server may be the thing being escaped
-  await within(fetch(`${API}/rules/${s.address}/pause`, { method: 'POST' }).catch(() => undefined), 2000)
+  // best effort and signed, the server may be the thing being escaped
+  await within(pauseRules(s).catch(() => undefined), 2500)
   try {
     const [acct, ctx, mon] = await Promise.all([getPerplAccount(pub, s.address), getContext('testnet'), pub.getBalance({ address: s.address })])
     if (!acct) return { state: 'failed', closed: 0, left: [], ms: Date.now() - t0, error: 'no perpl account for this address' }
