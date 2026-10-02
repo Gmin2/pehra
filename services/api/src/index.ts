@@ -10,6 +10,11 @@ import { startBeats } from './proof'
 import { verify, writeRun } from './runs'
 import { pushReady, registerToken, sendPush } from './push'
 
+// one bad frame must not take every account's guard down. state lives in sqlite and reconcile runs every
+// 30s, so the process logs the error and keeps watching
+process.on('uncaughtException', e => console.error('uncaught', e instanceof Error ? e.stack ?? e.message : e))
+process.on('unhandledRejection', e => console.error('unhandled rejection', e instanceof Error ? e.stack ?? e.message : e))
+
 const key = process.env.DEV_PRIVATE_KEY
 if (!key) throw new Error('DEV_PRIVATE_KEY missing')
 const pub = publicClient('testnet')
