@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun run --watch src/index.ts",
-    "start": "bun run src/index.ts",
+    "dev": "node --env-file=.env --import tsx --watch src/index.ts",
+    "start": "node --env-file=.env --import tsx src/index.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -14,7 +14,8 @@
     "viem": "^2.56.8"
   },
   "devDependencies": {
-    "@types/bun": "latest",
+    "@types/node": "^26.6.3",
+    "tsx": "^4.23.15",
     "typescript": "~6.0.3"
   }
 }

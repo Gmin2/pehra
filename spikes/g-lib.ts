@@ -49,6 +49,8 @@ export async function mark() {
 }
 
 export async function openLong(ts: TradingSocket, size = 200, lv = 200) {
+  const have = monPosition(ts)
+  if (have) { console.log(stamp(), 'reusing open position', have.pid, 'size', have.s); return have }
   const r = await ts.openMarket({ mkt: MON, side: 'long', size, leverage: lv })
   console.log(stamp(), 'open long ->', r.order?.st, 'fill', r.order?.fp, 'size', r.order?.fs)
   await until('position', () => monPosition(ts) !== null)

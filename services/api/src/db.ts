@@ -1,16 +1,22 @@
 // the rules engine's store. rules, the orders it meant to send (intents), the perpl orders it owns, every
 // run as a hash chained receipt, and our own record of mark prices and books for replay. wal plus
 // synchronous full because an intent row is the one thing we cannot lose between a send and a crash
-import { Database } from 'bun:sqlite'
+import { DatabaseSync } from 'node:sqlite'
 
 const path = process.env.PEHRA_DB ?? new URL('../data/pehra.db', import.meta.url).pathname
 
-export const db = new Database(path, { create: true, strict: true })
-db.run('pragma journal_mode = wal')
-db.run('pragma synchronous = full')
-db.run('pragma foreign_keys = on')
+export const db = new DatabaseSync(path)
+db.exec('pragma journal_mode = wal')
+db.exec('pragma synchronous = full')
+db.exec('pragma foreign_keys = on')
 
-db.run(`
+// node's sqlite has no transaction helper. everything inside fn commits together or not at all
+export function tx<T>(fn: () => T): T {
+  db.exec('begin immediate')
+  try { const out = fn(); db.exec('commit'); return out } catch (e) { db.exec('rollback'); throw e }
+}
+
+db.exec(`
 create table if not exists rules (
   id text primary key, owner text not null, kind text not null, body text not null,
   state text not null, mode text not null, by text not null, sig text,
