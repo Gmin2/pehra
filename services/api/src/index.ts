@@ -6,6 +6,7 @@ import { publicClient, erc20Abi, faucetAbi, AUSD_FAUCET, NETWORKS, GAS, AGORA, A
 import { Guard } from './guard'
 import { serve } from './serve'
 import { rulesRoute } from './rules'
+import { replayRoute } from './replayRoute'
 import { startBeats } from './proof'
 import { verify, writeRun } from './runs'
 import { pushReady, registerToken, sendPush } from './push'
@@ -148,6 +149,11 @@ const server = serve({
   async fetch(req) {
     const url = new URL(req.url)
     if (url.pathname === '/health') return json({ ok: true, payer: payer.address })
+    if (url.pathname === '/replay' && req.method === 'POST') return replayRoute(req, {
+      market: mkt => guard.marketOf(mkt),
+      book: mkt => guard.recorder.books.get(mkt),
+      position: (a, pid) => guard.startOf(a, pid),
+    })
     const rules = await rulesRoute(req, url, guard)
     if (rules) return rules
     // the phone mirrors its on screen log here, so a dev can tail it instead of reading the screen

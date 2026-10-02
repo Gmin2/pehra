@@ -244,6 +244,17 @@ export class Guard {
     }
   }
 
+  marketOf(mkt: number) { return this.ctx?.markets.find(m => m.id === mkt) }
+
+  // side, size and leverage of a live position, what replay opens at the start of its window
+  startOf(address: string, pid: number): { side: 'long' | 'short'; size: number; leverage: number } | null {
+    const ts = this.sessions.get(address.toLowerCase())
+    const pos = ts?.positions.get(pid)
+    const m = pos ? this.marketOf(pos.mkt) : undefined
+    if (!pos || !m) return null
+    return { side: pos.sd === 1 ? 'long' : 'short', size: fromSize(m, pos.s), leverage: pos.lv / 100 }
+  }
+
   // the market's symbol as the app shows it, part of what the owner signs
   symbolOf(mkt: number) { return this.ctx?.markets.find(m => m.id === mkt)?.symbol ?? `market ${mkt}` }
 
