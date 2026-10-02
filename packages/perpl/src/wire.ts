@@ -54,6 +54,7 @@ export const Reason: Record<number, string> = {
   28: 'LinkedPositionClosed',
   32: 'OrderDescIdTooLow',
   10: 'CloseOrderExceedsPosition',
+  24: 'MaximumAccountOrders',
   31: 'OrderChanged',
   33: 'OrderDoesNotExist',
   34: 'AmountExceedsAvailableBalance',
