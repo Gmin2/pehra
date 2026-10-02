@@ -4,7 +4,13 @@ the one file that says where the build is. updated every session. this folder is
 
 ## right now (sept 24)
 
-every screen is pehra's own and runs on the phone against testnet: onboarding, home (podium markets, positions with the bird), trade (candles, rocket fill), position (add margin, stop and take profit, hold to close), fund (agora 1:1 in and out, test usdc), receive (qr), activity (the guard's day, before and after trays with the chain tx), settings (the guard's rulers). checked on the phone sept 24: brackets set and cleared on close, withdraw 1 usdc through agora in 7.4s, a fresh install signs back in and re-enrolls the guard in 1.1s. next: t9 envio history, t10 flatten offline, then hosting and the release build.
+every screen is pehra's own and runs on the phone against testnet: onboarding, home (podium markets, positions with the bird), trade (candles, rocket fill), position (add margin, stop and take profit, hold to close), fund (agora 1:1 in and out, test usdc), receive (qr), activity (the guard's day, before and after trays with the chain tx), settings (the guard's rulers). checked on the phone sept 24: brackets set and cleared on close, withdraw 1 usdc through agora in 7.4s, a fresh install signs back in and re-enrolls the guard in 1.1s. next: t9 envio history, t10 flatten offline, then t11 to t17 (the watch layer: alert tiers, price alerts on mark, while you slept, envio chain alerts; privacy: pushes and settings encrypted with a passkey derived key, incognito mode, a share card), then hosting and the release build. the t11 to t17 plan is in ../research/build-plan.md under "added sept 26".
+
+## automation ground truth (oct 2)
+
+the spikes behind build-plan.md day 1, run on testnet against the payer's perpl account (#649). scripts in spikes/g*.ts.
+
+- **g10, the minute drops: solved.** perpl's trading server sends a protocol ping every 5s and closes with `1008 ping timeout` when the pong is late. node's `ws` answers it and held 60s with no app pings, 3 of 3. bun's automatic pong is unreliable on this socket (dropped at 6 to 22s), bun plus the `ws` package also dropped, a write inside the ping handler dropped 1 run in 4. an explicit `ws.pong()` from the ping event held 60s, 4 of 4 through the real `TradingSocket`, and spends none of the 60 requests a minute. `TradingSocket` now does that, with an app frame as the fallback for sockets without `pong()` (react native). guard.ts also stopped growing its reconnect delay after a session that had signed in.
 
 ## earlier (sept 22)
 
@@ -54,7 +60,7 @@ node 26 breaks expo cli, use `source ~/.nvm/nvm.sh; nvm use 24` first. all toolc
 
 ## open questions to people
 
-- perpl (pbj via portal or discord): builder id for testnet, how to cancel a resting trigger order (direct cancel returns OrderDoesNotExist), does contract 1.7.5 mean close fees, and what the trading socket's "ping timeout" measures (a react native client gets closed every 9 to 90s with pings every 5s, see the build plan)
+- perpl (pbj via portal or discord): builder id for testnet, how to cancel a resting trigger order (direct cancel returns OrderDoesNotExist), does contract 1.7.5 mean close fees, (the ping timeout is answered, see automation ground truth)
 - agora (portal mentors tab, drakeevans): is there a staging environment (the payments bounty text mentions one, nothing public)
 - register pehra.trade and @pehratrade, then move the passkey host off the vercel subdomain (test passkeys get recreated)
 

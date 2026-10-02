@@ -182,4 +182,36 @@ describe('trading socket', () => {
     expect(last()).toMatchObject({ t: 4, p: 2850, tp: 2800, tpc: 3, lp: 10 })
     ts.close()
   })
+  test('every server ping is answered with an app frame, which flushes the pong bun holds back', async () => {
+    const ts = new TradingSocket({ net: 'testnet', apiKey: 'k', secret: key.secret, pingMs: 60 })
+    const p = ts.connect()
+    await tick()
+    const sock = FakeSocket.instances[0]
+    sock.serverSnapshot()
+    await p
+    sock.serverPing()
+    sock.serverPing()
+    await new Promise(r => setTimeout(r, 40))
+    expect(sock.sent.filter(f => f.mt === 1).length).toBe(2)
+    // once the server is seen pinging, the timed fallback stays quiet
+    await new Promise(r => setTimeout(r, 150))
+    expect(sock.sent.filter(f => f.mt === 1).length).toBe(2)
+    ts.close()
+  })
+  test('a socket with pong() answers the server ping directly and spends no request on it', async () => {
+    const ts = new TradingSocket({ net: 'testnet', apiKey: 'k', secret: key.secret })
+    const p = ts.connect()
+    await tick()
+    const sock = FakeSocket.instances[0] as FakeSocket & { pong: (d?: unknown) => void; pongs: number }
+    sock.pongs = 0
+    sock.pong = () => { sock.pongs++ }
+    sock.serverSnapshot()
+    await p
+    sock.serverPing()
+    sock.serverPing()
+    await new Promise(r => setTimeout(r, 40))
+    expect(sock.pongs).toBe(2)
+    expect(sock.sent.filter(f => f.mt === 1).length).toBe(0)
+    ts.close()
+  })
 })

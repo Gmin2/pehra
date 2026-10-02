@@ -34,6 +34,7 @@ export class TradingSocket {
   private listeners = new Set<Listener>()
   private pingTimer?: ReturnType<typeof setInterval>
   private ready?: Promise<void>
+  private serverPings = 0
 
   account?: Account
   wallet?: Wallet
@@ -52,6 +53,16 @@ export class TradingSocket {
       this.ws = ws
       const guard = setTimeout(() => reject(new Error('sign in timed out')), this.net.signInTimeoutMs + 2000)
       ws.onopen = () => ws.send(JSON.stringify(signInFrame(this.net.chainId, this.opts.apiKey, this.opts.secret)))
+      // perpl's trading server sends a protocol ping every 5s and closes with 1008 "ping timeout" when the
+      // pong is late. bun's automatic pong is unreliable on this socket (spike g10, oct 2: dropped 1 run in 3
+      // or 4), an explicit pong held 3 of 3. sockets without pong() get an app frame a moment later, which
+      // flushes whatever pong the runtime queued. runtimes that never report pings keep the timed ping below
+      ws.addEventListener('ping', (e: Event) => {
+        this.serverPings++
+        const sock = ws as WebSocket & { pong?: (data?: unknown) => void }
+        if (typeof sock.pong === 'function') { sock.pong((e as MessageEvent | undefined)?.data); return }
+        setTimeout(() => { if (ws.readyState === 1) ws.send(JSON.stringify({ mt: MT.ping, t: Date.now() })) }, 20)
+      })
       ws.onerror = () => reject(new Error('trading socket error'))
       ws.onclose = e => {
         clearInterval(this.pingTimer)
@@ -72,7 +83,7 @@ export class TradingSocket {
         if (seen.size === 3) {
           ready = true
           clearTimeout(guard)
-          this.pingTimer = setInterval(() => ws.send(JSON.stringify({ mt: MT.ping, t: Date.now() })), this.opts.pingMs ?? 30_000)
+          this.pingTimer = setInterval(() => { if (!this.serverPings) ws.send(JSON.stringify({ mt: MT.ping, t: Date.now() })) }, this.opts.pingMs ?? 30_000)
           resolve()
         }
       }

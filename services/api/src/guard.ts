@@ -123,13 +123,18 @@ export class Guard {
   private async open(addr: string, attempt = 0): Promise<TradingSocket> {
     const rec = this.stored.get(addr)
     if (!rec) throw new Error('not enrolled')
+    // a session that signed in starts its backoff again from zero, only failed sign ins grow it
+    let signedIn = false
     const ts = new TradingSocket({ net: 'testnet', apiKey: rec.key.apiKey, secret: rec.key.secret, onClose: (code, reason) => {
       if (this.sessions.get(addr) === ts) this.sessions.delete(addr)
-      this.emit(addr, { kind: 'session', text: `closed ${code} ${reason}, reopening` })
-      if (this.stored.has(addr)) setTimeout(() => { if (!this.sessions.has(addr)) void this.open(addr, attempt + 1).catch(() => {}) }, Math.min(1000 * 2 ** attempt, 30_000))
+      const next = signedIn ? 0 : attempt + 1
+      const wait = signedIn ? 0 : Math.min(1000 * 2 ** attempt, 30_000)
+      this.emit(addr, { kind: 'session', text: `closed ${code} ${reason}, reopening in ${wait}ms` })
+      if (this.stored.has(addr)) setTimeout(() => { if (!this.sessions.has(addr)) void this.open(addr, next).catch(() => {}) }, wait)
     } })
     ts.onFrame(f => { if (f.mt === 26 || f.mt === 27) this.evaluate(addr) })
     await ts.connect()
+    signedIn = true
     this.sessions.set(addr, ts)
     this.emit(addr, { kind: 'session', text: `signed in, account ${ts.account?.id}, ${ts.positions.size} positions, ${fromCns(ts.account?.b ?? '0')} AUSD` })
     this.evaluate(addr)
