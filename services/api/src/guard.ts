@@ -1,7 +1,8 @@
 // the guard: one server side trading session per delegated account, every position checked against
 // the mark on every update, margin added before the venue can liquidate. keys live in data/guard-keys.json
 // and events in data/guard-events.json. the same session relays the phone's own orders, closes and brackets.
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import { writeAtomic } from './files'
 import type { Hex } from 'viem'
 import { sendPush } from './push'
 import {
@@ -45,7 +46,7 @@ export class Guard {
   private eventsTimer: ReturnType<typeof setTimeout> | null = null
   private persistEvents() {
     if (this.eventsTimer) return
-    this.eventsTimer = setTimeout(() => { this.eventsTimer = null; writeFileSync(EVENTS, JSON.stringify(Object.fromEntries(this.events))) }, 1000)
+    this.eventsTimer = setTimeout(() => { this.eventsTimer = null; writeAtomic(EVENTS, JSON.stringify(Object.fromEntries(this.events))) }, 1000)
   }
 
   async start() {
@@ -95,7 +96,7 @@ export class Guard {
     return rec.settings
   }
 
-  private persist() { writeFileSync(KEYS, JSON.stringify([...this.stored.values()], null, 2)) }
+  private persist() { writeAtomic(KEYS, JSON.stringify([...this.stored.values()], null, 2)) }
 
   private emit(addr: string, e: Omit<GuardEvent, 'at'>) {
     // reconnects happen every minute or so (perpl's ping timeout), they go to the log, not the history
@@ -122,13 +123,18 @@ export class Guard {
   private async open(addr: string, attempt = 0): Promise<TradingSocket> {
     const rec = this.stored.get(addr)
     if (!rec) throw new Error('not enrolled')
+    // a session that signed in starts its backoff again from zero, only failed sign ins grow it
+    let signedIn = false
     const ts = new TradingSocket({ net: 'testnet', apiKey: rec.key.apiKey, secret: rec.key.secret, onClose: (code, reason) => {
       if (this.sessions.get(addr) === ts) this.sessions.delete(addr)
-      this.emit(addr, { kind: 'session', text: `closed ${code} ${reason}, reopening` })
-      if (this.stored.has(addr)) setTimeout(() => { if (!this.sessions.has(addr)) void this.open(addr, attempt + 1).catch(() => {}) }, Math.min(1000 * 2 ** attempt, 30_000))
+      const next = signedIn ? 0 : attempt + 1
+      const wait = signedIn ? 0 : Math.min(1000 * 2 ** attempt, 30_000)
+      this.emit(addr, { kind: 'session', text: `closed ${code} ${reason}, reopening in ${wait}ms` })
+      if (this.stored.has(addr)) setTimeout(() => { if (!this.sessions.has(addr)) void this.open(addr, next).catch(() => {}) }, wait)
     } })
     ts.onFrame(f => { if (f.mt === 26 || f.mt === 27) this.evaluate(addr) })
     await ts.connect()
+    signedIn = true
     this.sessions.set(addr, ts)
     this.emit(addr, { kind: 'session', text: `signed in, account ${ts.account?.id}, ${ts.positions.size} positions, ${fromCns(ts.account?.b ?? '0')} AUSD` })
     this.evaluate(addr)

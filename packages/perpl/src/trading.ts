@@ -6,6 +6,9 @@ import { MT, OrderType, Flag, Trigger, type Account, type Order, type OrderReque
 type Listener = (frame: TradingFrame) => void
 type Pending = { sn: number; rq: number; pid?: number; status?: StatusFrame; resolve: (r: OrderResult) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }
 
+// floor and size in wire units. slippage only applies when there is no floor
+export type TriggerOptions = { floor?: number; slippageBps?: number; size?: number; onMark?: boolean }
+
 export type OrderResult = { rq: number; status?: StatusFrame; order?: Order; position?: Position }
 
 export type TradingOptions = {
@@ -31,6 +34,7 @@ export class TradingSocket {
   private listeners = new Set<Listener>()
   private pingTimer?: ReturnType<typeof setInterval>
   private ready?: Promise<void>
+  private serverPings = 0
 
   account?: Account
   wallet?: Wallet
@@ -49,6 +53,16 @@ export class TradingSocket {
       this.ws = ws
       const guard = setTimeout(() => reject(new Error('sign in timed out')), this.net.signInTimeoutMs + 2000)
       ws.onopen = () => ws.send(JSON.stringify(signInFrame(this.net.chainId, this.opts.apiKey, this.opts.secret)))
+      // perpl's trading server sends a protocol ping every 5s and closes with 1008 "ping timeout" when the
+      // pong is late. bun's automatic pong is unreliable on this socket (spike g10, oct 2: dropped 1 run in 3
+      // or 4), an explicit pong held 3 of 3. sockets without pong() get an app frame a moment later, which
+      // flushes whatever pong the runtime queued. runtimes that never report pings keep the timed ping below
+      ws.addEventListener('ping', (e: Event) => {
+        this.serverPings++
+        const sock = ws as WebSocket & { pong?: (data?: unknown) => void }
+        if (typeof sock.pong === 'function') { sock.pong((e as MessageEvent | undefined)?.data); return }
+        setTimeout(() => { if (ws.readyState === 1) ws.send(JSON.stringify({ mt: MT.ping, t: Date.now() })) }, 20)
+      })
       ws.onerror = () => reject(new Error('trading socket error'))
       ws.onclose = e => {
         clearInterval(this.pingTimer)
@@ -69,7 +83,7 @@ export class TradingSocket {
         if (seen.size === 3) {
           ready = true
           clearTimeout(guard)
-          this.pingTimer = setInterval(() => ws.send(JSON.stringify({ mt: MT.ping, t: Date.now() })), this.opts.pingMs ?? 30_000)
+          this.pingTimer = setInterval(() => { if (!this.serverPings) ws.send(JSON.stringify({ mt: MT.ping, t: Date.now() })) }, this.opts.pingMs ?? 30_000)
           resolve()
         }
       }
@@ -103,15 +117,18 @@ export class TradingSocket {
       case MT.accountUpdate: {
         const a = m as Extract<TradingFrame, { mt: 21 }>
         if (this.account && a.id === this.account.id) Object.assign(this.account, { b: a.b, lb: a.lb, lfr: a.lfr ?? this.account.lfr })
+        // lfr lags after a reconnect, so request ids also move past every rq seen on an order
+        if (a.lfr !== undefined) this.rq = Math.max(this.rq, a.lfr)
         break
       }
       case MT.ordersSnapshot:
         this.orders.clear()
-        for (const o of (m as OrdersFrame).d) this.orders.set(o.oid, o)
+        for (const o of (m as OrdersFrame).d) { this.orders.set(o.oid, o); this.rq = Math.max(this.rq, o.rq) }
         break
       case MT.ordersUpdate:
         for (const o of (m as OrdersFrame).d) {
           this.orders.set(o.oid, o)
+          this.rq = Math.max(this.rq, o.rq)
           const p = this.pending.get(o.rq)
           // a margin add echoes a failed order frame on the same rq, the position update is the real answer
           if (p && o.t !== OrderType.addCollateral) this.settle(o.rq, { rq: o.rq, status: p.status, order: o })
@@ -174,22 +191,35 @@ export class TradingSocket {
     return this.send({ mkt: pos.mkt, t: pos.sd === 1 ? OrderType.closeLong : OrderType.closeShort, p: 0, s: a.size ?? pos.s, ms: a.slippageBps ?? 100, fl: Flag.ioc, lv: 0, lp: pos.pid })
   }
 
-  // stop loss and take profit are close orders with a trigger, tied to the position so they die with it
-  stopLoss(pos: Position, triggerPrice: number, onMark = true) {
-    const tpc = pos.sd === 1 ? (onMark ? Trigger.lteMark : Trigger.lteLast) : (onMark ? Trigger.gteMark : Trigger.gteLast)
-    return this.send({ mkt: pos.mkt, t: pos.sd === 1 ? OrderType.closeLong : OrderType.closeShort, p: 0, s: pos.s, fl: Flag.ioc, lv: 0, lp: pos.pid, tp: triggerPrice, tpc })
+  // stop loss and take profit are close orders with a trigger, tied to the position (lp) so they die with it.
+  // p 0 fires as an ioc market order capped by ms, a floor fires as an ioc limit at that price, so it can
+  // never fill worse. perpl rejects a close bigger than the position instead of clipping it, so size has to
+  // follow the position after any partial fill.
+  stopLoss(pos: Position, triggerPrice: number, o: TriggerOptions = {}) {
+    const below = pos.sd === 1
+    return this.trigger(pos, triggerPrice, below, o.onMark ?? true, o)
   }
 
-  takeProfit(pos: Position, triggerPrice: number, onMark = false) {
-    const tpc = pos.sd === 1 ? (onMark ? Trigger.gteMark : Trigger.gteLast) : (onMark ? Trigger.lteMark : Trigger.lteLast)
-    return this.send({ mkt: pos.mkt, t: pos.sd === 1 ? OrderType.closeLong : OrderType.closeShort, p: 0, s: pos.s, fl: Flag.ioc, lv: 0, lp: pos.pid, tp: triggerPrice, tpc })
+  takeProfit(pos: Position, triggerPrice: number, o: TriggerOptions = {}) {
+    const below = pos.sd !== 1
+    return this.trigger(pos, triggerPrice, below, o.onMark ?? false, o)
+  }
+
+  private trigger(pos: Position, tp: number, below: boolean, onMark: boolean, o: TriggerOptions) {
+    const tpc = below ? (onMark ? Trigger.lteMark : Trigger.lteLast) : (onMark ? Trigger.gteMark : Trigger.gteLast)
+    const t = pos.sd === 1 ? OrderType.closeLong : OrderType.closeShort
+    const price = o.floor ? { p: o.floor } : { p: 0, ms: o.slippageBps ?? 100 }
+    return this.send({ mkt: pos.mkt, t, ...price, s: o.size ?? pos.s, fl: Flag.ioc, lv: 0, lp: pos.pid, tp, tpc })
   }
 
   addMargin(pos: Position, amountCns: string) {
     return this.send({ mkt: pos.mkt, t: OrderType.addCollateral, p: 0, s: 0, fl: 0, lv: 0, lp: pos.pid, a: amountCns }, { pid: pos.pid })
   }
 
+  // a resting trigger is only found again with its own trigger fields, without them perpl answers
+  // OrderDoesNotExist (what perpl's own app sends, research/perpl-api-deep.md section 2)
   cancel(order: Order) {
-    return this.send({ mkt: order.mkt, t: OrderType.cancel, oid: order.oid, p: 0, s: 0, fl: 0, lv: 0 })
+    const trig = order.tp ? { lp: order.lp, tp: order.tp, tpc: order.tpc } : {}
+    return this.send({ mkt: order.mkt, t: OrderType.cancel, oid: order.oid, p: 0, s: 0, fl: Flag.ioc, lv: 0, ...trig })
   }
 }

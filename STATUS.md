@@ -4,7 +4,22 @@ the one file that says where the build is. updated every session. this folder is
 
 ## right now (sept 24)
 
-every screen is pehra's own and runs on the phone against testnet: onboarding, home (podium markets, positions with the bird), trade (candles, rocket fill), position (add margin, stop and take profit, hold to close), fund (agora 1:1 in and out, test usdc), receive (qr), activity (the guard's day, before and after trays with the chain tx), settings (the guard's rulers). checked on the phone sept 24: brackets set and cleared on close, withdraw 1 usdc through agora in 7.4s, a fresh install signs back in and re-enrolls the guard in 1.1s. next: t9 envio history, t10 flatten offline, then hosting and the release build.
+every screen is pehra's own and runs on the phone against testnet: onboarding, home (podium markets, positions with the bird), trade (candles, rocket fill), position (add margin, stop and take profit, hold to close), fund (agora 1:1 in and out, test usdc), receive (qr), activity (the guard's day, before and after trays with the chain tx), settings (the guard's rulers). checked on the phone sept 24: brackets set and cleared on close, withdraw 1 usdc through agora in 7.4s, a fresh install signs back in and re-enrolls the guard in 1.1s. next: t9 envio history, t10 flatten offline, then t11 to t17 (the watch layer: alert tiers, price alerts on mark, while you slept, envio chain alerts; privacy: pushes and settings encrypted with a passkey derived key, incognito mode, a share card), then hosting and the release build. the t11 to t17 plan is in ../research/build-plan.md under "added sept 26".
+
+## automation ground truth (oct 2)
+
+the spikes behind build-plan.md day 1, run on testnet against the payer's perpl account (#649). scripts in spikes/g*.ts.
+
+- **g10, the minute drops: solved by moving the api to node.** perpl's trading server sends a protocol ping every 5s and closes with `1008 ping timeout` when the pong is late. bun's websocket loses those pongs: automatic, explicit `ws.pong()`, a flush write, and bun's own `ws` shim all still dropped (single socket 12 to 44s, the api's 7 sessions about once a minute each). node's websocket (undici) and the `ws` package answer them: one socket held 150s twice, 7 sockets in one process held 90s with zero drops. so services/api now runs on node through tsx (`pnpm start`, `node --env-file=.env --import tsx`), `Bun.serve` became a small node http adapter (src/serve.ts) and the store uses `node:sqlite`. `TradingSocket` still answers a reported ping with an explicit pong, which helps any runtime that exposes one. guard.ts also stopped growing its reconnect delay after a session that had signed in.
+- **g1, cancel a trigger: works.** `t 5` with the trigger's own `tp`, `tpc`, `lp` answers `st 5`, the trigger is gone. the old cancel sent only the oid, hence OrderDoesNotExist. a resting trigger gets its own onchain tx when placed.
+- **g3, floors on triggers: work.** a fired trigger (`st 9`, sr 54) places a child close with a small server rq, the fill is on that child, the trigger ends `st 10` (sr 65). a floor (`p`) above the bid: nothing filled, the trigger waited as triggered until the position closed. a floor under the bid: filled at the bid, above the floor. no floor with `ms 20`: filled 9 bps under mark.
+- **g5, oversized triggers.** when a position shrinks, perpl shrinks its resting linked triggers itself (`os` 200 to 100, sr 31 OrderChanged). but a trigger placed bigger than the position fires and its child closes fail `sr 10` CloseOrderExceedsPosition every 1 to 4s, forever, until cancelled. rule: never place a trigger above the live size, compare against `os`.
+- **g9, direct close (the escape hatch): works.** the owner key's `execOrders([close], false)` straight to the exchange, forwarding on, closed 200 mon in 1.07s, 309k gas (estimate said 238k, budget 1.5x). the api socket saw it, the resting backstop died (sr 28 LinkedPositionClosed). its order frame carried `rq` = our `orderDescId` (a timestamp), so the socket's rq has to move past it or the next forwarded order is OrderDescIdTooLow.
+- **g13, signed rest for reconcile: works.** `GET /v1/trading/wallet | orders | positions`, signed per perpl's auth doc (packages/perpl/src/signed.ts), return the socket's snapshot shapes stamped with `sn` (the block). a wrong key gets 401. **g13b:** a market open sent, socket killed before any answer: the order still landed, `lfr` 61 to 62, rest showed the position 3s later. a timeout is unknown and rest settles it without the socket.
+- **g6, the trigger cap: 15 in practice.** context says `max_account_trigger_orders` 16, but triggers 1 to 15 rested and the 16th and 17th came back `st 7 sr 24` MaximumAccountOrders. the engine budgets 15 per account across all markets and keeps 1 free for an emergency stop, 14 for rules.
+- **g8, forwarding off then on: triggers survive, paused.** with forwarding off the resting backstop stayed listed (rest orders, `os 200`) and a new trigger was refused `st 7 sr 34`. on again, the same backstop was still resting. so revoke pauses the backstops perpl holds rather than deleting them, they cannot fire while off. the escape hatch is unaffected: it closes the positions directly and their triggers die with them (sr 28).
+- **drops on node:** 3 in the first 5.5 minutes across 7 sessions (bun: 35 in 8). rare enough that instant reconnect plus reconcile carry it.
+- **lost order.** one market open got `status 0` and then nothing: no order frame, `lfr` stayed 39, perpl reused rq 40 for the next order. a timeout is unknown, reconcile reads `lfr` and positions, never a blind resend.
 
 ## earlier (sept 22)
 
@@ -39,7 +54,7 @@ pnpm install
 cd apps/mobile
 npx expo run:android                           # build and install (node 24 via nvm, see notes)
 npx expo start --dev-client --port 8081        # metro, then open the app
-cd ../../services/api && bun run src/index.ts  # drip server on :8787, needs .env with DEV_PRIVATE_KEY
+cd ../../services/api && pnpm start           # api on :8787 (node + tsx), needs .env with DEV_PRIVATE_KEY
 adb reverse tcp:8081 tcp:8081; adb reverse tcp:8787 tcp:8787
 pnpm test                                      # unit tests for the perpl client
 pnpm cold-start                                # the whole t6 from a throwaway key, timed per step, needs the drip server
@@ -54,7 +69,7 @@ node 26 breaks expo cli, use `source ~/.nvm/nvm.sh; nvm use 24` first. all toolc
 
 ## open questions to people
 
-- perpl (pbj via portal or discord): builder id for testnet, how to cancel a resting trigger order (direct cancel returns OrderDoesNotExist), does contract 1.7.5 mean close fees, and what the trading socket's "ping timeout" measures (a react native client gets closed every 9 to 90s with pings every 5s, see the build plan)
+- perpl (pbj via portal or discord): builder id for testnet, how to cancel a resting trigger order (direct cancel returns OrderDoesNotExist), does contract 1.7.5 mean close fees, (the ping timeout is answered, see automation ground truth)
 - agora (portal mentors tab, drakeevans): is there a staging environment (the payments bounty text mentions one, nothing public)
 - register pehra.trade and @pehratrade, then move the passkey host off the vercel subdomain (test passkeys get recreated)
 

@@ -143,4 +143,75 @@ describe('trading socket', () => {
     expect(ts.head).toBe(64785392)
     ts.close()
   })
+  test('request ids move past every rq perpl shows us, so a reconnect never reuses one', async () => {
+    const { ts, sock } = await open()
+    sock.serverSend({ mt: 24, d: [{ oid: 30, rq: 40, mkt: 64, t: 1, st: 4, sr: 43, p: 0, s: 1 }] })
+    void ts.openMarket({ mkt: 64, side: 'long', size: 1, leverage: 100 }).catch(() => {})
+    expect(sock.sent[sock.sent.length - 1].rq).toBe(41)
+    sock.serverSend({ mt: 21, id: 649, b: '0', lb: '0', lfr: 55 })
+    void ts.openMarket({ mkt: 64, side: 'long', size: 1, leverage: 100 }).catch(() => {})
+    expect(sock.sent[sock.sent.length - 1].rq).toBe(56)
+    ts.close()
+  })
+  test('cancel copies the trigger fields, perpl answers OrderDoesNotExist without them', async () => {
+    const { ts, sock } = await open()
+    const stop = { oid: 77, rq: 8, mkt: 64, t: 3, st: 8, sr: 35, p: 0, s: 100, tp: 2500, tpc: 4, lp: 9 }
+    void ts.cancel(stop).catch(() => {})
+    expect(sock.sent[sock.sent.length - 1]).toMatchObject({ t: 5, oid: 77, mkt: 64, lp: 9, tp: 2500, tpc: 4, s: 0, p: 0 })
+    const plain = { oid: 78, rq: 9, mkt: 64, t: 1, st: 2, sr: 35, p: 2600, s: 10 }
+    void ts.cancel(plain).catch(() => {})
+    const f = sock.sent[sock.sent.length - 1]
+    expect(f).toMatchObject({ t: 5, oid: 78 })
+    expect(f.tp).toBeUndefined()
+    ts.close()
+  })
+
+  test('stops and take profits carry a floor or a slippage cap, and can be partial', async () => {
+    const { ts, sock } = await open()
+    const pos = { pid: 9, mkt: 64, sd: 1, s: 100, ep: 2658, c: '891000', lv: 500 }
+    const last = () => sock.sent[sock.sent.length - 1]
+    void ts.stopLoss(pos, 2500).catch(() => {})
+    expect(last()).toMatchObject({ t: 3, p: 0, s: 100, ms: 100, tp: 2500, tpc: 4, lp: 9, fl: 4 })
+    void ts.stopLoss(pos, 2500, { floor: 2450 }).catch(() => {})
+    expect(last()).toMatchObject({ t: 3, p: 2450, s: 100, tp: 2500 })
+    expect(last().ms).toBeUndefined()
+    void ts.takeProfit(pos, 2900, { size: 40, slippageBps: 30 }).catch(() => {})
+    expect(last()).toMatchObject({ t: 3, p: 0, s: 40, ms: 30, tp: 2900, tpc: 1 })
+    const short = { ...pos, pid: 10, sd: 2 }
+    void ts.stopLoss(short, 2800, { floor: 2850 }).catch(() => {})
+    expect(last()).toMatchObject({ t: 4, p: 2850, tp: 2800, tpc: 3, lp: 10 })
+    ts.close()
+  })
+  test('every server ping is answered with an app frame, which flushes the pong bun holds back', async () => {
+    const ts = new TradingSocket({ net: 'testnet', apiKey: 'k', secret: key.secret, pingMs: 60 })
+    const p = ts.connect()
+    await tick()
+    const sock = FakeSocket.instances[0]
+    sock.serverSnapshot()
+    await p
+    sock.serverPing()
+    sock.serverPing()
+    await new Promise(r => setTimeout(r, 40))
+    expect(sock.sent.filter(f => f.mt === 1).length).toBe(2)
+    // once the server is seen pinging, the timed fallback stays quiet
+    await new Promise(r => setTimeout(r, 150))
+    expect(sock.sent.filter(f => f.mt === 1).length).toBe(2)
+    ts.close()
+  })
+  test('a socket with pong() answers the server ping directly and spends no request on it', async () => {
+    const ts = new TradingSocket({ net: 'testnet', apiKey: 'k', secret: key.secret })
+    const p = ts.connect()
+    await tick()
+    const sock = FakeSocket.instances[0] as FakeSocket & { pong: (d?: unknown) => void; pongs: number }
+    sock.pongs = 0
+    sock.pong = () => { sock.pongs++ }
+    sock.serverSnapshot()
+    await p
+    sock.serverPing()
+    sock.serverPing()
+    await new Promise(r => setTimeout(r, 40))
+    expect(sock.pongs).toBe(2)
+    expect(sock.sent.filter(f => f.mt === 1).length).toBe(0)
+    ts.close()
+  })
 })

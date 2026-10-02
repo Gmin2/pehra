@@ -53,10 +53,16 @@ export const Reason: Record<number, string> = {
   13: 'PositionClosed',
   28: 'LinkedPositionClosed',
   32: 'OrderDescIdTooLow',
+  10: 'CloseOrderExceedsPosition',
+  24: 'MaximumAccountOrders',
+  31: 'OrderChanged',
   33: 'OrderDoesNotExist',
   34: 'AmountExceedsAvailableBalance',
   35: 'OrderPlaced',
   43: 'TakerOrderFilled',
+  54: 'TriggerFired',
+  65: 'TriggerExecuted',
+  68: 'TriggerChildFailed',
 }
 
 export type OrderRequest = {
@@ -106,5 +112,7 @@ export type Candle = { t: number; o: number; c: number; h: number; l: number; v:
 export type CandlesFrame = { mt: 11 | 12; sid: number; sn: number; r: number; d: Candle[] }
 export type MarketDataFrame = MarketStateFrame | SubscribedFrame | HeartbeatFrame | CandlesFrame | OtherFrame
 export type Position = { pid: number; mkt: number; sd: number; s: number; ep: number; c: string; lv: number; st?: number; sr?: number; cpnl?: string }
-export type Order = { oid: number; rq: number; mkt: number; t: number; st: number; sr: number; fr?: number; p: number; s: number; fs?: number; fp?: number; tp?: number; tpc?: number; lp?: number; r?: boolean }
+// os is the order's size as perpl holds it now. perpl shrinks a resting trigger's os when its position
+// shrinks (sr 31), so os, not the size we sent, is what a resize compares against (spike g5b)
+export type Order = { oid: number; rq: number; mkt: number; t: number; st: number; sr: number; fr?: number; p: number; s: number; os?: number; fs?: number; fp?: number; tp?: number; tpc?: number; lp?: number; r?: boolean }
 export type MarketState = { orl: number; mrk: number; lst: number; mid: number; bid: number; ask: number; prv: number; dv: number; dva: string; oi: number; tvl: string }

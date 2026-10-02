@@ -4,6 +4,7 @@ import { encodeFunctionData, formatEther, formatUnits, isAddress, parseEther, ve
 import { privateKeyToAccount } from 'viem/accounts'
 import { publicClient, erc20Abi, faucetAbi, AUSD_FAUCET, NETWORKS, GAS, AGORA, AGORA_GAS, whitelisterAbi, isSwapper, pairState, sendBatch, nextNonce, feeCaps, enrollPayload, enrollFinish, fromCns, fromPrice, fromSize, Reason, type Call, type EnrollPayload, type GuardSettings } from '@pehra/perpl'
 import { Guard } from './guard'
+import { serve } from './serve'
 import { pushReady, registerToken, sendPush } from './push'
 
 const key = process.env.DEV_PRIVATE_KEY
@@ -113,7 +114,7 @@ const pendingEnroll = new Map<string, EnrollPayload>()
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
-const server = Bun.serve({
+const server = serve({
   hostname: '0.0.0.0',
   port: Number(process.env.PORT ?? 8787),
   async fetch(req) {
