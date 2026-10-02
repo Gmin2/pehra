@@ -2,7 +2,7 @@
 // can do the perpl setup itself. the dev key pays. later: enrollment proxy, the guard, push.
 import { encodeFunctionData, formatEther, formatUnits, isAddress, parseEther, verifyMessage, type Address } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
-import { publicClient, erc20Abi, faucetAbi, AUSD_FAUCET, NETWORKS, GAS, AGORA, AGORA_GAS, whitelisterAbi, isSwapper, pairState, sendBatch, nextNonce, feeCaps, enrollPayload, enrollFinish, fromCns, fromPrice, fromSize, Reason, type Call, type EnrollPayload, type GuardSettings } from '@pehra/perpl'
+import { publicClient, erc20Abi, faucetAbi, AUSD_FAUCET, NETWORKS, GAS, AGORA, AGORA_GAS, whitelisterAbi, isSwapper, pairState, sendBatch, nextNonce, feeCaps, enrollPayload, enrollFinish, fromCns, fromPrice, fromSize, Reason, profile, type Activity, type Call, type EnrollPayload, type GuardSettings } from '@pehra/perpl'
 import { Guard } from './guard'
 import { serve } from './serve'
 import { rulesRoute } from './rules'
@@ -260,6 +260,16 @@ const server = serve({
       } catch (e) {
         return json({ error: e instanceof Error ? e.message : 'order failed' }, 500)
       }
+    }
+    // how the account trades and the rules that would fit its open positions (packages/perpl/src/profile.ts)
+    const pr = url.pathname.match(/^\/profile\/(0x[0-9a-fA-F]{40})$/)
+    if (pr && req.method === 'GET') {
+      try {
+        const { rows } = await chainHistory(pr[1])
+        const open = guard.health(pr[1]).map(h => ({ pid: h.pid, mkt: h.mkt, side: h.side, entry: h.entry, mark: h.mark, liq: h.liq, size: h.size }))
+        const have = guard.engine.list(pr[1]).filter(r => ['armed', 'held', 'paused', 'firing', 'working'].includes(r.state)).map(r => ({ pid: r.rule.pid, kind: r.kind }))
+        return json(profile(rows as Activity[], open, have))
+      } catch (e) { return json({ error: e instanceof Error ? e.message : 'profile failed' }, 502) }
     }
     const ch = url.pathname.match(/^\/chain\/(0x[0-9a-fA-F]{40})$/)
     if (ch && req.method === 'GET') {
