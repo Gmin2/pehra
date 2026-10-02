@@ -8,7 +8,7 @@ import { Recorder } from './record'
 import type { Hex } from 'viem'
 import { sendPush } from './push'
 import {
-  decide, defaultGuardSettings, getContext, MarketDataSocket, positionHealth, TradingSocket, fromCns, fromPrice, fromSize, toCns, toLeverage, toPrice, toSize, Trigger,
+  decide, defaultGuardSettings, restOrderHistory, getContext, MarketDataSocket, positionHealth, TradingSocket, fromCns, fromPrice, fromSize, toCns, toLeverage, toPrice, toSize, Trigger,
   type AccountUpdateFrame, type MarketStateFrame, type Context, type Enrolled, type GuardSettings, type Health, type Market, type Position, type Live,
 } from '@pehra/perpl'
 
@@ -51,6 +51,8 @@ export class Guard {
       session: a => this.sessions.get(a.toLowerCase()) ?? null,
       emit: (a, e) => this.emit(a.toLowerCase(), e),
       nextTx: ts => this.nextTxAt(ts),
+      book: mkt => this.recorder.books.get(mkt),
+      history: async a => { const rec = this.stored.get(a.toLowerCase()); if (!rec) return []; return (await restOrderHistory({ apiKey: rec.key.apiKey, secret: rec.key.secret })).d },
       log,
     })
     if (existsSync(KEYS)) for (const s of JSON.parse(readFileSync(KEYS, 'utf8')) as Stored[]) this.stored.set(s.address.toLowerCase(), s)
@@ -166,6 +168,8 @@ export class Guard {
       if (this.stored.has(addr)) setTimeout(() => { if (!this.sessions.has(addr)) void this.open(addr, next).catch(() => {}) }, wait)
     } })
     ts.onFrame(f => {
+      // a trigger perpl executed (st 10) is recorded soon rather than at the next 30s reconcile
+      if (f.mt === 24 && (f as { d: { st: number }[] }).d.some(o => o.st === 10)) setTimeout(() => this.engine.reconcile(addr), 1500)
       if (f.mt !== 26 && f.mt !== 27) return
       // listeners run before the socket applies the frame to its maps, so read them a tick later
       setTimeout(() => {

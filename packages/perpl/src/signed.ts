@@ -44,3 +44,6 @@ async function read<T>(key: SignedKey, target: string): Promise<T> {
 export const restOrders = (key: SignedKey) => read<{ sn: number; d: Order[] }>(key, '/v1/trading/orders')
 export const restPositions = (key: SignedKey) => read<{ sn: number; d: Position[] }>(key, '/v1/trading/positions')
 export const restWallet = (key: SignedKey) => read<{ sn: number; as: Account[] }>(key, '/v1/trading/wallet')
+// every state an order went through, newest first. executed triggers live here, not in the open orders
+export type HistoryOrder = Order & { at?: { b: number; t: number; txid?: string } }
+export const restOrderHistory = (key: SignedKey, count = 50) => read<{ d: HistoryOrder[] }>(key, `/v1/trading/order-history?count=${count}`)

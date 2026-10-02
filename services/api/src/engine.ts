@@ -2,7 +2,7 @@
 // market, and what step() asks for is carried out through one send queue per account. every state change
 // and every result is a run row (runs.ts). a session that is reconnecting defers its rules, it never acts
 // on a position map it cannot trust.
-import { Rule, step, modeOf, positionHealth, toCns, fromCns, toSize, fromSize, fromPrice, OrderType, Flag, Reason, type Context, type GuardSettings, type Market, type MarketDataSocket, type Mem, type Position, type RuleState, type Tick, type TradingSocket, type Intent } from '@pehra/perpl'
+import { Rule, step, modeOf, nextSlice, Book, type HistoryOrder, positionHealth, toCns, fromCns, toSize, fromSize, fromPrice, OrderType, Flag, Reason, type Context, type GuardSettings, type Market, type MarketDataSocket, type Mem, type Position, type RuleState, type Tick, type TradingSocket, type Intent } from '@pehra/perpl'
 import { db } from './db'
 import { writeRun } from './runs'
 import { move } from './state'
@@ -21,6 +21,8 @@ export type EngineDeps = {
   session: (address: string) => TradingSocket | null
   emit: (address: string, e: Omit<GuardEvent, 'at'>) => void
   nextTx: (ts: TradingSocket) => Promise<{ tx: string; block?: number } | undefined>
+  book: (mkt: number) => Book | undefined
+  history: (address: string) => Promise<HistoryOrder[]>
   log: (s: string) => void
 }
 
@@ -37,7 +39,15 @@ const q = {
   lastRun: db.prepare('select at from runs where rule = ? and kind != ? order by seq desc limit 1'),
   exists: db.prepare('select 1 from rules where id = ?'),
   saveBody: db.prepare('update rules set body = ?, updated = ? where id = ?'),
+  putOrder: db.prepare(`insert or replace into orders (rule, step, owner, oid, pid, size, px, tp, tpc, state) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+  orderOf: db.prepare('select * from orders where rule = ? and step = ?'),
+  ordersOf: db.prepare('select * from orders where rule = ?'),
+  orderState: db.prepare('update orders set state = ?, size = ? where rule = ? and step = ?'),
 }
+
+type OrderRow = { rule: string; step: string; owner: string; oid: number; pid: number; size: number; px: number; tp: number; tpc: number; state: string }
+// the backstop fires as a market close capped this far from the mark, so it still fills in a fast crash
+const BACKSTOP_SLIPPAGE_BPS = 300
 
 // a crash at a named point, for the crash test only (DEBUG_CRASH_AT=sent)
 function crashAt(point: string) {
@@ -82,7 +92,106 @@ export class Engine {
     q.insert.run(s.id, s.owner, rule.kind, JSON.stringify(rule), state, s.mode, by, sig, now, now, '{}')
     writeRun({ owner: s.owner, rule: s.id, kind: 'state', body: { from: null, to: state, why: `created by ${by}`, rule } })
     if (ACTIVE.includes(state)) this.rules.set(s.id, s)
+    if (rule.kind === 'stop' && state === 'armed') void this.lane(s.owner, () => this.placeBackstop(s)).catch(e => this.deps.log(`backstop for ${s.id} failed: ${e instanceof Error ? e.message : e}`))
+    if (rule.kind === 'ladder' && state === 'armed') void this.lane(s.owner, () => this.placeLadder(s)).catch(e => this.deps.log(`ladder for ${s.id} failed: ${e instanceof Error ? e.message : e}`))
     return s
+  }
+
+  // the stop's last line, held by perpl: a trigger close at backstopPx for the live size. perpl fires it even
+  // when pehra is down, and drops it when the position closes (spike g9, sr 28)
+  private async placeBackstop(r: Stored) {
+    if (r.rule.kind !== 'stop') return
+    const ts = this.deps.session(r.owner)
+    const m = this.deps.ctx()?.markets.find(x => x.id === r.rule.mkt)
+    const pos = ts?.positions.get(r.rule.pid)
+    if (!ts?.account || !m || !pos) throw new Error('no session or position for the backstop')
+    const k = 10 ** m.config.price_decimals
+    const tp = Math.round(r.rule.backstopPx * k)
+    const res = await ts.stopLoss(pos, tp, { slippageBps: BACKSTOP_SLIPPAGE_BPS, size: pos.s })
+    const o = res.order
+    if (!o || o.st !== 8) {
+      const reason = o ? Reason[o.sr] ?? `sr ${o.sr}` : res.status?.status.msg ?? 'no answer'
+      writeRun({ owner: r.owner, rule: r.id, kind: 'reject', body: { step: 'backstop', backstopPx: r.rule.backstopPx, reason } })
+      this.deps.emit(r.owner, { kind: 'failed', pid: pos.pid, symbol: m.symbol, text: `the backstop at ${r.rule.backstopPx} could not be placed (${reason}), the stop still runs on pehra` })
+      return
+    }
+    q.putOrder.run(r.id, 'backstop', r.owner, o.oid, pos.pid, fromSize(m, pos.s), r.rule.backstopPx, tp, o.tpc ?? 0, 'resting')
+    writeRun({ owner: r.owner, rule: r.id, kind: 'note', body: { text: `backstop resting on perpl at ${r.rule.backstopPx}`, oid: o.oid, size: fromSize(m, pos.s) } })
+    this.deps.emit(r.owner, { kind: 'bracket', pid: pos.pid, symbol: m.symbol, text: `${m.symbol}: hidden stop at ${r.rule.px}, backstop on perpl at ${r.rule.backstopPx}` })
+    this.deps.log(`rule ${r.id} backstop resting, oid ${o.oid}`)
+  }
+
+  // a take profit ladder lives on perpl: one partial trigger close per step, each with its floor. sizes come
+  // from the live position and never add up to more than it (validate checked the shares)
+  private async placeLadder(r: Stored) {
+    if (r.rule.kind !== 'ladder') return
+    const ts = this.deps.session(r.owner)
+    const m = this.deps.ctx()?.markets.find(x => x.id === r.rule.mkt)
+    const pos = ts?.positions.get(r.rule.pid)
+    if (!ts?.account || !m || !pos) throw new Error('no session or position for the ladder')
+    const k = 10 ** m.config.price_decimals
+    let placed = 0
+    for (const [n, st] of r.rule.steps.entries()) {
+      const size = Math.max(1, Math.floor(pos.s * st.share / 100))
+      const res = await ts.takeProfit(pos, Math.round(st.px * k), { floor: Math.round(st.floor * k), size })
+      const o = res.order
+      if (!o || o.st !== 8) {
+        const reason = o ? Reason[o.sr] ?? `sr ${o.sr}` : res.status?.status.msg ?? 'no answer'
+        writeRun({ owner: r.owner, rule: r.id, kind: 'reject', body: { step: `s${n}`, px: st.px, reason } })
+        this.deps.emit(r.owner, { kind: 'failed', pid: pos.pid, symbol: m.symbol, text: `take profit step at ${st.px} could not be placed (${reason})` })
+        continue
+      }
+      q.putOrder.run(r.id, `s${n}`, r.owner, o.oid, pos.pid, fromSize(m, size), st.px, Math.round(st.px * k), o.tpc ?? 0, 'resting')
+      placed++
+    }
+    writeRun({ owner: r.owner, rule: r.id, kind: 'note', body: { text: `ladder resting on perpl, ${placed} of ${r.rule.steps.length} steps` } })
+    this.deps.emit(r.owner, { kind: 'bracket', pid: pos.pid, symbol: m.symbol, text: `${m.symbol}: take profit ladder of ${placed} steps on perpl` })
+    this.deps.log(`rule ${r.id} ladder resting, ${placed} steps`)
+  }
+
+  // perpl's order history says whether the backstop fired and what its close sold, the open orders do not
+  private async attribute(r: Stored, row: OrderRow) {
+    const hist = await this.deps.history(r.owner)
+    const fired = hist.find(o => o.oid === row.oid && o.st === 10)
+    if (!fired?.at) { if (row.state !== 'resting') return; q.orderState.run('gone', row.size, r.id, row.step); return }
+    const child = hist.find(o => o.at?.b === fired.at?.b && o.st === 4 && (o.t === 3 || o.t === 4) && o.oid !== row.oid)
+    const m = this.deps.ctx()?.markets.find(x => x.id === r.rule.mkt)
+    q.orderState.run('fired', row.size, r.id, row.step)
+    if (!m || !child) return
+    const price = fromPrice(m, child.fp ?? 0), size = fromSize(m, child.fs ?? 0)
+    const tx = child.at?.txid ? `0x${child.at.txid}` : null
+    const what = row.step === 'backstop' ? 'the backstop' : `take profit ${row.step}`
+    writeRun({ owner: r.owner, rule: r.id, kind: 'fill', body: { kind: row.step === 'backstop' ? 'backstop' : 'step', step: row.step, by: 'perpl', trigger: row.px, size, price, tx, block: fired.at.b } })
+    this.deps.emit(r.owner, { kind: 'closed', pid: r.rule.pid, symbol: m.symbol, tx: tx ?? undefined, amount: size, price, text: `${what} on perpl sold ${size} ${m.symbol} at ${price}, it fired at ${row.px}` })
+    this.deps.log(`rule ${r.id} ${what} fired on perpl, ${size} at ${price} ${tx ?? ''}`)
+  }
+
+  // a ladder's steps fire on perpl. each one perpl executed is recorded once, the ladder ends when none rest
+  private reconcileSteps(r: Stored, ts: TradingSocket) {
+    const rows = (q.ordersOf.all(r.id) as OrderRow[]).filter(x => x.step !== 'backstop')
+    for (const row of rows) {
+      if (row.state !== 'resting') continue
+      const o = ts.orders.get(row.oid)
+      if (o && o.st === 8) continue
+      row.state = 'checking'
+      q.orderState.run('checking', row.size, r.id, row.step)
+      void this.lane(r.owner, () => this.attribute(r, { ...row, state: 'resting' })).catch(e => this.deps.log(`step history for ${r.id} failed: ${e instanceof Error ? e.message : e}`))
+    }
+    if (rows.length && rows.every(x => x.state === 'fired' || x.state === 'gone' || x.state === 'cancelled')) this.finish(r, 'every take profit step fired')
+  }
+
+  // every order a finished rule left resting on perpl is cancelled with its own fields, or marked gone
+  private async dropOrders(r: Stored, why: string) {
+    const ts = this.deps.session(r.owner)
+    for (const row of q.ordersOf.all(r.id) as OrderRow[]) {
+      if (row.state !== 'resting') continue
+      const resting = ts?.orders.get(row.oid)
+      if (!ts?.account || !resting || resting.st !== 8) { q.orderState.run('gone', row.size, r.id, row.step); continue }
+      const res = await ts.cancel(resting)
+      const ok = res.order?.st === 5
+      q.orderState.run(ok ? 'cancelled' : 'resting', row.size, r.id, row.step)
+      writeRun({ owner: r.owner, rule: r.id, kind: ok ? 'note' : 'reject', body: { text: ok ? `${row.step} cancelled, ${why}` : `${row.step} cancel refused (${res.order ? Reason[res.order.sr] ?? res.order.sr : 'no answer'})`, oid: row.oid } })
+    }
   }
 
   active() { return this.rules.size }
@@ -129,7 +238,7 @@ export class Engine {
     this.lastBlock.set(mkt, block)
     const tick: Tick = { at: Date.now(), block, mkt, mark: state.mrk / 10 ** m.config.price_decimals, last: state.lst / 10 ** m.config.price_decimals }
     for (const r of this.rules.values()) {
-      if (r.rule.mkt !== mkt || r.state !== 'armed') continue
+      if (r.rule.mkt !== mkt || (r.state !== 'armed' && r.state !== 'held')) continue
       this.evaluations++
       const ts = this.deps.session(r.owner)
       // rules on a position need a trusted session. a ping has no position and runs on the mark alone
@@ -142,6 +251,8 @@ export class Engine {
       const health = pos ? positionHealth(pos, m, state.mrk) : null
       const view = { health, maintenance: m.config.maintenance_margin, balance: ts?.account ? Number(ts.account.b) / 1e6 : 0, addedToday: addedToday(r.owner) }
       const s = step(r.rule, r.mem, tick, view)
+      // a held stop resumes only when the book can take a slice past its floor, it never sends to be refused
+      if (r.state === 'held' && s.intents.some(i => i.kind === 'close') && !this.canSell(r, m, health)) continue
       if (JSON.stringify(s.mem) !== JSON.stringify(r.mem)) { r.mem = s.mem; q.saveMem.run(JSON.stringify(s.mem), Date.now(), r.id) }
       if (s.intents.length) this.fire(r, s.intents, tick, s.done)
       else if (s.done) this.finish(r, s.done)
@@ -152,11 +263,24 @@ export class Engine {
     move(r, 'done', why)
     this.rules.delete(r.id)
     this.deps.log(`rule ${r.id} done: ${why}`)
+    // a finished stop leaves nothing on perpl: cancelled if it still rests, marked gone if perpl dropped it
+    if (r.rule.kind === 'stop' || r.rule.kind === 'ladder') void this.lane(r.owner, () => this.dropOrders(r, why)).catch(e => this.deps.log(`order cleanup for ${r.id} failed: ${e instanceof Error ? e.message : e}`))
+  }
+
+  // whether the live book has depth on the right side of a stop's floor
+  private canSell(r: Stored, m: Market, h: ReturnType<typeof positionHealth> | null) {
+    if (r.rule.kind !== 'stop' || !h) return false
+    const book = this.deps.book(m.id)
+    if (!book) return true
+    const k = 10 ** m.config.price_decimals, z = 10 ** m.config.size_decimals
+    const { bids, asks } = book.levels()
+    const human = (l: [number, number][]) => l.map(([p, q]): [number, number] => [p / k, q / z])
+    return nextSlice({ left: h.size, floor: r.rule.floor, side: h.side, bids: human(bids), asks: human(asks), maxShare: 0.5, minSize: 1 / z }).size > 0
   }
 
   private fire(r: Stored, intents: Intent[], tick: Tick, done?: string) {
     const t1 = Date.now()
-    move(r, 'firing', intents.map(i => i.kind).join(', '), () => q.fired.run(Date.now(), r.id))
+    move(r, r.state === 'held' ? 'working' : 'firing', intents.map(i => i.kind).join(', '), () => q.fired.run(Date.now(), r.id))
     r.fires++
     void this.lane(r.owner, async () => {
       let held: string | undefined
@@ -192,12 +316,45 @@ export class Engine {
     const before = positionHealth(pos, m, mark)
     const id = `${r.id}:${r.fires}`
     if (i.kind === 'add') return this.addMargin(r, id, ts, pos, m, before, i.ausd, i.why, { ...stamps, t2 })
-    if (i.kind === 'close') return this.close(r, id, ts, pos, m, i.size, i.floor, i.why, { ...stamps, t2 })
+    if (i.kind === 'close') return this.sliced(r, id, ts, pos, m, i.size, i.floor, i.why, { ...stamps, t2 })
+  }
+
+  // a stop sells in slices sized from the live book past its floor, one per block, re-reading the position
+  // before each so it never sells more than is held. the book past the floor holds it with the rest open
+  private async sliced(r: Stored, id: string, ts: TradingSocket, pos: Position, m: Market, size: number, floor: number, why: string, stamps: Record<string, number>): Promise<string | void> {
+    const max = r.rule.kind === 'stop' ? r.rule.slices : 1
+    const z = 10 ** m.config.size_decimals, k = 10 ** m.config.price_decimals
+    let left = size, sold = 0
+    for (let n = 0; n < max && left > 0; n++) {
+      const live = ts.positions.get(pos.pid)
+      if (!live) return
+      const held = fromSize(m, live.s)
+      const book = this.deps.book(m.id)
+      let take = Math.min(left, held)
+      if (book && n < max - 1) {
+        const { bids, asks } = book.levels()
+        const human = (l: [number, number][]) => l.map(([p, q]): [number, number] => [p / k, q / z])
+        const s = nextSlice({ left: take, floor, side: live.sd === 1 ? 'long' : 'short', bids: human(bids), asks: human(asks), maxShare: 0.5, minSize: 1 / z })
+        if (!s.size) return this.holdAt(r, m, floor, held)
+        take = s.size
+      }
+      const out = await this.close(r, max > 1 ? `${id}.${n}` : id, ts, live, m, take, floor, why, stamps)
+      if (typeof out === 'string') return sold > 0 ? this.holdAt(r, m, floor, fromSize(m, ts.positions.get(pos.pid)?.s ?? 0)) : out
+      sold += out
+      left -= out
+      if (left > 0) await new Promise(res => setTimeout(res, 400))
+    }
+    if (left > 0 && ts.positions.get(pos.pid)) return this.holdAt(r, m, floor, fromSize(m, ts.positions.get(pos.pid)?.s ?? 0))
+  }
+
+  private holdAt(r: Stored, m: Market, floor: number, left: number) {
+    this.deps.emit(r.owner, { kind: 'failed', pid: r.rule.pid, symbol: m.symbol, text: `stopped at your floor ${floor}, ${left} ${m.symbol} left open` })
+    return `book past the floor ${floor}, ${left} left open`
   }
 
   // a close sent as an ioc limit at the floor, so it can never fill worse than the floor (spike g3). the
   // size is never more than the live position, perpl rejects a close bigger than the position (g5)
-  private async close(r: Stored, id: string, ts: TradingSocket, pos: Position, m: Market, size: number, floor: number, why: string, stamps: Record<string, number>): Promise<string | void> {
+  private async close(r: Stored, id: string, ts: TradingSocket, pos: Position, m: Market, size: number, floor: number, why: string, stamps: Record<string, number>): Promise<string | number> {
     const k = 10 ** m.config.price_decimals
     const want = Math.min(toSize(m, size), pos.s)
     openIntent({ id, rule: r.id, owner: r.owner, kind: 'close', pid: pos.pid, size: fromSize(m, want), floor, stamps, body: { before: { size: fromSize(m, pos.s) }, why } })
@@ -213,7 +370,7 @@ export class Engine {
         const st = { ...stamps, t3, t4: Date.now() }
         settle(id, 'unknown', { stamps: st })
         writeRun({ owner: r.owner, rule: r.id, kind: 'unknown', body: { intent: id, kind: 'close', error: e instanceof Error ? e.message : String(e), stamps: st } })
-        return
+        return 'the close went unanswered, reconcile settles it'
       }
       const t5 = Date.now()
       crashAt('acked')
@@ -236,6 +393,7 @@ export class Engine {
       const side = pos.sd === 1 ? 'long' : 'short'
       this.deps.emit(r.owner, { kind: 'closed', pid: pos.pid, symbol: m.symbol, side, lv: pos.lv, tx: landed?.tx, amount: filled, price, text: `stop sold ${filled} ${m.symbol} at ${price}, never below ${floor}` })
       this.deps.log(`rule ${r.id} close ${filled} at ${price}, floor ${floor}`)
+      return filled
     } finally { this.inflight.delete(id) }
   }
 
@@ -316,7 +474,32 @@ export class Engine {
       if (r.owner !== owner || [...this.inflight.values()].includes(r.id)) continue
       if (r.state === 'firing' || r.state === 'working') move(r, 'armed', 'reconciled after a restart or a drop')
       const pos = r.rule.kind === 'ping' ? true : ts.positions.get(r.rule.pid)
-      if (!pos && r.state === 'armed') this.finish(r, 'position closed')
+      const back = r.rule.kind === 'stop' ? q.orderOf.get(r.id, 'backstop') as OrderRow | undefined : undefined
+      if (!pos && (r.state === 'armed' || r.state === 'held')) {
+        // the position went while this rule watched it. if pehra never sold it and a backstop rested, the
+        // backstop is what closed it, perpl fired it on its own
+        const sold = (db.prepare(`select count(*) as n from intents where rule = ? and kind = 'close' and state = 'filled'`).get(r.id) as { n: number }).n
+        const order = back ? ts.orders.get(back.oid) : undefined
+        const why = back && back.state === 'resting' && !sold ? (order?.st === 10 ? 'the backstop on perpl fired' : 'the position closed with the backstop resting on perpl, pehra did not sell') : 'position closed'
+        if (back) q.orderState.run(order?.st === 10 ? 'fired' : 'gone', back.size, r.id, 'backstop')
+        this.finish(r, why)
+        if (back && back.state === 'resting' && !sold) void this.attribute(r, back).catch(e => this.deps.log(`backstop history for ${r.id} failed: ${e instanceof Error ? e.message : e}`))
+        continue
+      }
+      if (r.rule.kind === 'ladder' && pos) { this.reconcileSteps(r, ts); continue }
+      if (back && back.state === 'resting' && pos !== true && pos) {
+        const o = ts.orders.get(back.oid)
+        const m = this.deps.ctx()?.markets.find(x => x.id === r.rule.mkt)
+        if (o && m && (o.os ?? o.s) > pos.s) {
+          // perpl normally shrinks it with the position (g5b), an oversized trigger would fail forever (g5)
+          writeRun({ owner, rule: r.id, kind: 'reconcile', body: { backstop: back.oid, os: o.os ?? o.s, live: pos.s, why: 'backstop larger than the position, replacing' } })
+          void this.lane(owner, async () => { await ts.cancel(o); q.orderState.run('cancelled', back.size, r.id, 'backstop'); await this.placeBackstop(r) }).catch(() => {})
+        } else if (!o) {
+          writeRun({ owner, rule: r.id, kind: 'reconcile', body: { backstop: back.oid, why: 'backstop no longer resting, placing it again' } })
+          q.orderState.run('gone', back.size, r.id, 'backstop')
+          void this.lane(owner, () => this.placeBackstop(r)).catch(() => {})
+        }
+      }
     }
   }
 
