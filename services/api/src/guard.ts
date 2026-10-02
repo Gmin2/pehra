@@ -3,11 +3,12 @@
 // and events in data/guard-events.json. the same session relays the phone's own orders, closes and brackets.
 import { existsSync, readFileSync } from 'node:fs'
 import { writeAtomic } from './files'
+import { Engine } from './engine'
 import type { Hex } from 'viem'
 import { sendPush } from './push'
 import {
   decide, defaultGuardSettings, getContext, MarketDataSocket, positionHealth, TradingSocket, fromCns, fromPrice, fromSize, toCns, toLeverage, toPrice, toSize, Trigger,
-  type AccountUpdateFrame, type Context, type Decision, type Enrolled, type GuardSettings, type Health, type Market, type Position,
+  type AccountUpdateFrame, type MarketStateFrame, type Context, type Decision, type Enrolled, type GuardSettings, type Health, type Market, type Position, type Live,
 } from '@pehra/perpl'
 
 // guard kinds: warn, add, added, failed, session. the user's own actions: opened, closed, bracket, manual
@@ -36,10 +37,18 @@ export class Guard {
   private market: MarketDataSocket
   private ctx: Context | null = null
   private log: (s: string) => void
+  engine: Engine
 
   constructor(log: (s: string) => void = console.log) {
     this.log = log
     this.market = new MarketDataSocket('testnet')
+    this.engine = new Engine({
+      market: this.market,
+      ctx: () => this.ctx,
+      session: a => this.sessions.get(a.toLowerCase()) ?? null,
+      addedToday: a => { const t = this.addedToday.get(a.toLowerCase()); return t && t.day === Math.floor(Date.now() / DAY_MS) ? t.ausd : 0 },
+      log,
+    })
     if (existsSync(KEYS)) for (const s of JSON.parse(readFileSync(KEYS, 'utf8')) as Stored[]) this.stored.set(s.address.toLowerCase(), s)
     if (existsSync(EVENTS)) for (const [a, list] of Object.entries(JSON.parse(readFileSync(EVENTS, 'utf8')) as Record<string, GuardEvent[]>)) this.events.set(a, list.filter(e => e.kind !== 'session'))
   }
@@ -53,7 +62,12 @@ export class Guard {
     this.ctx = await getContext('testnet')
     const s = MarketDataSocket.streams(10143)
     await this.market.connect([s.heartbeat, s.marketState])
-    this.market.on(f => { if (f.mt === 9) for (const addr of this.sessions.keys()) this.evaluate(addr) })
+    this.engine.load()
+    this.market.on(f => {
+      if (f.mt !== 9) return
+      for (const addr of this.sessions.keys()) this.evaluate(addr)
+      for (const id of Object.keys((f as MarketStateFrame).d)) this.engine.tick(Number(id))
+    })
     for (const addr of this.stored.keys()) void this.open(addr)
     this.log(`guard watching ${this.stored.size} accounts`)
   }
@@ -216,6 +230,19 @@ export class Guard {
     } catch (e) {
       this.emit(addr, { kind: 'failed', pid: pos.pid, symbol: m.symbol, text: `margin add failed: ${e instanceof Error ? e.message : String(e)}` })
     }
+  }
+
+  // what a new rule is checked against: the position at the current mark, and how many triggers already
+  // rest on the whole account (perpl's cap is per account)
+  live(address: string, pid: number, mkt: number): Live | null {
+    const ts = this.sessions.get(address.toLowerCase())
+    const m = this.ctx?.markets.find(x => x.id === mkt)
+    const mark = this.market.states.get(mkt)?.mrk
+    const pos = ts?.positions.get(pid)
+    if (!ts || !m || mark === undefined || !pos || pos.mkt !== mkt) return null
+    const h = positionHealth(pos, m, mark)
+    const resting = [...ts.orders.values()].filter(o => o.st === 8).length
+    return { mark: h.mark, side: h.side, size: h.size, entry: h.entry, resting }
   }
 
   // the phone's own orders ride the same session

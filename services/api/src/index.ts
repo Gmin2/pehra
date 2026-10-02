@@ -5,6 +5,7 @@ import { privateKeyToAccount } from 'viem/accounts'
 import { publicClient, erc20Abi, faucetAbi, AUSD_FAUCET, NETWORKS, GAS, AGORA, AGORA_GAS, whitelisterAbi, isSwapper, pairState, sendBatch, nextNonce, feeCaps, enrollPayload, enrollFinish, fromCns, fromPrice, fromSize, Reason, type Call, type EnrollPayload, type GuardSettings } from '@pehra/perpl'
 import { Guard } from './guard'
 import { serve } from './serve'
+import { rulesRoute } from './rules'
 import { pushReady, registerToken, sendPush } from './push'
 
 const key = process.env.DEV_PRIVATE_KEY
@@ -120,6 +121,8 @@ const server = serve({
   async fetch(req) {
     const url = new URL(req.url)
     if (url.pathname === '/health') return json({ ok: true, payer: payer.address })
+    const rules = await rulesRoute(req, url, guard)
+    if (rules) return rules
     // the phone mirrors its on screen log here, so a dev can tail it instead of reading the screen
     if (url.pathname === '/log' && req.method === 'POST') {
       const body = await req.json().catch(() => ({})) as { line?: string }
