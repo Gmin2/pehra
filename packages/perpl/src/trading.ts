@@ -113,7 +113,10 @@ export class TradingSocket {
       case MT.heartbeat: {
         const h = m as Extract<TradingFrame, { mt: 100 }>
         this.head = h.h
-        if (this.lastHeartbeat >= 0 && h.sn !== this.lastHeartbeat + 1) this.gap(h.sn)
+        // a repeat or an older heartbeat is perpl resending, skip it. a jump means frames were lost, so the
+        // socket is closed and comes back with fresh snapshots (throwing here took a node process down)
+        if (this.lastHeartbeat >= 0 && h.sn <= this.lastHeartbeat) break
+        if (this.lastHeartbeat >= 0 && h.sn !== this.lastHeartbeat + 1) { this.gap(h.sn); break }
         this.lastHeartbeat = h.sn
         break
       }
@@ -159,9 +162,12 @@ export class TradingSocket {
   }
 
   private gap(sn: number) {
+    this.gapAt = { expected: this.lastHeartbeat + 1, got: sn }
     this.close()
-    throw new Error(`heartbeat gap, expected ${this.lastHeartbeat + 1} got ${sn}`)
   }
+
+  // the last heartbeat gap that closed this socket, for the log
+  gapAt?: { expected: number; got: number }
 
   private settle(rq: number, r: OrderResult) {
     const p = this.pending.get(rq)

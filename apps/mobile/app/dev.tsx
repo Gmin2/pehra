@@ -10,12 +10,16 @@ import { warmChain, warmTrading, setWarmLog } from '../src/warm'
 import { API } from '../src/trade'
 import { enrollGuard, guardState, relayOrder, relayCloseAll, type GuardState } from '../src/guard'
 import { registerPush, onPushTap, testPush, addFromPush } from '../src/push'
+import { escape } from '../src/escape'
+import { useApp } from '../src/ui/store'
 
 const bg = '#12091f', ink = '#f4efff', dim = '#a898d6', purple = '#8b5cf6'
 
 export default function Dev() {
-  const [stored, setStored] = useState<StoredAccount | null>(null)
-  const [session, setSession] = useState<Session | null>(null)
+  // starts from the account the app is signed in with, so this screen never needs its own sign in
+  const app = useApp()
+  const [stored, setStored] = useState<StoredAccount | null>(app.stored)
+  const [session, setSession] = useState<Session | null>(app.session)
   const [log, setLog] = useState<string[]>([])
   const say = (s: string) => {
     setLog(l => [`${new Date().toLocaleTimeString()} ${s}`, ...l].slice(0, 30))
@@ -77,6 +81,14 @@ export default function Dev() {
     if (!session) throw new Error('no session')
     await closeAll(session, say)
   })
+  // the escape hatch straight from the passkey, no pehra server needed for the closes
+  const onEscape = (forwardingOff: boolean) => run(forwardingOff ? 'escape + forwarding off' : 'escape hatch', async () => {
+    const s = session ?? app.session ?? (stored ? await signIn({ credentialId: stored.credentialId }) : null)
+    if (!s) throw new Error('not signed in')
+    setSession(s); app.setSession(s)
+    const r = await escape(s, { forwardingOff }, st => say(`escape ${st}`))
+    say(`escape ${r.state}: ${r.closed} closed, ${r.left.length} left, ${r.ms}ms ${r.tx ?? ''}${r.error ? ' ' + r.error : ''}`)
+  })
   const onGuardEnroll = () => run('enroll guard', async () => {
     if (!session) throw new Error('no session')
     const r = await enrollGuard(session)
@@ -129,6 +141,8 @@ export default function Dev() {
         <Btn label="forget storage" onPress={onForget} />
         <Btn label="first trade (t6)" onPress={onTrade} disabled={!session} />
         <Btn label="close all" onPress={onClose} disabled={!session} />
+        <Btn label="escape hatch" onPress={() => onEscape(false)} disabled={!session && !stored} />
+        <Btn label="escape + forwarding off" onPress={() => onEscape(true)} disabled={!session && !stored} />
         <Btn label="bench" onPress={() => bench(say)} />
         <Btn label="enroll guard (t7)" onPress={onGuardEnroll} disabled={!session} />
         <Btn label="guard status" onPress={onGuardStatus} disabled={!session && !stored} />

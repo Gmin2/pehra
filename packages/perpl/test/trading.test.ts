@@ -233,4 +233,12 @@ describe('trading socket', () => {
     expect(sock.sent.length).toBe(count)
     ts.close()
   })
+  test('a repeated heartbeat is ignored and a real gap closes the socket, nothing throws', async () => {
+    const { ts, sock } = await open()
+    sock.serverSend({ mt: 100, sn: 1001, h: 10 })
+    expect(() => sock.serverSend({ mt: 100, sn: 1000, h: 9 })).not.toThrow()
+    expect(sock.readyState).toBe(1)
+    expect(() => sock.serverSend({ mt: 100, sn: 1005, h: 14 })).not.toThrow()
+    expect(sock.readyState).toBe(3)
+  })
 })
