@@ -1,6 +1,7 @@
 // push through firebase cloud messaging. the service account json sits in data/ (gitignored). without it
 // the server still runs and just logs what it would have sent.
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import { writeAtomic } from './files'
 import { cert, getApps, initializeApp } from 'firebase-admin/app'
 import { getMessaging } from 'firebase-admin/messaging'
 
@@ -18,7 +19,7 @@ export function registerToken(address: string, token: string) {
   const set = tokens.get(addr) ?? new Set<string>()
   set.add(token)
   tokens.set(addr, set)
-  writeFileSync(TOKENS, JSON.stringify(Object.fromEntries([...tokens].map(([a, s]) => [a, [...s]])), null, 2))
+  writeAtomic(TOKENS, JSON.stringify(Object.fromEntries([...tokens].map(([a, s]) => [a, [...s]])), null, 2))
   return set.size
 }
 

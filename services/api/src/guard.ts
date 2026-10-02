@@ -1,7 +1,8 @@
 // the guard: one server side trading session per delegated account, every position checked against
 // the mark on every update, margin added before the venue can liquidate. keys live in data/guard-keys.json
 // and events in data/guard-events.json. the same session relays the phone's own orders, closes and brackets.
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import { writeAtomic } from './files'
 import type { Hex } from 'viem'
 import { sendPush } from './push'
 import {
@@ -45,7 +46,7 @@ export class Guard {
   private eventsTimer: ReturnType<typeof setTimeout> | null = null
   private persistEvents() {
     if (this.eventsTimer) return
-    this.eventsTimer = setTimeout(() => { this.eventsTimer = null; writeFileSync(EVENTS, JSON.stringify(Object.fromEntries(this.events))) }, 1000)
+    this.eventsTimer = setTimeout(() => { this.eventsTimer = null; writeAtomic(EVENTS, JSON.stringify(Object.fromEntries(this.events))) }, 1000)
   }
 
   async start() {
@@ -95,7 +96,7 @@ export class Guard {
     return rec.settings
   }
 
-  private persist() { writeFileSync(KEYS, JSON.stringify([...this.stored.values()], null, 2)) }
+  private persist() { writeAtomic(KEYS, JSON.stringify([...this.stored.values()], null, 2)) }
 
   private emit(addr: string, e: Omit<GuardEvent, 'at'>) {
     // reconnects happen every minute or so (perpl's ping timeout), they go to the log, not the history
