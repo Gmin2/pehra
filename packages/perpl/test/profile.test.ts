@@ -28,6 +28,13 @@ describe('profile', () => {
     expect(p.markets).toEqual([64, 32])
   })
 
+  test('near max leverage, out within the day, the odd top up', () => {
+    const hist = [0, 1, 2].flatMap(i => [row('open', i * 10 * h, '64', '290'), row('close', i * 10 * h + 1.1 * h)])
+    const p = profile([...hist, row('margin', 3 * h)], [])
+    expect(p.labels).toEqual(['high leverage', 'out the same day'])
+    expect(p.avgHoldHours).toBeCloseTo(1.1, 5)
+  })
+
   test('every suggestion is a rule that passes the same checks a person would face', () => {
     const open = [
       { pid: 9, mkt: 64, side: 'long' as const, entry: 0.03, mark: 0.034, liq: 0.024, size: 200 },

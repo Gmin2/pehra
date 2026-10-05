@@ -35,11 +35,13 @@ export function profile(history: Activity[], open: OpenPos[], have: { pid: numbe
   const markets = [...new Set(opens.map(r => Number(r.perpId)).filter(x => x > 0))]
 
   const labels: string[] = []
-  if (liquidations > 0 && avgLeverage >= 3) labels.push('high leverage, liquidated before')
-  else if (liquidations > 0) labels.push('liquidated before')
-  else if (avgLeverage >= 3) labels.push('high leverage')
+  // perpl's testnet markets cap mon at 3x, so 2.5x and up is near the top of what most can take
+  const band = avgLeverage >= 2.5 ? 'high leverage' : avgLeverage >= 1.5 ? 'medium leverage' : lev.length ? 'low leverage' : ''
+  if (liquidations > 0) labels.push(band ? `${band}, liquidated before` : 'liquidated before')
+  else if (band) labels.push(band)
   if (holds.length && overnight / holds.length > 0.5) labels.push('holds overnight')
-  else if (holds.length >= 5 && avgHoldHours < 1) labels.push('quick in and out')
+  else if (holds.length >= 3 && avgHoldHours < 1) labels.push('quick in and out')
+  else if (holds.length >= 3 && avgHoldHours < OVERNIGHT_H) labels.push('out the same day')
   if (opens.length && topUps > opens.length * 0.5) labels.push('tops up to stay in')
   if (!labels.length) labels.push(opens.length ? 'steady' : 'new here')
 

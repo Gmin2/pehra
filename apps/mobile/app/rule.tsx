@@ -148,7 +148,9 @@ function sinceLine(r: ReplayResult, tab: Tab) {
 
 export default function RuleBuilder() {
   const a = useApp(),
-    { pid: pidParam, kind } = useLocalSearchParams<{ pid?: string; kind?: string }>(),
+    // a suggested rule opens with its own numbers: px floor bs for a stop, steps "px:share,..." for a
+    // ladder, th tg max for the guard
+    { pid: pidParam, kind, ...given } = useLocalSearchParams<{ pid?: string; kind?: string; px?: string; floor?: string; bs?: string; steps?: string; th?: string; tg?: string; max?: string }>(),
     pid = Number(pidParam),
     address = a.stored?.address ?? a.session?.address ?? null,
     { account } = useAccount(address),
@@ -180,10 +182,16 @@ export default function RuleBuilder() {
     const px = round(mark * (1 - dir * 0.05)), floor = round(px * (1 - dir * 0.02)), backstop = round(floor * (1 - dir * 0.03));
     const base = long ? Math.max(mark, h.entry) : Math.min(mark, h.entry);
     const g = account?.settings;
+    const num = (v: string | undefined, d: number) => (v && Number(v) > 0 ? Number(v) : d);
+    const steps = given.steps
+      ?.split(",")
+      .map((x) => x.split(":").map(Number))
+      .filter(([p, sh]) => p > 0 && sh > 0)
+      .map(([p, sh]) => ({ px: round(p), share: sh }));
     setDraft({
-      px, floor, backstop, slices: 4,
-      steps: [{ px: round(base * (1 + dir * 0.05)), share: 50 }, { px: round(base * (1 + dir * 0.1)), share: 50 }],
-      threshold: g?.thresholdPct ?? 30, target: g?.targetPct ?? 45, maxDay: g?.maxAddAusdPerDay ?? 50,
+      px: round(num(given.px, px)), floor: round(num(given.floor, floor)), backstop: round(num(given.bs, backstop)), slices: 4,
+      steps: steps?.length ? steps : [{ px: round(base * (1 + dir * 0.05)), share: 50 }, { px: round(base * (1 + dir * 0.1)), share: 50 }],
+      threshold: num(given.th, g?.thresholdPct ?? 30), target: num(given.tg, g?.targetPct ?? 45), maxDay: num(given.max, g?.maxAddAusdPerDay ?? 50),
     });
   }, [h, mark, draft]);
 
