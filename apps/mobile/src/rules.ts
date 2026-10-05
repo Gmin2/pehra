@@ -31,6 +31,10 @@ export async function cancelRule(s: Session, id: string) {
   return post<{ ok: true }>(`/rules/${s.address}/${id}/cancel`, await signed(s, { action: 'cancel', id }))
 }
 
+export async function holdRule(s: Session, id: string, hold: boolean) {
+  return post<{ state: string }>(`/rules/${s.address}/${id}/${hold ? 'hold' : 'resume'}`, await signed(s, hold ? { action: 'hold', id } : { action: 'resume', id }))
+}
+
 export async function pauseRules(s: Session) {
   return post<{ paused: number }>(`/rules/${s.address}/pause`, await signed(s, { action: 'pause' }))
 }

@@ -246,6 +246,17 @@ export class Engine {
     return n
   }
 
+  // the owner pauses or resumes one rule. a guard rule follows the guard's own on/off setting instead
+  setHold(owner: string, id: string, hold: boolean): { ok: true; state: RuleState } | { ok: false; why: string } {
+    const r = this.rules.get(id)
+    if (!r || r.owner !== owner.toLowerCase()) return { ok: false, why: 'no such active rule for this account' }
+    if (r.rule.kind === 'guard') return { ok: false, why: 'the guard is turned on and off from its own setting' }
+    if (hold && (r.state === 'armed' || r.state === 'held')) move(r, 'paused', 'paused by the owner')
+    else if (!hold && r.state === 'paused') move(r, 'armed', 'resumed by the owner')
+    else if (r.state === 'firing' || r.state === 'working') return { ok: false, why: 'the rule is acting right now, try again in a moment' }
+    return { ok: true, state: r.state }
+  }
+
   // the owner ends a rule. not while it is sending, the answer settles first
   cancel(owner: string, id: string, why = 'cancelled by the owner'): { ok: true } | { ok: false; why: string } {
     const r = this.rules.get(id)

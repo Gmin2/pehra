@@ -15,6 +15,7 @@ import { useCandles } from "../src/candles";
 import { relayAddMargin, relayBrackets, relayClose, type PositionHealth } from "../src/guard";
 import { log } from "../src/log";
 import { Tray } from "../src/ui/Trade";
+import { listRules } from "../src/rules";
 import { CoinRing, Roll, CountUp, LineSince, Row, HoldButton, DropCoin, violet, ink, muted, green, red, well, faint } from "../src/ui/Position";
 
 const DAY = 24 * 3600_000;
@@ -35,6 +36,11 @@ export default function Position() {
   const m = markets.find((x) => x.symbol === h?.symbol);
   const points = useCandles(m?.market, "1d");
   const events = (account?.events ?? []).filter((e) => e.pid === pid);
+  const [ruleCount, setRuleCount] = useState<number | null>(null);
+  useEffect(() => {
+    if (!address) return;
+    listRules(address).then((rs) => setRuleCount(rs.filter((r) => r.rule.pid === pid && r.state !== "done" && r.state !== "failed" && r.state !== "draft").length)).catch(() => setRuleCount(null));
+  }, [address, pid]);
   const openedAt = events.find((e) => e.kind === "opened")?.at;
   const guardToday = events.filter((e) => e.kind === "added" && Date.now() - e.at < DAY).reduce((t, e) => t + (e.addAusd ?? 0), 0);
   const youToday = events.filter((e) => e.kind === "manual" && Date.now() - e.at < DAY).reduce((t, e) => t + (e.addAusd ?? 0), 0);
@@ -197,6 +203,14 @@ export default function Position() {
                   value={h.stop || h.take ? [h.stop ? fmt(h.stop) : "", h.take ? fmt(h.take) : ""].filter(Boolean).join(" · ") : "set one"}
                   color={h.stop || h.take ? ink : violet}
                   onPress={() => setBracketTray(true)}
+                />
+                <Row
+                  index={4}
+                  glyph="shield"
+                  label="rules"
+                  value={ruleCount === null ? "" : ruleCount ? `${ruleCount} watching` : "add one"}
+                  color={ruleCount ? ink : violet}
+                  onPress={() => a.go(`/rules?pid=${pid}`)}
                 />
               </View>
             </Animated.View>

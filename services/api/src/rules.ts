@@ -20,6 +20,14 @@ export async function rulesRoute(req: Request, url: URL, guard: Guard): Promise<
     if (!v.ok) return json({ error: v.why }, v.status)
     return json({ paused: guard.engine.pauseAll(pa[1], 'paused by the owner') })
   }
+  const hr = url.pathname.match(/^\/rules\/(0x[0-9a-fA-F]{40})\/([\w-]+)\/(hold|resume)$/)
+  if (hr && req.method === 'POST') {
+    const hold = hr[3] === 'hold'
+    const v = await checkSigned(hr[1], hold ? { action: 'hold', id: hr[2] } : { action: 'resume', id: hr[2] }, await body(req))
+    if (!v.ok) return json({ error: v.why }, v.status)
+    const r = guard.engine.setHold(hr[1], hr[2], hold)
+    return r.ok ? json({ state: r.state }) : json({ error: r.why }, 409)
+  }
   const c = url.pathname.match(/^\/rules\/(0x[0-9a-fA-F]{40})\/([\w-]+)\/cancel$/)
   if (c && req.method === 'POST') {
     const v = await checkSigned(c[1], { action: 'cancel', id: c[2] }, await body(req))
