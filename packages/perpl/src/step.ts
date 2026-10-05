@@ -15,7 +15,7 @@ export type View = {
 }
 
 // what a rule remembers between ticks, stored with it
-export type Mem = { since?: number; fired?: number; lastAt?: number }
+export type Mem = { since?: number; fired?: number; lastAt?: number; fundingSign?: number }
 
 export type Intent =
   | { kind: 'note'; text: string }
@@ -87,4 +87,19 @@ export function step(rule: Rule, mem: Mem, tick: Tick, view: View): Step {
 
   // ladders rest on perpl as trigger orders, the engine places them, nothing to decide per tick
   return { mem, intents: [] }
+}
+
+// funding comes from perpl's market context, not with the tick. a long pays when the rate is positive, a
+// short when it is negative. the rule acts when it flips to paying, the first reading only sets where it starts
+export function onFunding(rule: Rule, mem: Mem, health: Health | null, rate: number, at: number): Step {
+  if (rule.kind !== 'funding') return { mem, intents: [] }
+  if (!health) return { mem, intents: [], done: 'position closed' }
+  const sign = Math.sign(rate)
+  const pays = (s: number) => (health.side === 'long' ? s > 0 : s < 0)
+  const was = mem.fundingSign
+  const next = { ...mem, fundingSign: sign }
+  if (mem.fired !== undefined || was === undefined || pays(was) || !pays(sign)) return { mem: next, intents: [] }
+  const k = rule.floorPct / 100
+  const floor = Number((health.side === 'long' ? health.mark * (1 - k) : health.mark * (1 + k)).toPrecision(4))
+  return { mem: { ...next, fired: at }, intents: [{ kind: 'close', pid: health.pid, size: health.size, floor, why: `funding turned against the ${health.side}, rate ${rate}` }] }
 }

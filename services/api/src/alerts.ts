@@ -132,6 +132,7 @@ export class Alerts {
       this.slices.set(k, { size: e.amount, cost: e.amount * e.price, n: 1, symbol: sym, side: e.side ?? '', timer })
       return
     }
+    if (e.rule === 'funding') return void this.push(addr, 'acted', null, `funding turned against your ${sym} ${e.side ?? ''}, i closed it`.replace(/\s+,/, ','), `sold ${e.amount} ${sym} at ${px(e.price ?? 0)}, before it started costing you.`, { pid: String(e.pid ?? '') })
     if (e.rule === 'entry') return void this.push(addr, 'acted', null, `i opened your ${sym} ${e.side ?? ''}`.trim(), `${e.amount} ${sym} at ${px(e.price ?? 0)}, your price was reached. its stop is watching now.`, { pid: String(e.pid ?? '') })
     if (e.rule === 'backstop') return void this.push(addr, 'acted', null, `your ${sym} backstop fired on perpl`, `sold ${e.amount} ${sym} at ${px(e.price ?? 0)}, the last line held.`, { pid: String(e.pid ?? '') })
     if (e.rule === 'step') return void this.push(addr, 'filled', null, 'took some of your profit', `sold ${e.amount} ${sym} at ${px(e.price ?? 0)} on perpl.`, { pid: String(e.pid ?? '') })

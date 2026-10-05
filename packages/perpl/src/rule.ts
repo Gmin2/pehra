@@ -26,6 +26,9 @@ export const Rule = z.discriminatedUnion('kind', [
   z.object({ ...base, kind: z.literal('stop'), px: price, floor: price, backstopPx: price, slices: z.number().int().min(1).max(8).default(4) }),
   // take profit ladder: each step closes share% of the position at px, never past its floor
   z.object({ ...base, kind: z.literal('ladder'), steps: z.array(z.object({ px: price, share: pct, floor: price })).min(1).max(6) }),
+  // funding: close the position when funding turns against it (a long pays when the rate goes positive, a
+  // short when it goes negative), never more than floorPct from the mark. acts on the flip, not on arming
+  z.object({ ...base, kind: z.literal('funding'), floorPct: z.number().gt(0).lte(5).default(1) }),
   // entry: when the mark falls to (below) or rises to (above) px, open side with margin ausd at leverage, an
   // ioc limit that never fills past limit. the stop, when given, becomes its own rule on the new position.
   // pid is 0, there is no position until it fires

@@ -2,7 +2,7 @@
 // market, and what step() asks for is carried out through one send queue per account. every state change
 // and every result is a run row (runs.ts). a session that is reconnecting defers its rules, it never acts
 // on a position map it cannot trust.
-import { Rule, step, modeOf, nextSlice, Book, type HistoryOrder, positionHealth, toCns, fromCns, toSize, fromSize, fromPrice, OrderType, Flag, Reason, type Context, type GuardSettings, type Market, type MarketDataSocket, type Mem, type Order, type Position, type RuleState, type Tick, type TradingSocket, type Intent } from '@pehra/perpl'
+import { Rule, step, onFunding, modeOf, nextSlice, Book, type HistoryOrder, positionHealth, toCns, fromCns, toSize, fromSize, fromPrice, OrderType, Flag, Reason, type Context, type GuardSettings, type Market, type MarketDataSocket, type Mem, type Order, type Position, type RuleState, type Tick, type TradingSocket, type Intent } from '@pehra/perpl'
 import { db } from './db'
 import { writeRun } from './runs'
 import { move } from './state'
@@ -320,6 +320,28 @@ export class Engine {
     }
   }
 
+  // funding from perpl's market context, about once a minute. a funding rule closes its position on the flip
+  // to paying, through the same sliced close a stop uses
+  funding(markets: { id: number; rate: number }[]) {
+    for (const r of this.rules.values()) {
+      if (r.rule.kind !== 'funding' || r.state !== 'armed') continue
+      const f = markets.find(x => x.id === r.rule.mkt)
+      const ts = this.deps.session(r.owner)
+      const m = this.deps.ctx()?.markets.find(x => x.id === r.rule.mkt)
+      const state = this.deps.market.states.get(r.rule.mkt)
+      if (!f || !ts?.account || !m || !state) continue
+      const pos = ts.positions.get(r.rule.pid)
+      const health = pos ? positionHealth(pos, m, state.mrk) : null
+      const at = Date.now()
+      const s = onFunding(r.rule, r.mem, health, f.rate, at)
+      if (JSON.stringify(s.mem) !== JSON.stringify(r.mem)) { r.mem = s.mem; q.saveMem.run(JSON.stringify(s.mem), at, r.id) }
+      writeRun({ owner: r.owner, rule: r.id, kind: 'note', body: { text: `funding ${f.rate}`, acted: s.intents.length > 0 } })
+      const mark = state.mrk / 10 ** m.config.price_decimals
+      if (s.intents.length) this.fire(r, s.intents, { at, block: this.deps.market.head, mkt: m.id, mark, last: mark }, s.done)
+      else if (s.done) this.finish(r, s.done)
+    }
+  }
+
   private finish(r: Stored, why: string) {
     move(r, 'done', why)
     this.rules.delete(r.id)
@@ -456,7 +478,7 @@ export class Engine {
       settle(id, 'filled', { fill: filled, tx: landed?.tx, oid: o.oid, stamps: st })
       writeRun({ owner: r.owner, rule: r.id, kind: 'fill', body: { intent: id, kind: 'close', size: filled, price, floor, tx: landed?.tx ?? null, stamps: st } })
       const side = pos.sd === 1 ? 'long' : 'short'
-      this.deps.emit(r.owner, { kind: 'closed', rule: 'stop', pid: pos.pid, symbol: m.symbol, side, lv: pos.lv, tx: landed?.tx, amount: filled, price, text: `stop sold ${filled} ${m.symbol} at ${price}, never below ${floor}` })
+      this.deps.emit(r.owner, { kind: 'closed', rule: r.rule.kind === 'funding' ? 'funding' : 'stop', pid: pos.pid, symbol: m.symbol, side, lv: pos.lv, tx: landed?.tx, amount: filled, price, text: `${r.rule.kind === 'funding' ? 'funding turned, sold' : 'stop sold'} ${filled} ${m.symbol} at ${price}, never below ${floor}` })
       this.deps.log(`rule ${r.id} close ${filled} at ${price}, floor ${floor}`)
       return filled
     } finally { this.inflight.delete(id) }
