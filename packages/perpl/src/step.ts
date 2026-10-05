@@ -21,11 +21,14 @@ export type Intent =
   | { kind: 'note'; text: string }
   | { kind: 'add'; pid: number; ausd: number; why: string }
   | { kind: 'close'; pid: number; size: number; floor: number; why: string }
+  | { kind: 'open'; side: 'long' | 'short'; ausd: number; leverage: number; limit: number; why: string }
 
 export type Step = { mem: Mem; intents: Intent[]; done?: string }
 
 // a margin add waits this long after the last one, so a slow fill is not topped up twice
 export const ADD_COOLDOWN_MS = 60_000
+// an entry that filled nothing tries again after this
+export const ENTRY_RETRY_MS = 15_000
 
 // the condition must hold for forMs before the rule acts. since is kept while it holds, dropped when not
 function held(rule: Rule, mem: Mem, tick: Tick, on: boolean): { mem: Mem; ready: boolean } {
@@ -42,6 +45,20 @@ export function step(rule: Rule, mem: Mem, tick: Tick, view: View): Step {
     const h = held(rule, mem, tick, tick.mark > rule.above)
     if (!h.ready) return { mem: h.mem, intents: [] }
     return { mem: { ...h.mem, fired: tick.at }, intents: [{ kind: 'note', text: `mark ${tick.mark} above ${rule.above}` }], done: 'fired' }
+  }
+
+  if (rule.kind === 'entry') {
+    if (mem.fired !== undefined) return { mem, intents: [] }
+    // a try that filled nothing waits a little before the next, so a thin book is not hit every tick
+    if (mem.lastAt !== undefined && tick.at - mem.lastAt < ENTRY_RETRY_MS) return { mem, intents: [] }
+    const crossed = rule.when === 'below' ? tick.mark <= rule.px : tick.mark >= rule.px
+    const h = held(rule, mem, tick, crossed)
+    if (!h.ready) return { mem: h.mem, intents: [] }
+    return {
+      mem: { ...h.mem, fired: tick.at, lastAt: tick.at },
+      intents: [{ kind: 'open', side: rule.side, ausd: rule.margin, leverage: rule.leverage, limit: rule.limit, why: `mark ${tick.mark} reached the entry at ${rule.px}` }],
+      done: 'opened',
+    }
   }
 
   const pos = view.health

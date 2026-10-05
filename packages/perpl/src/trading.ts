@@ -206,6 +206,12 @@ export class TradingSocket {
     return this.send({ mkt: a.mkt, t: a.side === 'long' ? OrderType.openLong : OrderType.openShort, p: 0, s: a.size, ms: a.slippageBps ?? 100, fl: Flag.ioc, lv: a.leverage })
   }
 
+  // an open that fills now or not at all, never past price (wire units): a long pays at most price, a
+  // short sells at least price. what an entry rule sends when its level is reached
+  openLimit(a: { mkt: number; side: 'long' | 'short'; size: number; leverage: number; price: number }) {
+    return this.send({ mkt: a.mkt, t: a.side === 'long' ? OrderType.openLong : OrderType.openShort, p: a.price, s: a.size, fl: Flag.ioc, lv: a.leverage })
+  }
+
   closeMarket(pos: Position, a: { size?: number; slippageBps?: number } = {}) {
     return this.send({ mkt: pos.mkt, t: pos.sd === 1 ? OrderType.closeLong : OrderType.closeShort, p: 0, s: a.size ?? pos.s, ms: a.slippageBps ?? 100, fl: Flag.ioc, lv: 0, lp: pos.pid })
   }

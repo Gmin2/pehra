@@ -8,8 +8,8 @@ import { Recorder } from './record'
 import type { Hex } from 'viem'
 import { Alerts } from './alerts'
 import {
-  decide, defaultGuardSettings, restOrderHistory, restWallet, getContext, MarketDataSocket, positionHealth, TradingSocket, fromCns, fromPrice, fromSize, toCns, toLeverage, toPrice, toSize, Trigger,
-  type AccountUpdateFrame, type MarketStateFrame, type Context, type Enrolled, type GuardSettings, type Health, type Market, type Position, type Live,
+  decide, defaultGuardSettings, restOrderHistory, restWallet, getContext, MarketDataSocket, positionHealth, TradingSocket, fromCns, fromPrice, fromSize, toCns, toLeverage, toPrice, toSize, Trigger, maxLeverage,
+  type AccountUpdateFrame, type MarketStateFrame, type Context, type Enrolled, type GuardSettings, type Health, type Market, type Position, type Live, type EntryLive,
 } from '@pehra/perpl'
 
 // guard kinds: warn, add, added, failed, session. the user's own actions: opened, closed, bracket, manual
@@ -23,7 +23,7 @@ export type GuardEvent = {
   side?: string; lv?: number; before?: Snapshot; after?: Snapshot; tx?: string
   // which rule acted, for alerts: the hidden stop, its backstop or a take profit step firing on perpl, the
   // guard adding margin, or the stop holding at its floor
-  rule?: 'stop' | 'backstop' | 'step' | 'guard' | 'floor'
+  rule?: 'stop' | 'backstop' | 'step' | 'guard' | 'floor' | 'entry'
 }
 type Stored = { address: Hex; key: Enrolled; settings: GuardSettings; enrolledAt: number }
 
@@ -288,6 +288,15 @@ export class Guard {
 
   // what a new rule is checked against: the position at the current mark, and how many triggers already
   // rest on the whole account (perpl's cap is per account)
+  // what an entry is checked against: the market now, free ausd and the perpl orders already resting
+  entryLive(address: string, mkt: number): EntryLive | null {
+    const ts = this.sessions.get(address.toLowerCase())
+    const m = this.ctx?.markets.find(x => x.id === mkt)
+    const mark = this.market.states.get(mkt)?.mrk
+    if (!ts?.account || !m || mark === undefined) return null
+    return { mark: fromPrice(m, mark), balance: fromCns(ts.account.b), maxLeverage: maxLeverage(m), maintenance: m.config.maintenance_margin, resting: [...ts.orders.values()].filter(o => o.st === 8).length }
+  }
+
   live(address: string, pid: number, mkt: number): Live | null {
     const ts = this.sessions.get(address.toLowerCase())
     const m = this.ctx?.markets.find(x => x.id === mkt)

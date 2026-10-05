@@ -346,7 +346,7 @@ export class Engine {
     void this.lane(r.owner, async () => {
       let held: string | undefined
       for (const i of intents) { const out = await this.carry(r, i, { t0: tick.at, b0: tick.block, t1 }); if (out) held = out }
-      if (done) this.finish(r, done)
+      if (done && !held) this.finish(r, done)
       else if (held) {
         // nothing sold: forget that it fired, so it can act again once the book allows it (build-plan day 4)
         r.mem = { ...r.mem, fired: undefined }
@@ -371,6 +371,10 @@ export class Engine {
     }
     const ts = this.deps.session(r.owner)
     const m = this.deps.ctx()?.markets.find(x => x.id === r.rule.mkt)
+    if (i.kind === 'open') {
+      if (!ts?.account || !m) throw new Error('the session went away before sending')
+      return this.openEntry(r, `${r.id}:${r.fires}`, ts, m, i, { ...stamps, t2 })
+    }
     const pos = ts?.positions.get(i.pid)
     if (!ts?.account || !m || !pos) throw new Error('the session or the position went away before sending')
     const mark = this.deps.market.states.get(m.id)?.mrk ?? pos.ep
@@ -458,6 +462,73 @@ export class Engine {
     } finally { this.inflight.delete(id) }
   }
 
+  // an entry: an ioc limit open that never fills past the limit (spike g24: a limit the book cannot reach
+  // fills nothing and does not rest). a fill hands the stop to its own rule on the new position. nothing
+  // filled holds the entry, it tries again after ENTRY_RETRY_MS while the price is still there
+  private async openEntry(r: Stored, id: string, ts: TradingSocket, m: Market, i: Extract<Intent, { kind: 'open' }>, stamps: Record<string, number>): Promise<string | void> {
+    const free = fromCns(ts.account?.b ?? '0')
+    if (free < i.ausd) {
+      writeRun({ owner: r.owner, rule: r.id, kind: 'reject', body: { kind: 'open', ausd: i.ausd, free, why: 'not enough free ausd' } })
+      this.deps.emit(r.owner, { kind: 'failed', symbol: m.symbol, text: `the ${m.symbol} ${i.side} entry needs ${i.ausd} ausd, ${free.toFixed(2)} is free` })
+      return `not enough free ausd, ${free.toFixed(2)} of ${i.ausd}`
+    }
+    const k = 10 ** m.config.price_decimals, z = 10 ** m.config.size_decimals
+    const size = Math.floor((i.ausd * i.leverage) / i.limit * z)
+    if (size <= 0) throw new Error('the margin is too small for one unit of this market')
+    const before = Object.fromEntries([...ts.positions.values()].filter(p => p.mkt === m.id).map(p => [p.pid, p.s]))
+    openIntent({ id, rule: r.id, owner: r.owner, kind: 'open', size: size / z, stamps, body: { side: i.side, ausd: i.ausd, leverage: i.leverage, limit: i.limit, mkt: m.id, before, why: i.why } })
+    this.inflight.set(id, r.id)
+    try {
+      const txP = this.deps.nextTx(ts)
+      const t3 = Date.now()
+      const p = ts.openLimit({ mkt: m.id, side: i.side, size, leverage: Math.round(i.leverage * 100), price: Math.round(i.limit * k) })
+      sentAs(id, ts.lastRq)
+      let res
+      try { res = await p } catch (e) {
+        const st = { ...stamps, t3, t4: Date.now() }
+        settle(id, 'unknown', { stamps: st })
+        writeRun({ owner: r.owner, rule: r.id, kind: 'unknown', body: { intent: id, kind: 'open', error: e instanceof Error ? e.message : String(e), stamps: st } })
+        this.deps.log(`rule ${r.id} open unknown: ${e instanceof Error ? e.message : e}, reconcile settles it`)
+        return 'the open is unknown, waiting for reconcile'
+      }
+      const t5 = Date.now()
+      const o = res.order
+      const filled = o?.fs ?? 0
+      if (!o || filled === 0) {
+        const reason = o ? Reason[o.sr] ?? `sr ${o.sr}` : res.status?.status.msg ?? `status ${res.status?.status.code}`
+        settle(id, 'rejected', { oid: o?.oid, stamps: { ...stamps, t3, t4: t5 } })
+        writeRun({ owner: r.owner, rule: r.id, kind: 'reject', body: { intent: id, kind: 'open', limit: i.limit, reason, stamps: { ...stamps, t3, t4: t5 } } })
+        this.deps.log(`rule ${r.id} open at limit ${i.limit} filled nothing: ${reason}`)
+        return `nothing filled at the limit ${i.limit}: ${reason}`
+      }
+      // the position frame follows the order frame, give it a moment to land in the socket's map
+      let pos: Position | undefined
+      for (let n = 0; n < 30 && !pos; n++) {
+        pos = [...ts.positions.values()].find(x => x.mkt === m.id && (before[x.pid] === undefined || x.s !== before[x.pid]))
+        if (!pos) await new Promise(res => setTimeout(res, 100))
+      }
+      const landed = await txP
+      const price = fromPrice(m, o.fp ?? 0)
+      const st = { ...stamps, t3, t4: t5, t5, ...(landed?.block ? { b6: landed.block } : {}) }
+      settle(id, 'filled', { fill: filled / z, tx: landed?.tx, oid: o.oid, stamps: st })
+      writeRun({ owner: r.owner, rule: r.id, kind: 'fill', body: { intent: id, kind: 'open', side: i.side, size: filled / z, price, limit: i.limit, pid: pos?.pid ?? null, tx: landed?.tx ?? null, stamps: st } })
+      this.deps.emit(r.owner, { kind: 'opened', rule: 'entry', pid: pos?.pid, symbol: m.symbol, side: i.side, lv: Math.round(i.leverage * 100), tx: landed?.tx, amount: filled / z, price, text: `entry opened ${i.side} ${filled / z} ${m.symbol} at ${price}, limit ${i.limit}` })
+      this.deps.log(`rule ${r.id} opened ${i.side} ${filled / z} at ${price}, pid ${pos?.pid ?? '?'}`)
+      if (pos) this.handOff(r, pos.pid)
+      else this.deps.log(`rule ${r.id} filled but the position did not show, reconcile attaches the stop`)
+    } finally { this.inflight.delete(id) }
+  }
+
+  // the entry's stop becomes its own rule on the position it opened, signed by the same signature
+  private handOff(r: Stored, pid: number) {
+    if (r.rule.kind !== 'entry' || !r.rule.stop) return
+    const id = `stop-${pid}-from-${r.id}`.slice(0, 64)
+    if (this.exists(id)) return
+    const st = r.rule.stop
+    this.add(r.owner, { v: 1, id, pid, mkt: r.rule.mkt, forMs: 0, kind: 'stop', px: st.px, floor: st.floor, backstopPx: st.backstopPx, slices: st.slices }, r.by)
+    writeRun({ owner: r.owner, rule: r.id, kind: 'note', body: { text: `stop handed to ${id} on position ${pid}` } })
+  }
+
   private async addMargin(r: Stored, id: string, ts: TradingSocket, pos: Position, m: Market, before: ReturnType<typeof positionHealth>, ausd: number, why: string, stamps: Record<string, number>) {
     const snap = (h: ReturnType<typeof positionHealth>): Snap => ({ distancePct: h.distance * 100, collateral: h.collateral })
     openIntent({ id, rule: r.id, owner: r.owner, kind: 'add', pid: pos.pid, size: ausd, stamps, body: { before: snap(before), why } })
@@ -513,6 +584,18 @@ export class Engine {
       const body = JSON.parse(it.body) as { before?: Snap }
       let state: 'filled' | 'rejected' | 'void'
       let why: string
+      if (it.kind === 'open') {
+        const b = JSON.parse(it.body) as { mkt: number; before: Record<string, number> }
+        const made = [...ts.positions.values()].find(x => x.mkt === b.mkt && (b.before[x.pid] === undefined || x.s !== b.before[x.pid]))
+        state = made ? 'filled' : 'void'
+        why = made ? `position ${made.pid} is there, the open landed` : 'no new position on that market, the open did not land'
+        settle(it.id, state, { stamps: { ...JSON.parse(it.stamps), reconciled: Date.now() } })
+        writeRun({ owner, rule: it.rule, kind: 'reconcile', body: { intent: it.id, was: it.state, now: state, why } })
+        this.deps.log(`reconcile ${it.id}: ${it.state} -> ${state}, ${why}`)
+        const r = this.rules.get(it.rule)
+        if (r && made) { this.handOff(r, made.pid); this.finish(r, 'opened, found by reconcile') }
+        continue
+      }
       if (!pos) { state = it.kind === 'close' ? 'filled' : 'void'; why = it.kind === 'close' ? 'the position is gone, the close or another took it' : 'the position is gone' }
       else if (it.kind === 'add') {
         const now = fromCns(pos.c)
@@ -534,7 +617,7 @@ export class Engine {
     for (const r of this.rules.values()) {
       if (r.owner !== owner || [...this.inflight.values()].includes(r.id)) continue
       if (r.state === 'firing' || r.state === 'working') move(r, 'armed', 'reconciled after a restart or a drop')
-      const pos = r.rule.kind === 'ping' ? true : ts.positions.get(r.rule.pid)
+      const pos = r.rule.kind === 'ping' || r.rule.kind === 'entry' ? true : ts.positions.get(r.rule.pid)
       const back = r.rule.kind === 'stop' ? q.orderOf.get(r.id, 'backstop') as OrderRow | undefined : undefined
       if (!pos && (r.state === 'armed' || r.state === 'held' || r.state === 'paused')) {
         // the position went while this rule watched it. if pehra never sold it and a backstop rested, the
