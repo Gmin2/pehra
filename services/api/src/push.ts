@@ -14,12 +14,14 @@ if (existsSync(TOKENS)) for (const [addr, list] of Object.entries(JSON.parse(rea
 export const pushReady = existsSync(SA)
 if (pushReady && getApps().length === 0) initializeApp({ credential: cert(JSON.parse(readFileSync(SA, 'utf8'))) })
 
+const save = () => writeAtomic(TOKENS, JSON.stringify(Object.fromEntries([...tokens].map(([a, s]) => [a, [...s]])), null, 2))
+
 export function registerToken(address: string, token: string) {
   const addr = address.toLowerCase()
   const set = tokens.get(addr) ?? new Set<string>()
   set.add(token)
   tokens.set(addr, set)
-  writeAtomic(TOKENS, JSON.stringify(Object.fromEntries([...tokens].map(([a, s]) => [a, [...s]])), null, 2))
+  save()
   return set.size
 }
 
@@ -46,7 +48,7 @@ export async function sendPush(address: string, title: string, message: string, 
       console.log('push sent', addr.slice(0, 8), title)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
-      if (/not-registered|invalid-argument|invalid-registration/i.test(msg)) { set.delete(token); console.log('dropped dead push token', msg) }
+      if (/not-?registered|invalid-argument|invalid-registration/i.test(msg)) { set.delete(token); save(); console.log('dropped dead push token', msg) }
       else console.error('push failed', msg)
     }
   }
