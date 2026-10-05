@@ -3,7 +3,7 @@
 // the guard follows its own on/off setting
 import { useCallback, useEffect, useState } from "react";
 import { View, ScrollView } from "react-native";
-import { Stack, useLocalSearchParams } from "expo-router";
+import { Stack, useFocusEffect, useLocalSearchParams } from "expo-router";
 import Animated, { FadeIn, FadeInDown, ReduceMotion, Easing, useSharedValue, useAnimatedStyle, withTiming } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import type { Rule } from "@pehra/perpl";
@@ -25,10 +25,13 @@ const LIVE = ["armed", "firing", "working", "held", "paused"];
 
 const holder = { pehra: { label: "run by pehra", bg: mist, fg: violet }, both: { label: "backstop on perpl", bg: "#FBF0DA", fg: amber }, perpl: { label: "held by perpl", bg: "#E4F3EC", fg: green } };
 
+// prices to four significant figures, the same way the builder shows them
+const at = (v: number, ref: number) => v.toFixed(Math.max(0, 3 - Math.floor(Math.log10(ref || 1))));
+
 function describe(r: Rule): { glyph: string; title: string; line: string } {
   if (r.kind === "guard") return { glyph: "shield", title: "guard", line: `adds margin under ${r.threshold}%, back to ${r.target}%` };
-  if (r.kind === "stop") return { glyph: "crosshairs", title: `hidden stop at ${r.px}`, line: `${r.slices} slices, never below ${r.floor}, backstop ${r.backstopPx}` };
-  if (r.kind === "ladder") return { glyph: "flame", title: "take profit ladder", line: r.steps.map((s) => `${s.share}% at ${s.px}`).join(" · ") };
+  if (r.kind === "stop") return { glyph: "crosshairs", title: `hidden stop at ${at(r.px, r.px)}`, line: `${r.slices} slices, never below ${at(r.floor, r.px)}, backstop ${at(r.backstopPx, r.px)}` };
+  if (r.kind === "ladder") return { glyph: "flame", title: "take profit ladder", line: r.steps.map((s) => `${s.share}% at ${at(s.px, s.px)}`).join(" · ") };
   return { glyph: "bell", title: "price alert", line: `when it goes above ${r.above}` };
 }
 
@@ -115,11 +118,12 @@ export default function Rules() {
     if (!address) return;
     try { setRows((await listRules(address)).filter((r) => r.rule.pid === pid && LIVE.includes(r.state))) } catch (e) { log(`rules load failed: ${e instanceof Error ? e.message : e}`) }
   }, [address, pid]);
-  useEffect(() => {
+  // on every return to the screen too, the builder lands back here right after arming
+  useFocusEffect(useCallback(() => {
     void load();
     const t = setInterval(load, 5000);
     return () => clearInterval(t);
-  }, [load]);
+  }, [load]));
 
   const session = async (): Promise<Session> => {
     if (a.session) return a.session;

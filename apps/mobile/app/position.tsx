@@ -3,7 +3,7 @@
 // margin amount, open in trays.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { View, ScrollView, TextInput, useWindowDimensions } from "react-native";
-import { Stack, useLocalSearchParams } from "expo-router";
+import { Stack, useLocalSearchParams, useFocusEffect } from "expo-router";
 import Animated, { FadeIn, FadeInDown, FadeOutUp, ReduceMotion } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import { Screen, Tap, IconButton } from "../src/ui/components";
@@ -37,10 +37,20 @@ export default function Position() {
   const points = useCandles(m?.market, "1d");
   const events = (account?.events ?? []).filter((e) => e.pid === pid);
   const [ruleCount, setRuleCount] = useState<number | null>(null);
-  useEffect(() => {
+  const [backstop, setBackstop] = useState<number | null>(null);
+  // read again each time the screen comes back, a rule may have been added or removed on the way
+  useFocusEffect(useCallback(() => {
     if (!address) return;
-    listRules(address).then((rs) => setRuleCount(rs.filter((r) => r.rule.pid === pid && r.state !== "done" && r.state !== "failed" && r.state !== "draft").length)).catch(() => setRuleCount(null));
-  }, [address, pid]);
+    listRules(address)
+      .then((rs) => {
+        const live = rs.filter((r) => r.rule.pid === pid && r.state !== "done" && r.state !== "failed" && r.state !== "draft");
+        setRuleCount(live.length);
+        // perpl's stop on this position may be a hidden stop's backstop, not a plain stop
+        const stop = live.find((r) => r.rule.kind === "stop")?.rule;
+        setBackstop(stop?.kind === "stop" ? stop.backstopPx : null);
+      })
+      .catch(() => setRuleCount(null));
+  }, [address, pid]));
   const openedAt = events.find((e) => e.kind === "opened")?.at;
   const guardToday = events.filter((e) => e.kind === "added" && Date.now() - e.at < DAY).reduce((t, e) => t + (e.addAusd ?? 0), 0);
   const youToday = events.filter((e) => e.kind === "manual" && Date.now() - e.at < DAY).reduce((t, e) => t + (e.addAusd ?? 0), 0);
@@ -200,7 +210,7 @@ export default function Position() {
                   index={3}
                   glyph="crosshairs"
                   label="stop and take profit"
-                  value={h.stop || h.take ? [h.stop ? fmt(h.stop) : "", h.take ? fmt(h.take) : ""].filter(Boolean).join(" · ") : "set one"}
+                  value={h.stop || h.take ? [h.stop ? (backstop !== null && Math.abs(h.stop - backstop) < h.stop * 0.001 ? `backstop ${fmt(h.stop)}` : fmt(h.stop)) : "", h.take ? fmt(h.take) : ""].filter(Boolean).join(" · ") : "set one"}
                   color={h.stop || h.take ? ink : violet}
                   onPress={() => setBracketTray(true)}
                 />

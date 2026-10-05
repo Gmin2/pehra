@@ -62,8 +62,15 @@ function LevelChart({ points, mark, liq, side, lines, fmt, onMove, onEnd }: { po
   let lo = Math.min(...vals), hi = Math.max(...vals);
   const liqIn = side === "long" ? liq > lo - (hi - lo) * 0.25 : liq < hi + (hi - lo) * 0.25;
   if (liqIn && liq > 0) { lo = Math.min(lo, liq); hi = Math.max(hi, liq); }
-  const pad = (hi - lo) * 0.08 || hi * 0.01;
-  const range = frozen.current ?? { lo: lo - pad, hi: hi + pad };
+  const pad = (hi - lo) * 0.14 || hi * 0.01;
+  // the scale only grows while the same lines are on screen, so a line let go of stays where it was
+  // dropped instead of the chart refitting around it
+  const tabKey = lines.map((l) => l.key).join();
+  const sticky = useRef<{ key: string; lo: number; hi: number } | null>(null);
+  if (sticky.current?.key !== tabKey) sticky.current = null;
+  const fit = { lo: Math.min(lo - pad, sticky.current?.lo ?? Infinity), hi: Math.max(hi + pad, sticky.current?.hi ?? -Infinity) };
+  if (!frozen.current && series.length > 1) sticky.current = { key: tabKey, ...fit };
+  const range = frozen.current ?? fit;
   const top = 14, bottom = liqIn ? 14 : 40, ph = CH - top - bottom, pw = w - 8;
   const Y = (v: number) => top + ph - ((v - range.lo) / (range.hi - range.lo)) * ph;
   const V = (y: number) => range.lo + ((top + ph - y) / ph) * (range.hi - range.lo);
