@@ -1,6 +1,6 @@
 // the app's side of rules: every write is signed by the passkey over the same plain lines the screen
 // shows (packages/perpl/src/ruleSign.ts), the server rebuilds them before it accepts anything
-import { ruleMessage, summary, SIGN_TTL_MS, type Rule, type SignedAction } from '@pehra/perpl'
+import { ruleMessage, summary, SIGN_TTL_MS, type Rule, type SignedAction, type Report, type Profile } from '@pehra/perpl'
 import type { Session } from './account'
 import { API } from './trade'
 
@@ -31,6 +31,10 @@ export async function cancelRule(s: Session, id: string) {
   return post<{ ok: true }>(`/rules/${s.address}/${id}/cancel`, await signed(s, { action: 'cancel', id }))
 }
 
+export async function holdRule(s: Session, id: string, hold: boolean) {
+  return post<{ state: string }>(`/rules/${s.address}/${id}/${hold ? 'hold' : 'resume'}`, await signed(s, hold ? { action: 'hold', id } : { action: 'resume', id }))
+}
+
 export async function pauseRules(s: Session) {
   return post<{ paused: number }>(`/rules/${s.address}/pause`, await signed(s, { action: 'pause' }))
 }
@@ -39,4 +43,18 @@ export async function listRules(address: string): Promise<RuleRow[]> {
   const r = await fetch(`${API}/rules/${address}`)
   if (!r.ok) throw new Error(`rules ${r.status}`)
   return ((await r.json()) as { rules: RuleRow[] }).rules
+}
+
+// what the rule would have done on the last days of perpl candles, read only
+export type ReplayResult = Report & { days: number; ms: number }
+export async function replayRule(address: string, rule: Rule, days = 30) {
+  return post<ReplayResult>('/replay', { address, rule, days })
+}
+
+// how the account trades, from its perpl history, and the rules that would fit its open positions
+export async function readProfile(address: string): Promise<Profile> {
+  const r = await fetch(`${API}/profile/${address}`)
+  const j = (await r.json()) as Profile & { error?: string }
+  if (!r.ok) throw new Error(j.error ?? `profile ${r.status}`)
+  return j
 }

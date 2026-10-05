@@ -24,12 +24,15 @@ export function summary(r: Rule, symbol = `market ${r.mkt}`): string {
   return `ping when ${symbol} goes above ${r.above}`
 }
 
-export type SignedAction = { action: 'create'; rule: Rule; symbol?: string } | { action: 'cancel'; id: string } | { action: 'pause' }
+export type SignedAction = { action: 'create'; rule: Rule; symbol?: string } | { action: 'cancel'; id: string } | { action: 'pause' } | { action: 'hold'; id: string } | { action: 'resume'; id: string }
 
 export function ruleMessage(address: string, a: SignedAction, nonce: string, exp: number): string {
   const head = `pehra rules for ${address.toLowerCase()}`
   const what = a.action === 'create'
     ? [summary(a.rule, a.symbol), `id ${a.rule.id} v${a.rule.v}`, `sha256 ${ruleHash(a.rule)}`]
-    : a.action === 'cancel' ? [`cancel rule ${a.id}`] : ['pause every rule']
+    : a.action === 'cancel' ? [`cancel rule ${a.id}`]
+    : a.action === 'hold' ? [`pause rule ${a.id}`]
+    : a.action === 'resume' ? [`resume rule ${a.id}`]
+    : ['pause every rule']
   return [head, ...what, `nonce ${nonce}`, `expires ${new Date(exp).toISOString()}`].join('\n')
 }

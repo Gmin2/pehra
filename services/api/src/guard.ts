@@ -6,7 +6,7 @@ import { writeAtomic } from './files'
 import { Engine, addedToday } from './engine'
 import { Recorder } from './record'
 import type { Hex } from 'viem'
-import { sendPush } from './push'
+import { Alerts } from './alerts'
 import {
   decide, defaultGuardSettings, restOrderHistory, restWallet, getContext, MarketDataSocket, positionHealth, TradingSocket, fromCns, fromPrice, fromSize, toCns, toLeverage, toPrice, toSize, Trigger,
   type AccountUpdateFrame, type MarketStateFrame, type Context, type Enrolled, type GuardSettings, type Health, type Market, type Position, type Live,
@@ -21,6 +21,9 @@ export type GuardEvent = {
   kind: 'watch' | 'warn' | 'add' | 'added' | 'failed' | 'session' | 'opened' | 'closed' | 'bracket' | 'manual' | 'funded' | 'withdrew'
   text: string; distancePct?: number; addAusd?: number; price?: number; amount?: number; pnl?: number
   side?: string; lv?: number; before?: Snapshot; after?: Snapshot; tx?: string
+  // which rule acted, for alerts: the hidden stop, its backstop or a take profit step firing on perpl, the
+  // guard adding margin, or the stop holding at its floor
+  rule?: 'stop' | 'backstop' | 'step' | 'guard' | 'floor'
 }
 type Stored = { address: Hex; key: Enrolled; settings: GuardSettings; enrolledAt: number }
 
@@ -39,6 +42,7 @@ export class Guard {
   private log: (s: string) => void
   engine: Engine
   recorder: Recorder
+  alerts: Alerts
   reconnects = 0
 
   constructor(log: (s: string) => void = console.log) {
@@ -54,6 +58,12 @@ export class Guard {
       book: mkt => this.recorder.books.get(mkt),
       history: async a => { const rec = this.stored.get(a.toLowerCase()); if (!rec) return []; return (await restOrderHistory({ apiKey: rec.key.apiKey, secret: rec.key.secret })).d },
       log,
+    })
+    this.alerts = new Alerts({
+      log,
+      owners: () => [...this.stored.keys()],
+      positions: a => this.health(a).map(h => ({ pid: h.pid, symbol: h.symbol, side: h.side, distance: h.distance, mkt: h.mkt })),
+      guard: a => { const st = this.stored.get(a)?.settings; return st ? { enabled: st.enabled, thresholdPct: st.thresholdPct } : null },
     })
     if (existsSync(KEYS)) for (const s of JSON.parse(readFileSync(KEYS, 'utf8')) as Stored[]) this.stored.set(s.address.toLowerCase(), s)
     if (existsSync(EVENTS)) for (const [a, list] of Object.entries(JSON.parse(readFileSync(EVENTS, 'utf8')) as Record<string, GuardEvent[]>)) this.events.set(a, list.filter(e => e.kind !== 'session'))
@@ -141,10 +151,8 @@ export class Guard {
       this.persistEvents()
     }
     this.log(`guard ${addr.slice(0, 8)} ${e.kind} ${e.text}`)
-    // the phone hears about warnings and margin adds, sessions and attempts stay in the log
-    if (e.kind === 'warn') void sendPush(addr, 'pehra: close to liquidation', e.text, { kind: e.kind, pid: String(e.pid ?? ''), action: 'add' })
-    if (e.kind === 'added') void sendPush(addr, 'pehra added margin', e.text, { kind: e.kind, pid: String(e.pid ?? '') })
-    if (e.kind === 'failed') void sendPush(addr, 'pehra could not add margin', e.text, { kind: e.kind, pid: String(e.pid ?? ''), action: 'add' })
+    // what reaches the phone is decided in alerts.ts, close to liquidation comes from evaluate()
+    this.alerts.event(addr, e)
   }
 
   // the phone's own chain actions (agora funds and withdrawals) join the same history
@@ -230,6 +238,7 @@ export class Guard {
     const rec = this.stored.get(addr)
     const ts = this.sessions.get(addr)
     if (!rec || !ts || !this.ctx) return
+    this.alerts.health(addr)
     for (const pos of ts.positions.values()) {
       const m = this.ctx.markets.find(x => x.id === pos.mkt)
       const state = this.market.states.get(pos.mkt)

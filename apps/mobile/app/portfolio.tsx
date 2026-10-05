@@ -1,12 +1,15 @@
 // home, built from family's portfolio screen: the account header, the big balance that morphs, the
 // two tabs (tokens and collectibles there, markets and positions here), rows that press, and the
 // receive and send footer (fund and trade here). the bird in the header carries the risk.
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { View, ScrollView, useWindowDimensions } from "react-native";
-import { Stack } from "expo-router";
+import { Stack, useFocusEffect } from "expo-router";
 import Animated, { FadeIn, FadeInDown, LinearTransition, ReduceMotion, ZoomIn, useSharedValue, withSpring } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
-import { Screen, Tap, Button, MorphText, Tabs, IconButton, s } from "../src/ui/components";
+import { Screen, Tap, Button, MorphText, Tabs, IconButton, Chevron, s } from "../src/ui/components";
+import { Glyph } from "../src/ui/Glyph";
+import type { Profile } from "@pehra/perpl";
+import { readProfile } from "../src/rules";
 import { PodiumArt, PositionsArt, PositionCard, Shield, SuggestionCard, GhostRow, type Suggestion } from "../src/ui/Home";
 import { freshLiquidationPrice, maxLeverage } from "@pehra/perpl";
 import { Segmented } from "../src/ui/Trade";
@@ -140,6 +143,11 @@ export default function Portfolio() {
   useEffect(() => {
     if (health.length && tab === "markets" && a.tab !== "markets") setTab("positions");
   }, [health.length]);
+  // what pehra reads from the account's history, read again whenever home comes back
+  const [profile, setProfile] = useState<Profile | null>(null);
+  useFocusEffect(useCallback(() => {
+    if (address) readProfile(address).then(setProfile).catch(() => {});
+  }, [address, health.length]));
   const openTrade = (symbol: string) => {
     Haptics.selectionAsync();
     a.go(`/trade?symbol=${symbol}`);
@@ -165,6 +173,23 @@ export default function Portfolio() {
         <View style={{ marginHorizontal: -8, marginBottom: 10 }}>
           {tab === "markets" ? <PodiumArt markets={sorted} width={width - 32} /> : <PositionsArt health={health} markets={sorted} threshold={threshold} open={open} width={width - 32} />}
         </View>
+        {profile && profile.trades > 0 && (
+          <Animated.View entering={FadeIn.duration(220).reduceMotion(ReduceMotion.System)} style={{ marginBottom: 6 }}>
+            <Tap onPress={() => a.go("/you")} innerStyle={{ flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "white", borderRadius: 22, borderWidth: 1, borderColor: "#EEEAF2", paddingVertical: 12, paddingHorizontal: 14 }}>
+              <Glyph name="gauge" size={26} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 12, fontWeight: "600", color: muted }}>how you trade</Text>
+                <Text numberOfLines={2} style={{ fontSize: 15, fontWeight: "700", color: ink }}>{profile.labels.join(", ")}</Text>
+                {profile.suggest.length > 0 && (
+                  <Text style={{ marginTop: 2, fontSize: 12.5, fontWeight: "700", color: dusk }}>
+                    {profile.suggest.length === 1 ? "1 rule fits what you have open" : `${profile.suggest.length} rules fit what you have open`}
+                  </Text>
+                )}
+              </View>
+              <Chevron />
+            </Tap>
+          </Animated.View>
+        )}
         <View style={[space.between, { height: 52 }]}>
           <View style={[space.row, { gap: 18 }]}>
             {(["markets", "positions"] as const).map((t) => (

@@ -113,6 +113,11 @@ export default function Settings() {
           {row(<Glyph name="circle-coin" size={22} />, "daily limit", st ? `${st.maxAddAusdPerDay} ausd` : "—", st ? () => setDrawer("limit") : undefined, undefined, true)}
         </Animated.View>
 
+        <Text style={{ marginTop: 22, marginBottom: 8, marginLeft: 8, fontSize: 13, fontWeight: "700", color: muted }}>alerts</Text>
+        <Animated.View entering={FadeInDown.delay(120).duration(360).reduceMotion(ReduceMotion.System)} style={{ backgroundColor: "white", borderRadius: 22, borderWidth: 1, borderColor: line, overflow: "hidden" }}>
+          {row(<Glyph name="bell" size={22} />, "what pehra tells you", "pushes and quiet hours", () => a.go("/alerts"), undefined, true)}
+        </Animated.View>
+
         <Text style={{ marginTop: 22, marginBottom: 8, marginLeft: 8, fontSize: 13, fontWeight: "700", color: muted }}>your account</Text>
         <Animated.View entering={FadeInDown.delay(160).duration(360).reduceMotion(ReduceMotion.System)} style={{ backgroundColor: "white", borderRadius: 22, borderWidth: 1, borderColor: line, overflow: "hidden" }}>
           {row(<Glyph name="copies" size={22} />, "address", address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "—", address ? () => { Clipboard.setStringAsync(address); Haptics.selectionAsync(); a.toast("address copied"); } : undefined)}

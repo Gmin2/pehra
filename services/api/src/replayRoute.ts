@@ -58,6 +58,16 @@ export async function replayRoute(req: Request, deps: ReplayDeps): Promise<Respo
     asks: lv.asks.map(([p, s]): [number, number] => [p / k, s / z]),
     mid: (best.bid + best.ask) / 2 / k,
   } : null
-  const report = replay({ bars, rule, start, maintenance: m.config.maintenance_margin, takerFeeBps: m.config.taker_fee / 100, book: levels })
+  // the levels keep the distance from the price they have now, so a stop 5% under today's price sits
+  // 5% under the replayed entry instead of somewhere the first candle may already be past
+  const k0 = bars.length ? bars[0].o / bars[bars.length - 1].c : 1
+  const at = (v: number) => v * k0
+  const shifted: typeof rule =
+    rule.kind === 'stop' ? { ...rule, px: at(rule.px), floor: at(rule.floor), backstopPx: at(rule.backstopPx) }
+    : rule.kind === 'ladder' ? { ...rule, steps: rule.steps.map(s => ({ ...s, px: at(s.px), floor: at(s.floor) })) }
+    : rule.kind === 'ping' ? { ...rule, above: at(rule.above) }
+    : rule
+  const report = replay({ bars, rule: shifted, start, maintenance: m.config.maintenance_margin, takerFeeBps: m.config.taker_fee / 100, book: levels })
+  report.assumptions.unshift('price levels keep the distance from the price they have now')
   return json({ ...report, days, ms: Date.now() - t0 })
 }
