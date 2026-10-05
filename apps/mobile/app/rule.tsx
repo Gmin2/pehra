@@ -3,15 +3,16 @@
 // holding. arming signs the sentence under the button with the passkey. the guard tab saves the guard's
 // own settings, nothing to sign there
 import { useEffect, useMemo, useRef, useState } from "react";
-import { View, ScrollView, TextInput, type LayoutChangeEvent } from "react-native";
-import { Stack, useLocalSearchParams } from "expo-router";
+import { View, ScrollView, type LayoutChangeEvent } from "react-native";
+import { Stack, router, useLocalSearchParams } from "expo-router";
 import Svg, { Path, Line, Circle, Rect } from "react-native-svg";
 import Animated, { FadeIn, FadeInDown, ReduceMotion } from "react-native-reanimated";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { scheduleOnRN } from "react-native-worklets";
 import * as Haptics from "expo-haptics";
 import { validate, type Rule } from "@pehra/perpl";
-import { Screen, Tap, IconButton } from "../src/ui/components";
+import { Screen, Tap, IconButton, Keypad } from "../src/ui/components";
+import { enterDigit } from "../src/ui/model";
 import { Text } from "../src/ui/Text";
 import { Glyph } from "../src/ui/Glyph";
 import { Segmented, Tray } from "../src/ui/Trade";
@@ -110,6 +111,11 @@ function LevelChart({ points, mark, liq, side, lines, fmt, onMove, onEnd }: { po
                 <Text style={{ fontSize: 12, fontWeight: "700", color: "white" }}>{l.label} {fmt(l.value)}</Text>
               </View>
             ))}
+            {liqIn && liq > 0 && (
+              <Text pointerEvents="none" style={{ position: "absolute", left: 8, top: Y(liq) + (side === "long" ? 4 : -18), fontSize: 11.5, fontWeight: "600", color: red }}>
+                liquidation {fmt(liq)}
+              </Text>
+            )}
             {!liqIn && (
               <Text pointerEvents="none" style={{ position: "absolute", left: 12, top: side === "long" ? CH - 22 : 5, fontSize: 11.5, fontWeight: "600", color: red }}>
                 liquidation {fmt(liq)} is far {side === "long" ? "below" : "above"}
@@ -154,6 +160,8 @@ export default function RuleBuilder() {
   const [draft, setDraft] = useState<Draft | null>(null);
   const [editing, setEditing] = useState<Field | null>(null);
   const [text, setText] = useState("");
+  // the number shown when the tray opens is replaced by the first key, not appended to
+  const [fresh, setFresh] = useState(true);
   const [dragging, setDragging] = useState(false);
   const [replay, setReplay] = useState<ReplayResult | null>(null);
   const [replayErr, setReplayErr] = useState<string | null>(null);
@@ -224,12 +232,13 @@ export default function RuleBuilder() {
       setDraft((d) => d && { ...d, steps: d.steps.map((s, j) => (j === Number(i) ? (what === "px" ? { ...s, px: round(v) } : { ...s, share: Math.max(1, Math.min(100, Math.round(v))) }) : s)) });
     }
   };
-  const open = (f: Field) => { setEditing(f); setText(f.kind === "price" ? fmt(f.value) : String(f.value)); };
+  const open = (f: Field) => { setEditing(f); setText(f.kind === "price" ? fmt(f.value) : String(f.value)); setFresh(true); };
   const nudge = (k: number) => {
     if (!editing) return;
     const cur = Number(text) || editing.value;
     const next = editing.kind === "price" ? cur * (1 + k / 100) : cur + k;
     setText(editing.kind === "price" ? fmt(next) : String(Math.round(next)));
+    setFresh(false);
   };
   const commit = () => {
     if (editing && Number(text) > 0) apply(editing.key, Number(text));
@@ -268,7 +277,8 @@ export default function RuleBuilder() {
         a.toast(rule.kind === "stop" ? "the stop is armed" : "the ladder is on perpl");
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      a.back();
+      // back to the list the builder came from, or onto it when the builder was opened directly
+      router.dismissTo(`/rules?pid=${pid}`);
     } catch (e) {
       log(`arm failed: ${e instanceof Error ? e.message : e}`);
       a.toast(e instanceof Error ? e.message : "couldn’t arm it");
@@ -316,7 +326,7 @@ export default function RuleBuilder() {
               </View>
             ))}
           {tab === "take profit" && draft.steps.length < 4 && (
-            <Tap onPress={() => { const last = draft.steps[draft.steps.length - 1]; set({ steps: [...draft.steps, { px: round(last.px * (1 + dir * 0.05)), share: Math.max(1, Math.min(25, 100 - total)) }] }); }} innerStyle={{ height: 30, justifyContent: "center", paddingHorizontal: 4 }}>
+            <Tap onPress={() => { const last = draft.steps[draft.steps.length - 1]; const next = [...draft.steps, { px: round(last.px * (1 + dir * 0.05)), share: 0 }]; const k = next.length, each = Math.floor(Math.min(100, Math.max(total, 1)) / k); set({ steps: next.map((s, j) => ({ ...s, share: j === k - 1 ? Math.min(100, Math.max(total, 1)) - each * (k - 1) : each })) }); }} innerStyle={{ height: 30, justifyContent: "center", paddingHorizontal: 4 }}>
               <Text style={{ fontSize: 13.5, fontWeight: "700", color: violet }}>+ add a step</Text>
             </Tap>
           )}
@@ -326,7 +336,7 @@ export default function RuleBuilder() {
               <Chip text={`${draft.threshold}%`} bad={!!bad} onPress={() => open({ key: "threshold", label: "steps in at", value: draft.threshold, kind: "pct" })} />
               <Words>from liquidation, back to</Words>
               <Chip text={`${draft.target}%`} onPress={() => open({ key: "target", label: "back to", value: draft.target, kind: "pct" })} />
-              <Words>, at most</Words>
+              <Words>and spend at most</Words>
               <Chip text={`${draft.maxDay}`} onPress={() => open({ key: "maxDay", label: "ausd a day", value: draft.maxDay, kind: "ausd" })} />
               <Words>ausd a day</Words>
             </>
@@ -341,7 +351,7 @@ export default function RuleBuilder() {
 
         <Text style={{ marginTop: 18, paddingHorizontal: 8, fontSize: 13, fontWeight: "700", color: muted }}>if you had this over the last 30 days</Text>
         <View style={{ flexDirection: "row", gap: 12, marginTop: 10 }}>
-          {replay ? (
+          {replay && !bad ? (
             <>
               <Animated.View entering={FadeInDown.duration(240).reduceMotion(ReduceMotion.System)} style={{ flex: 1, backgroundColor: "white", borderRadius: 22, borderWidth: 1, borderColor: line, padding: 16, gap: 4 }}>
                 <Text style={{ fontSize: 12.5, fontWeight: "600", color: muted }}>holding</Text>
@@ -385,15 +395,9 @@ export default function RuleBuilder() {
         {editing && (
           <View style={{ gap: 14 }}>
             <Text style={{ fontSize: 20, fontWeight: "700", color: ink, paddingHorizontal: 4 }}>{editing.label}</Text>
-            <TextInput
-              value={text}
-              onChangeText={setText}
-              keyboardType="decimal-pad"
-              autoFocus
-              selectionColor={violet}
-              onSubmitEditing={commit}
-              style={{ height: 64, borderRadius: 20, backgroundColor: "white", borderWidth: 1, borderColor: line, paddingHorizontal: 18, fontFamily: "Manrope_700Bold", fontSize: 28, color: violet }}
-            />
+            <View style={{ height: 64, borderRadius: 20, backgroundColor: "white", borderWidth: 1, borderColor: line, paddingHorizontal: 18, justifyContent: "center" }}>
+              <Text style={{ fontFamily: "Manrope_700Bold", fontSize: 28, color: fresh ? faint : violet }}>{text || "0"}</Text>
+            </View>
             <View style={{ flexDirection: "row", gap: 10 }}>
               {(editing.kind === "price" ? [-1, -0.25, 0.25, 1] : [-5, -1, 1, 5]).map((k) => (
                 <Tap key={k} onPress={() => nudge(k)} style={{ flex: 1 }} innerStyle={{ height: 44, borderRadius: 22, backgroundColor: well, alignItems: "center", justifyContent: "center" }}>
@@ -402,6 +406,9 @@ export default function RuleBuilder() {
               ))}
             </View>
             {editing.kind === "price" && <Text style={{ fontSize: 12.5, fontWeight: "500", color: muted, paddingHorizontal: 4 }}>{sym} is at {fmt(mark)} now, liquidation {fmt(h.liq)}</Text>}
+            <View style={{ marginHorizontal: -16 }}>
+              <Keypad onKey={(k) => { setText(enterDigit(fresh && k !== "back" ? "0" : text, k)); setFresh(false); }} />
+            </View>
             <Tap onPress={commit} innerStyle={{ height: 56, borderRadius: 28, backgroundColor: ink, alignItems: "center", justifyContent: "center" }}>
               <Text style={{ fontSize: 15.5, fontWeight: "600", color: "white" }}>done</Text>
             </Tap>

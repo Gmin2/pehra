@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { View, ScrollView } from "react-native";
 import { Stack, useLocalSearchParams } from "expo-router";
-import Animated, { FadeIn, FadeInDown, ReduceMotion } from "react-native-reanimated";
+import Animated, { FadeIn, FadeInDown, ReduceMotion, Easing, useSharedValue, useAnimatedStyle, withTiming } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import type { Rule } from "@pehra/perpl";
 import { Screen, Tap, IconButton } from "../src/ui/components";
@@ -14,7 +14,7 @@ import { Rough } from "../src/ui/Rough";
 import { Coin } from "../src/ui/Coin";
 import { useApp } from "../src/ui/store";
 import { useAccount } from "../src/live";
-import { listRules, holdRule, type RuleRow } from "../src/rules";
+import { listRules, holdRule, cancelRule, type RuleRow } from "../src/rules";
 import { updateGuard } from "../src/guard";
 import { signIn, type Session } from "../src/account";
 import { log } from "../src/log";
@@ -34,7 +34,7 @@ function describe(r: Rule): { glyph: string; title: string; line: string } {
 
 function lastLine(r: RuleRow) {
   const when = r.lastRun ? new Date(r.lastRun).toLocaleDateString("en-US", { month: "short", day: "numeric" }).toLowerCase() : null;
-  if (r.state === "paused") return "paused, not watching";
+  if (r.state === "paused") return r.rule.kind === "stop" ? "paused · the backstop on perpl still holds" : "paused, not watching";
   if (r.state === "held") return "held at the floor, waiting for the book";
   if (r.state === "firing" || r.state === "working") return "acting right now";
   if (r.rule.kind === "guard") return r.fires ? `stepped in ${r.fires} time${r.fires === 1 ? "" : "s"}, last ${when}` : "watching, not needed yet";
@@ -44,14 +44,18 @@ function lastLine(r: RuleRow) {
 }
 
 function Switch({ on, busy, onPress }: { on: boolean; busy: boolean; onPress: () => void }) {
+  const x = useSharedValue(on ? 18 : 0);
+  useEffect(() => { x.set(withTiming(on ? 18 : 0, { duration: 180, easing: Easing.out(Easing.quad) })); }, [on, x]);
+  const knob = useAnimatedStyle(() => ({ transform: [{ translateX: x.get() }] }));
   return (
     <Tap onPress={busy ? undefined : onPress} innerStyle={{ width: 44, height: 26, borderRadius: 13, backgroundColor: on ? violet : line, justifyContent: "center", paddingHorizontal: 3, opacity: busy ? 0.5 : 1 }}>
-      <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: "white", alignSelf: on ? "flex-end" : "flex-start" }} />
+      <Animated.View style={[{ width: 20, height: 20, borderRadius: 10, backgroundColor: "white" }, knob]} />
     </Tap>
   );
 }
 
-function Card({ r, index, busy, onToggle }: { r: RuleRow; index: number; busy: boolean; onToggle: () => void }) {
+// a ladder lives on perpl as trigger orders, pausing it on pehra would change nothing, so it has no switch
+function Card({ r, index, busy, onToggle, onRemove }: { r: RuleRow; index: number; busy: boolean; onToggle: () => void; onRemove: () => void }) {
   const d = describe(r.rule), h = holder[r.mode];
   return (
     <Animated.View entering={FadeInDown.delay(80 * index).duration(260).reduceMotion(ReduceMotion.System)} style={{ backgroundColor: "white", borderRadius: 24, borderWidth: 1, borderColor: line, padding: 16, gap: 12 }}>
@@ -69,7 +73,14 @@ function Card({ r, index, busy, onToggle }: { r: RuleRow; index: number; busy: b
         <View style={{ height: 24, paddingHorizontal: 11, borderRadius: 12, backgroundColor: h.bg, justifyContent: "center" }}>
           <Text style={{ fontSize: 11.5, fontWeight: "700", color: h.fg }}>{h.label}</Text>
         </View>
-        <Switch on={r.state !== "paused"} busy={busy} onPress={onToggle} />
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+          {r.rule.kind !== "guard" && (
+            <Tap onPress={busy ? undefined : onRemove} innerStyle={{ height: 32, paddingHorizontal: 10, justifyContent: "center" }}>
+              <Text style={{ fontSize: 12.5, fontWeight: "700", color: busy ? faint : muted }}>remove</Text>
+            </Tap>
+          )}
+          {r.rule.kind !== "ladder" && <Switch on={r.state !== "paused"} busy={busy} onPress={onToggle} />}
+        </View>
       </View>
     </Animated.View>
   );
@@ -132,8 +143,24 @@ export default function Rules() {
     setBusy(null);
   };
 
+  const remove = async (r: RuleRow) => {
+    setBusy(r.id);
+    try {
+      await cancelRule(await session(), r.id);
+      Haptics.selectionAsync();
+      log(`rule ${r.id} removed`);
+      a.toast(r.rule.kind === "ladder" ? "the ladder is off perpl" : "the stop is gone, backstop too");
+      await load();
+    } catch (e) {
+      a.toast("couldn’t remove it, nothing changed");
+      log(`rule ${r.id} remove failed: ${e instanceof Error ? e.message : e}`);
+    }
+    setBusy(null);
+  };
+
   const heading = { fontFamily: "Manrope_700Bold", fontSize: 24, color: ink, letterSpacing: -0.4 };
   const n = rows?.length ?? 0;
+  const onPehra = rows?.filter((r) => r.mode !== "perpl").length ?? 0;
   const onPerpl = rows?.filter((r) => r.mode !== "pehra").length ?? 0;
   const sym = h?.symbol.toLowerCase() ?? "";
   return (
@@ -162,7 +189,7 @@ export default function Rules() {
             <Text style={heading}>nothing watches this position yet.</Text>
           ) : (
             <>
-              <Text style={heading}>{n} rule{n === 1 ? "" : "s"} watch this</Text>
+              <Text style={heading}>{n === 1 ? "1 rule watches this" : `${n} rules watch this`}</Text>
               <View style={{ flexDirection: "row", alignItems: "center" }}>
                 <Text style={heading}>position </Text>
                 <Rough type="circle" padding={3} paddingX={8} strokeWidth={2.2} delay={350} duration={700}>
@@ -170,13 +197,15 @@ export default function Rules() {
                 </Rough>
               </View>
               <Text style={{ marginTop: 8, fontSize: 13.5, lineHeight: 20, fontWeight: "500", color: muted }}>
-                {onPerpl ? `${n - onPerpl} run on pehra. ${onPerpl} live${onPerpl === 1 ? "s" : ""} on perpl and fire${onPerpl === 1 ? "s" : ""} even if pehra is down.` : "they run on pehra, with a key that can’t withdraw."}
+                {onPerpl
+                  ? `${onPehra ? `${onPehra} run${onPehra === 1 ? "s" : ""} on pehra. ` : ""}${onPerpl} ${onPerpl === 1 ? "has orders" : "have orders"} on perpl that fire even if pehra is down.`
+                  : `${n === 1 ? "it runs" : "they run"} on pehra, with a key that can’t withdraw.`}
               </Text>
             </>
           )}
         </View>
 
-        {rows === null ? [0, 1, 2].map((i) => <Skeleton key={i} />) : rows.map((r, i) => <Card key={r.id} r={r} index={i} busy={busy === r.id} onToggle={() => toggle(r)} />)}
+        {rows === null ? [0, 1, 2].map((i) => <Skeleton key={i} />) : rows.map((r, i) => <Card key={r.id} r={r} index={i} busy={busy === r.id} onToggle={() => toggle(r)} onRemove={() => remove(r)} />)}
       </ScrollView>
       <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 12 }}>
         <Tap onPress={() => a.go(`/rule?pid=${pid}`)} innerStyle={{ height: 56, borderRadius: 28, backgroundColor: ink, alignItems: "center", justifyContent: "center" }}>
