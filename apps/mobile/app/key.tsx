@@ -63,7 +63,9 @@ export default function WatchKey() {
     { account } = useAccount(address),
     [confirm, setConfirm] = useState(false),
     [busy, setBusy] = useState<"" | "revoking" | "restoring">("");
-  const on = !!account?.enrolled;
+  // perpl decides: with forwarding off (escape hatch, revoke) the key exists but perpl refuses it
+  const paused = !!account?.enrolled && account?.forwarding === false;
+  const on = !!account?.enrolled && !paused;
   const limit = account?.settings?.maxAddAusdPerDay ?? 20;
   const watching = account?.health?.length ?? 0;
   const made = account?.enrolledAt ? new Date(account.enrolledAt).toLocaleDateString("en-US", { month: "short", day: "numeric" }).toLowerCase() : null;
@@ -124,8 +126,8 @@ export default function WatchKey() {
           <KeyArt />
           <View style={{ flex: 1, gap: 4 }}>
             <Text style={{ fontSize: 12.5, fontWeight: "600", color: "#ffffffcc" }}>the guard’s key</Text>
-            <Text style={{ fontSize: 22, fontWeight: "700", color: "white" }}>{on ? "a watch key" : "no key out"}</Text>
-            <Text style={{ fontSize: 12, fontWeight: "500", color: "#ffffffcc" }}>{on ? `made by one fingerprint${made ? ", " + made : ""}` : "your account has no trading key"}</Text>
+            <Text style={{ fontSize: 22, fontWeight: "700", color: "white" }}>{on ? "a watch key" : paused ? "the key is paused" : "no key out"}</Text>
+            <Text style={{ fontSize: 12, fontWeight: "500", color: "#ffffffcc" }}>{on ? `made by one fingerprint${made ? ", " + made : ""}` : paused ? "forwarding is off on perpl, it can’t act" : "your account has no trading key"}</Text>
             {on && (
               <View style={{ alignSelf: "flex-start", marginTop: 4, flexDirection: "row", alignItems: "center", gap: 6, height: 22, paddingHorizontal: 10, borderRadius: 11, backgroundColor: "#ffffff26" }}>
                 <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: "#7EE2B0" }} />
@@ -158,7 +160,7 @@ export default function WatchKey() {
             <Text style={{ fontSize: 15.5, fontWeight: "600", color: "white" }}>{busy === "restoring" ? "making a new key…" : "turn the guard on"}</Text>
           </Tap>
         )}
-        <Text style={{ textAlign: "center", fontSize: 11.5, fontWeight: "500", color: faint }}>{on ? "one fingerprint. the guard stops watching at once." : "one fingerprint makes a new watch key."}</Text>
+        <Text style={{ textAlign: "center", fontSize: 11.5, fontWeight: "500", color: faint }}>{on ? "one fingerprint. the guard stops watching at once." : paused ? "one fingerprint turns forwarding back on and makes a fresh key." : "one fingerprint makes a new watch key."}</Text>
       </View>
 
       <Tray visible={confirm} onClose={() => setConfirm(false)}>

@@ -14,7 +14,7 @@ export type GuardEvent = {
   text: string; distancePct?: number; addAusd?: number; price?: number; amount?: number; pnl?: number
   side?: string; lv?: number; before?: Snapshot; after?: Snapshot; tx?: string
 }
-export type GuardState = { enrolled: boolean; live?: boolean; enrolledAt?: number | null; balance?: number; settings?: { enabled: boolean; thresholdPct: number; targetPct: number; minAddAusd: number; maxAddAusdPerDay: number }; health?: PositionHealth[]; events?: GuardEvent[] }
+export type GuardState = { enrolled: boolean; live?: boolean; forwarding?: boolean | null; enrolledAt?: number | null; balance?: number; settings?: { enabled: boolean; thresholdPct: number; targetPct: number; minAddAusd: number; maxAddAusdPerDay: number }; health?: PositionHealth[]; events?: GuardEvent[] }
 
 const post = async <T,>(path: string, body: unknown): Promise<T> => {
   const r = await fetch(`${API}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })

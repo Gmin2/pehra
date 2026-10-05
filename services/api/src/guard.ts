@@ -8,7 +8,7 @@ import { Recorder } from './record'
 import type { Hex } from 'viem'
 import { sendPush } from './push'
 import {
-  decide, defaultGuardSettings, restOrderHistory, getContext, MarketDataSocket, positionHealth, TradingSocket, fromCns, fromPrice, fromSize, toCns, toLeverage, toPrice, toSize, Trigger,
+  decide, defaultGuardSettings, restOrderHistory, restWallet, getContext, MarketDataSocket, positionHealth, TradingSocket, fromCns, fromPrice, fromSize, toCns, toLeverage, toPrice, toSize, Trigger,
   type AccountUpdateFrame, type MarketStateFrame, type Context, type Enrolled, type GuardSettings, type Health, type Market, type Position, type Live,
 } from '@pehra/perpl'
 
@@ -254,6 +254,25 @@ export class Guard {
     if (!pos || !m) return null
     return { side: pos.sd === 1 ? 'long' : 'short', size: fromSize(m, pos.s), leverage: pos.lv / 100 }
   }
+
+  // whether perpl accepts orders forwarded for this account (Account.fw). the escape hatch and revoke turn it
+  // off from the owner's key, and the guard's key is refused from then on, so the app shows what perpl says
+  private fwCache = new Map<string, { at: number; fw: boolean }>()
+  async forwarding(address: string): Promise<boolean | null> {
+    const addr = address.toLowerCase()
+    const hit = this.fwCache.get(addr)
+    if (hit && Date.now() - hit.at < 10_000) return hit.fw
+    const rec = this.stored.get(addr)
+    if (!rec) return null
+    try {
+      const w = await restWallet({ apiKey: rec.key.apiKey, secret: rec.key.secret })
+      const fw = w.as[0]?.fw ?? null
+      if (fw !== null) this.fwCache.set(addr, { at: Date.now(), fw })
+      return fw
+    } catch { return hit?.fw ?? null }
+  }
+
+  forgetForwarding(address: string) { this.fwCache.delete(address.toLowerCase()) }
 
   // the market's symbol as the app shows it, part of what the owner signs
   symbolOf(mkt: number) { return this.ctx?.markets.find(m => m.id === mkt)?.symbol ?? `market ${mkt}` }

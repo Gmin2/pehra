@@ -211,6 +211,9 @@ const server = serve({
       return json({ typed_data: payload.typed_data, publicKey: payload.pair.publicKey })
     }
     if (url.pathname === '/guard/finish' && req.method === 'POST') {
+      // a fresh enrollment comes with forwarding just turned on, read perpl again next time
+      const peek = await req.clone().json().catch(() => ({})) as { address?: string }
+      if (peek.address) guard.forgetForwarding(peek.address)
       const body = await req.json().catch(() => ({})) as { address?: string; signature?: string }
       if (!body.address || !isAddress(body.address) || !body.signature) return json({ error: 'bad request' }, 400)
       const payload = pendingEnroll.get(body.address.toLowerCase())
@@ -238,7 +241,8 @@ const server = serve({
       const address = m[1]
       if (!guard.has(address)) return json({ enrolled: false })
       const ts = guard.session(address)
-      return json({ enrolled: true, live: !!ts, enrolledAt: guard.enrolledAt(address), settings: guard.settings(address), balance: guard.balance(address), health: guard.health(address), events: guard.recent(address, 200) })
+      if (url.searchParams.has('fresh')) guard.forgetForwarding(address)
+      return json({ enrolled: true, live: !!ts, forwarding: await guard.forwarding(address), enrolledAt: guard.enrolledAt(address), settings: guard.settings(address), balance: guard.balance(address), health: guard.health(address), events: guard.recent(address, 200) })
     }
     if (m && req.method === 'POST') {
       const body = await req.json().catch(() => ({})) as Partial<GuardSettings>
