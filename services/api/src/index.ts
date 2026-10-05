@@ -2,11 +2,12 @@
 // can do the perpl setup itself. the dev key pays. later: enrollment proxy, the guard, push.
 import { encodeFunctionData, formatEther, formatUnits, isAddress, parseEther, verifyMessage, type Address } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
-import { publicClient, erc20Abi, faucetAbi, AUSD_FAUCET, NETWORKS, GAS, AGORA, AGORA_GAS, whitelisterAbi, isSwapper, pairState, sendBatch, nextNonce, feeCaps, enrollPayload, enrollFinish, fromCns, fromPrice, fromSize, Reason, profile, type Activity, type Call, type EnrollPayload, type GuardSettings } from '@pehra/perpl'
+import { getContext, publicClient, erc20Abi, faucetAbi, AUSD_FAUCET, NETWORKS, GAS, AGORA, AGORA_GAS, whitelisterAbi, isSwapper, pairState, sendBatch, nextNonce, feeCaps, enrollPayload, enrollFinish, fromCns, fromPrice, fromSize, Reason, profile, type Activity, type Call, type EnrollPayload, type GuardSettings } from '@pehra/perpl'
 import { Guard } from './guard'
 import { serve } from './serve'
 import { rulesRoute } from './rules'
 import { replayRoute } from './replayRoute'
+import { prefsOf, setPrefs, recentAlerts, KINDS } from './alerts'
 import { startBeats } from './proof'
 import { verify, writeRun } from './runs'
 import { pushReady, registerToken, sendPush } from './push'
@@ -156,6 +157,16 @@ const server = serve({
     })
     const rules = await rulesRoute(req, url, guard)
     if (rules) return rules
+    // which alerts reach the phone and when not (src/alerts.ts), and what was sent lately
+    const al = url.pathname.match(/^\/alerts\/(0x[0-9a-fA-F]{40})$/)
+    if (al && req.method === 'GET') return json({ prefs: prefsOf(al[1]), recent: recentAlerts(al[1]) })
+    if (al && req.method === 'POST') {
+      const b = await req.json().catch(() => null) as { on?: Record<string, boolean>; quiet?: { from: number; to: number } | null; tz?: number } | null
+      if (!b) return json({ error: 'send the changes' }, 400)
+      const on = Object.fromEntries(Object.entries(b.on ?? {}).filter(([k, v]) => (KINDS as readonly string[]).includes(k) && typeof v === 'boolean'))
+      const quiet = b.quiet === null ? null : b.quiet && [b.quiet.from, b.quiet.to].every(m => Number.isInteger(m) && m >= 0 && m < 1440) ? b.quiet : undefined
+      return json({ prefs: setPrefs(al[1], { on, quiet, tz: Number.isInteger(b.tz) ? b.tz : undefined }) })
+    }
     // the phone mirrors its on screen log here, so a dev can tail it instead of reading the screen
     if (url.pathname === '/log' && req.method === 'POST') {
       const body = await req.json().catch(() => ({})) as { line?: string }
@@ -315,6 +326,43 @@ const server = serve({
   },
 })
 startBeats(() => guard.beat())
+// the alerts that come from outside the guard's own stream: liquidations the indexer saw on chain, funding
+// flips from perpl's context, ausd off the dollar at agora, and the end of quiet hours
+const log = (s: string) => console.log(s)
+const liqSeen = new Map<string, number>()
+async function liquidations() {
+  for (const owner of guard.accounts().map(a => a.address.toLowerCase())) {
+    try {
+      const { rows } = await chainHistory(owner) as { rows: { kind: string; perpId: string | null; side: string | null; priceWire: string | null; timestamp: number }[] }
+      const liq = rows.filter(r => r.kind === 'liquidated')
+      const newest = Math.max(0, ...liq.map(r => r.timestamp))
+      const seen = liqSeen.get(owner)
+      liqSeen.set(owner, Math.max(seen ?? 0, newest))
+      // the first read only sets where we start, old liquidations are not news
+      if (seen === undefined) continue
+      for (const r of liq.filter(x => x.timestamp > seen)) {
+        const m = guard.marketOf(Number(r.perpId))
+        guard.alerts.liquidated(owner, m?.symbol ?? 'a', r.side ?? 'position', m && r.priceWire ? fromPrice(m, Number(r.priceWire)) : null, r.timestamp)
+      }
+    } catch (e) { log(`alerts liquidations ${owner.slice(0, 8)}: ${e instanceof Error ? e.message : e}`) }
+  }
+}
+async function funding() {
+  try { guard.alerts.fundingTick((await getContext('testnet')).markets.map(m => ({ id: m.id, symbol: m.symbol, rate: m.funding.rate }))) }
+  catch (e) { log(`alerts funding: ${e instanceof Error ? e.message : e}`) }
+}
+async function depeg() {
+  try { guard.alerts.depegTick((await pairState(pub)).price, Number(process.env.ALERT_DEPEG_BPS ?? 50)) }
+  catch (e) { log(`alerts depeg: ${e instanceof Error ? e.message : e}`) }
+}
+setInterval(() => void liquidations(), 30_000)
+setTimeout(() => void liquidations(), 20_000)
+setInterval(() => void funding(), 10 * 60_000)
+setTimeout(() => void funding(), 15_000)
+setInterval(() => void depeg(), 5 * 60_000)
+setTimeout(() => void depeg(), 25_000)
+setInterval(() => guard.alerts.quietTick(), 60_000)
+
 setTimeout(() => void anchor(), 30_000)
 setInterval(() => void anchor(), ANCHOR_MS)
 void guard.start().catch(e => console.error('guard failed to start', e instanceof Error ? e.message : e))

@@ -189,7 +189,7 @@ export class Engine {
     const tx = child.at?.txid ? `0x${child.at.txid}` : null
     const what = row.step === 'backstop' ? 'the backstop' : `take profit ${row.step}`
     writeRun({ owner: r.owner, rule: r.id, kind: 'fill', body: { kind: row.step === 'backstop' ? 'backstop' : 'step', step: row.step, by: 'perpl', trigger: row.px, size, price, tx, block: fired.at.b } })
-    this.deps.emit(r.owner, { kind: 'closed', pid: r.rule.pid, symbol: m.symbol, tx: tx ?? undefined, amount: size, price, text: `${what} on perpl sold ${size} ${m.symbol} at ${price}, it fired at ${row.px}` })
+    this.deps.emit(r.owner, { kind: 'closed', rule: row.step === 'backstop' ? 'backstop' : 'step', pid: r.rule.pid, symbol: m.symbol, tx: tx ?? undefined, amount: size, price, text: `${what} on perpl sold ${size} ${m.symbol} at ${price}, it fired at ${row.px}` })
     this.deps.log(`rule ${r.id} ${what} fired on perpl, ${size} at ${price} ${tx ?? ''}`)
   }
 
@@ -409,7 +409,7 @@ export class Engine {
   }
 
   private holdAt(r: Stored, m: Market, floor: number, left: number) {
-    this.deps.emit(r.owner, { kind: 'failed', pid: r.rule.pid, symbol: m.symbol, text: `stopped at your floor ${floor}, ${left} ${m.symbol} left open` })
+    this.deps.emit(r.owner, { kind: 'failed', rule: 'floor', pid: r.rule.pid, symbol: m.symbol, price: floor, amount: left, text: `stopped at your floor ${floor}, ${left} ${m.symbol} left open` })
     return `book past the floor ${floor}, ${left} left open`
   }
 
@@ -443,7 +443,7 @@ export class Engine {
         settle(id, 'rejected', { stamps: st, oid: o?.oid })
         writeRun({ owner: r.owner, rule: r.id, kind: 'reject', body: { intent: id, kind: 'close', floor, reason, stamps: st } })
         this.deps.log(`rule ${r.id} close at floor ${floor} filled nothing: ${reason}`)
-        this.deps.emit(r.owner, { kind: 'failed', pid: pos.pid, symbol: m.symbol, text: `stop held at the floor ${floor}, nothing sold (${reason})` })
+        this.deps.emit(r.owner, { kind: 'failed', rule: 'floor', pid: pos.pid, symbol: m.symbol, price: floor, text: `stop held at the floor ${floor}, nothing sold (${reason})` })
         return `nothing sold at the floor ${floor}: ${reason}`
       }
       const landed = await txP
@@ -452,7 +452,7 @@ export class Engine {
       settle(id, 'filled', { fill: filled, tx: landed?.tx, oid: o.oid, stamps: st })
       writeRun({ owner: r.owner, rule: r.id, kind: 'fill', body: { intent: id, kind: 'close', size: filled, price, floor, tx: landed?.tx ?? null, stamps: st } })
       const side = pos.sd === 1 ? 'long' : 'short'
-      this.deps.emit(r.owner, { kind: 'closed', pid: pos.pid, symbol: m.symbol, side, lv: pos.lv, tx: landed?.tx, amount: filled, price, text: `stop sold ${filled} ${m.symbol} at ${price}, never below ${floor}` })
+      this.deps.emit(r.owner, { kind: 'closed', rule: 'stop', pid: pos.pid, symbol: m.symbol, side, lv: pos.lv, tx: landed?.tx, amount: filled, price, text: `stop sold ${filled} ${m.symbol} at ${price}, never below ${floor}` })
       this.deps.log(`rule ${r.id} close ${filled} at ${price}, floor ${floor}`)
       return filled
     } finally { this.inflight.delete(id) }
@@ -496,7 +496,7 @@ export class Engine {
     settle(id, 'filled', { fill: ausd, tx, stamps: st })
     writeRun({ owner: r.owner, rule: r.id, kind: 'fill', body: { intent: id, kind: 'add', ausd, before: snap(before), after: snap(after), tx: tx ?? null, stamps: st } })
     this.deps.emit(r.owner, {
-      kind: 'added', pid: pos.pid, symbol: m.symbol, side: before.side, lv: pos.lv, tx,
+      kind: 'added', rule: 'guard', pid: pos.pid, symbol: m.symbol, side: before.side, lv: pos.lv, tx,
       text: `collateral now ${after.collateral.toFixed(4)} AUSD, ${(after.distance * 100).toFixed(2)}% from liquidation`,
       distancePct: after.distance * 100, addAusd: ausd, before: snap(before), after: snap(after),
     })
