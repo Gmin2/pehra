@@ -32,6 +32,7 @@ function describe(r: Rule): { glyph: string; title: string; line: string } {
   if (r.kind === "guard") return { glyph: "shield", title: "guard", line: `adds margin under ${r.threshold}%, back to ${r.target}%` };
   if (r.kind === "stop") return { glyph: "crosshairs", title: `hidden stop at ${at(r.px, r.px)}`, line: `${r.slices} slices, never below ${at(r.floor, r.px)}, backstop ${at(r.backstopPx, r.px)}` };
   if (r.kind === "ladder") return { glyph: "flame", title: "take profit ladder", line: r.steps.map((s) => `${s.share}% at ${at(s.px, s.px)}`).join(" · ") };
+  if (r.kind === "entry") return { glyph: "flame", title: `open a ${r.side} at ${at(r.px, r.px)}`, line: `${r.margin} ausd at ${r.leverage}x, never ${r.side === "long" ? "above" : "below"} ${at(r.limit, r.px)}` };
   return { glyph: "bell", title: "price alert", line: `when it goes above ${r.above}` };
 }
 
