@@ -525,7 +525,7 @@ export class Engine {
       if (r.state === 'firing' || r.state === 'working') move(r, 'armed', 'reconciled after a restart or a drop')
       const pos = r.rule.kind === 'ping' ? true : ts.positions.get(r.rule.pid)
       const back = r.rule.kind === 'stop' ? q.orderOf.get(r.id, 'backstop') as OrderRow | undefined : undefined
-      if (!pos && (r.state === 'armed' || r.state === 'held')) {
+      if (!pos && (r.state === 'armed' || r.state === 'held' || r.state === 'paused')) {
         // the position went while this rule watched it. if pehra never sold it and a backstop rested, the
         // backstop is what closed it, perpl fired it on its own
         const sold = (db.prepare(`select count(*) as n from intents where rule = ? and kind = 'close' and state = 'filled'`).get(r.id) as { n: number }).n
