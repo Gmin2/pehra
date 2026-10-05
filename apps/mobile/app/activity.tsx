@@ -145,8 +145,14 @@ export default function Activity() {
       <Stack.Screen options={{ animation: "none" }} />
       <ScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingTop: 20, paddingBottom: 24 }}>
         <Animated.View entering={FadeInDown.duration(380).reduceMotion(ReduceMotion.System)}>
-          <View style={{ width: 48, height: 48, borderRadius: 15, backgroundColor: violet, alignItems: "center", justifyContent: "center" }}>
-            <PehraBird size={38} open={eyes} shift={glance} />
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <View style={{ width: 48, height: 48, borderRadius: 15, backgroundColor: violet, alignItems: "center", justifyContent: "center" }}>
+              <PehraBird size={38} open={eyes} shift={glance} />
+            </View>
+            <Tap onPress={() => a.go("/proof")} innerStyle={{ height: 34, paddingHorizontal: 14, borderRadius: 17, backgroundColor: "#EFE5FF", flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Shield size={16} color={violet} />
+              <Text style={{ fontSize: 13, fontWeight: "700", color: violet }}>proof</Text>
+            </Tap>
           </View>
           {n === 0 ? (
             <>

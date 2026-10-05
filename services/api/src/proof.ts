@@ -31,6 +31,24 @@ const q = {
   recentOwner: db.prepare(`select * from runs where owner = ? and kind != 'beat' order by seq desc limit ?`),
   stamped: db.prepare(`select body from runs where kind in ('note', 'fill', 'reject', 'unknown') order by seq desc limit 2000`),
   lastBeat: db.prepare(`select at, body from runs where kind = 'beat' order by seq desc limit 1`),
+  // what pehra actually did for this owner, with the rule it came from (kind, market)
+  fills: db.prepare(`select runs.seq, runs.at, runs.rule, runs.body, runs.hash, rules.kind as rkind, rules.body as rbody from runs left join rules on rules.id = runs.rule where runs.owner = ? and runs.kind = 'fill' order by runs.seq desc limit ?`),
+  lastAnchor: db.prepare(`select at, body from runs where kind = 'anchor' order by seq desc limit 1`),
+}
+
+export type Receipt = { seq: number; at: number; rule: string | null; ruleKind: string | null; mkt: number | null; what: string; size?: number; price?: number; ausd?: number; before?: number; after?: number; tx: string | null; hash: string }
+
+function receipts(owner: string, n = 30): Receipt[] {
+  return (q.fills.all(owner.toLowerCase(), n) as { seq: number; at: number; rule: string | null; body: string; hash: string; rkind: string | null; rbody: string | null }[]).map(r => {
+    const b = JSON.parse(r.body) as { kind?: string; size?: number; price?: number; ausd?: number; tx?: string | null; before?: { distancePct?: number }; after?: { distancePct?: number } }
+    const rule = r.rbody ? (JSON.parse(r.rbody) as { mkt?: number }) : null
+    return {
+      seq: r.seq, at: r.at, rule: r.rule, ruleKind: r.rkind, mkt: rule?.mkt ?? null,
+      what: b.kind ?? 'fill', size: b.size, price: b.price, ausd: b.ausd,
+      before: b.before?.distancePct, after: b.after?.distancePct,
+      tx: b.tx ?? null, hash: r.hash,
+    }
+  })
 }
 
 export function pct(xs: number[], p: number) {
@@ -73,5 +91,7 @@ export function proof(owner: string | null, now = Date.now()) {
     },
     runs: rows.map(r => ({ seq: r.seq, at: r.at, owner: owner ? r.owner : cut(r.owner), rule: r.rule, kind: r.kind, body: JSON.parse(r.body) as object, hash: r.hash })),
     chain: verify(),
+    receipts: owner ? receipts(owner) : [],
+    anchor: (() => { const a = q.lastAnchor.get() as { at: number; body: string } | undefined; return a ? { at: a.at, ...(JSON.parse(a.body) as { head: string; rows: number; tx: string; block: number }) } : null })(),
   }
 }
