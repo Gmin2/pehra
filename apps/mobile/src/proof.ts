@@ -3,7 +3,7 @@
 import { API } from './trade'
 
 export type Spread = { n: number; p50: number | null; p95: number | null; p99: number | null }
-export type Receipt = { seq: number; at: number; rule: string | null; ruleKind: string | null; mkt: number | null; what: string; size?: number; price?: number; ausd?: number; before?: number; after?: number; tx: string | null; hash: string }
+export type Receipt = { seq: number; at: number; rule: string | null; ruleKind: string | null; mkt: number | null; what: string; side?: string; limit?: number; size?: number; price?: number; ausd?: number; before?: number; after?: number; tx: string | null; hash: string }
 export type Proof = {
   since: number
   uptime: { pct: number; beats: number; gaps: { from: number; to: number; ms: number }[] }

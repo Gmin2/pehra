@@ -36,15 +36,15 @@ const q = {
   lastAnchor: db.prepare(`select at, body from runs where kind = 'anchor' order by seq desc limit 1`),
 }
 
-export type Receipt = { seq: number; at: number; rule: string | null; ruleKind: string | null; mkt: number | null; what: string; size?: number; price?: number; ausd?: number; before?: number; after?: number; tx: string | null; hash: string }
+export type Receipt = { seq: number; at: number; rule: string | null; ruleKind: string | null; mkt: number | null; what: string; side?: string; limit?: number; size?: number; price?: number; ausd?: number; before?: number; after?: number; tx: string | null; hash: string }
 
 function receipts(owner: string, n = 30): Receipt[] {
   return (q.fills.all(owner.toLowerCase(), n) as { seq: number; at: number; rule: string | null; body: string; hash: string; rkind: string | null; rbody: string | null }[]).map(r => {
-    const b = JSON.parse(r.body) as { kind?: string; size?: number; price?: number; ausd?: number; tx?: string | null; before?: { distancePct?: number }; after?: { distancePct?: number } }
+    const b = JSON.parse(r.body) as { kind?: string; side?: string; limit?: number; size?: number; price?: number; ausd?: number; tx?: string | null; before?: { distancePct?: number }; after?: { distancePct?: number } }
     const rule = r.rbody ? (JSON.parse(r.rbody) as { mkt?: number }) : null
     return {
       seq: r.seq, at: r.at, rule: r.rule, ruleKind: r.rkind, mkt: rule?.mkt ?? null,
-      what: b.kind ?? 'fill', size: b.size, price: b.price, ausd: b.ausd,
+      what: b.kind ?? 'fill', side: b.side, limit: b.limit, size: b.size, price: b.price, ausd: b.ausd,
       before: b.before?.distancePct, after: b.after?.distancePct,
       tx: b.tx ?? null, hash: r.hash,
     }
