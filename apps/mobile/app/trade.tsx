@@ -66,6 +66,8 @@ export default function Trade() {
     [withStop, setWithStop] = useState(true),
     [editing, setEditing] = useState<"at" | "limit" | null>(null),
     [keyText, setKeyText] = useState(""),
+    // the number shown when the tray opens is replaced by the first key, not appended to
+    [keyFresh, setKeyFresh] = useState(true),
     [arming, setArming] = useState(false),
     [waiting, setWaiting] = useState<RuleRow[]>([]),
     [from, setFrom] = useState<{ x: number; y: number } | null>(null),
@@ -173,7 +175,7 @@ export default function Trade() {
     try { await cancelRule(await session(), r.id); Haptics.selectionAsync(); log(`entry ${r.id} cancelled`); loadWaiting(); }
     catch (e) { a.toast("couldn’t cancel it, nothing changed"); log(`entry cancel failed: ${e instanceof Error ? e.message : e}`); }
   };
-  const openKeys = (k: "at" | "limit") => { setEditing(k); setKeyText(k === "at" ? atText : limitText); };
+  const openKeys = (k: "at" | "limit") => { setEditing(k); setKeyText(k === "at" ? atText : limitText); setKeyFresh(true); };
   const commitKeys = () => {
     const v = Number(keyText);
     if (v > 0 && editing === "at") {
@@ -395,18 +397,18 @@ export default function Trade() {
           <View style={{ gap: 14 }}>
             <Text style={{ fontSize: 20, fontWeight: "700", color: ink, paddingHorizontal: 4 }}>{editing === "at" ? "open at" : side === "long" ? "pay at most" : "sell at least"}</Text>
             <View style={{ height: 64, borderRadius: 20, backgroundColor: "white", borderWidth: 1, borderColor: line, paddingHorizontal: 18, justifyContent: "center" }}>
-              <Text style={{ fontFamily: "Manrope_700Bold", fontSize: 28, color: violet }}>{keyText || "0"}</Text>
+              <Text style={{ fontFamily: "Manrope_700Bold", fontSize: 28, color: keyFresh ? "#B9B2C5" : violet }}>{keyText || "0"}</Text>
             </View>
             <View style={{ flexDirection: "row", gap: 10 }}>
               {[-1, -0.25, 0.25, 1].map((k) => (
-                <Tap key={k} onPress={() => setKeyText(String(sig4((Number(keyText) || mark) * (1 + k / 100))))} style={{ flex: 1 }} innerStyle={{ height: 44, borderRadius: 22, backgroundColor: "#F0EDF3", alignItems: "center", justifyContent: "center" }}>
+                <Tap key={k} onPress={() => { setKeyText(String(sig4((Number(keyText) || mark) * (1 + k / 100)))); setKeyFresh(false); }} style={{ flex: 1 }} innerStyle={{ height: 44, borderRadius: 22, backgroundColor: "#F0EDF3", alignItems: "center", justifyContent: "center" }}>
                   <Text style={{ fontSize: 14, fontWeight: "700", color: ink }}>{k > 0 ? "+" : "−"}{Math.abs(k)}%</Text>
                 </Tap>
               ))}
             </View>
             <Text style={{ fontSize: 12.5, fontWeight: "500", color: muted, paddingHorizontal: 4 }}>{sym} is at {mark} now</Text>
             <View style={{ marginHorizontal: -16 }}>
-              <Keypad onKey={(k) => setKeyText(enterDigit(keyText || "0", k))} />
+              <Keypad onKey={(k) => { setKeyText(enterDigit(keyFresh && k !== "back" ? "0" : keyText || "0", k)); setKeyFresh(false); }} />
             </View>
             <Tap onPress={commitKeys} innerStyle={{ height: 56, borderRadius: 28, backgroundColor: ink, alignItems: "center", justifyContent: "center" }}>
               <Text style={{ fontSize: 15.5, fontWeight: "600", color: "white" }}>done</Text>
