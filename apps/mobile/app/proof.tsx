@@ -25,6 +25,8 @@ const secs = (ms: number | null) => (ms === null ? "—" : ms < 100 ? `${Math.ma
 
 function describe(r: Receipt, sym: string) {
   if (r.what === "add") return { icon: <Shield size={24} color={violet} />, title: `added ${(r.ausd ?? 0).toFixed(2)} ausd`, sub: r.before !== undefined && r.after !== undefined ? `${r.before.toFixed(1)}% → ${r.after.toFixed(1)}% from liquidation` : "more margin, further from liquidation" };
+  if (r.what === "open") return { icon: <Glyph name="flame" size={24} />, title: `opened ${r.side ?? ""} ${r.size} ${sym}`.replace("  ", " "), sub: `your price was reached, filled at ${px(r.price ?? 0)}${r.limit ? `, limit ${px(r.limit)}` : ""}` };
+  if (r.what === "close" && r.ruleKind === "funding") return { icon: <Glyph name="magic-wand-sparkle" size={24} />, title: `closed ${r.size} ${sym}`, sub: `funding turned against it, sold at ${px(r.price ?? 0)}` };
   if (r.what === "close") return { icon: <Glyph name="crosshairs" size={24} />, title: `stop sold ${r.size} ${sym}`, sub: `at ${px(r.price ?? 0)}, never below the floor` };
   if (r.what === "backstop") return { icon: <Glyph name="crosshairs" size={24} />, title: `backstop sold ${r.size} ${sym}`, sub: `fired on perpl at ${px(r.price ?? 0)}` };
   if (r.what === "step") return { icon: <Glyph name="flame" size={24} />, title: `take profit, ${r.size} ${sym}`, sub: `fired on perpl at ${px(r.price ?? 0)}` };
