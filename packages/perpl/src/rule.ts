@@ -2,6 +2,7 @@
 // shows), the engine converts them to wire units only when it sends. the schema checks shape only, facts
 // that need the live position (stop under the mark, trigger budget) are checked by validate().
 import { z } from 'zod/v4'
+import { marginFraction } from './units'
 
 const price = z.number().positive()
 const pct = z.number().gt(0).lte(100)
@@ -25,6 +26,17 @@ export const Rule = z.discriminatedUnion('kind', [
   z.object({ ...base, kind: z.literal('stop'), px: price, floor: price, backstopPx: price, slices: z.number().int().min(1).max(8).default(4) }),
   // take profit ladder: each step closes share% of the position at px, never past its floor
   z.object({ ...base, kind: z.literal('ladder'), steps: z.array(z.object({ px: price, share: pct, floor: price })).min(1).max(6) }),
+  // funding: close the position when funding turns against it (a long pays when the rate goes positive, a
+  // short when it goes negative), never more than floorPct from the mark. acts on the flip, not on arming
+  z.object({ ...base, kind: z.literal('funding'), floorPct: z.number().gt(0).lte(5).default(1) }),
+  // entry: when the mark falls to (below) or rises to (above) px, open side with margin ausd at leverage, an
+  // ioc limit that never fills past limit. the stop, when given, becomes its own rule on the new position.
+  // pid is 0, there is no position until it fires
+  z.object({
+    ...base, kind: z.literal('entry'), side: z.enum(['long', 'short']), when: z.enum(['below', 'above']), px: price, limit: price,
+    margin: z.number().positive().max(10_000), leverage: z.number().gt(0).lte(100),
+    stop: z.object({ px: price, floor: price, backstopPx: price, slices: z.number().int().min(1).max(8).default(4) }).optional(),
+  }),
 ])
 export type Rule = z.infer<typeof Rule>
 export type RuleKind = Rule['kind']
@@ -35,6 +47,7 @@ export type RuleMode = 'pehra' | 'perpl' | 'both'
 
 export function modeOf(r: Rule): RuleMode {
   if (r.kind === 'ladder') return 'perpl'
+  if (r.kind === 'entry') return r.stop ? 'both' : 'pehra'
   if (r.kind === 'stop') return 'both'
   return 'pehra'
 }
@@ -54,8 +67,36 @@ export type Check = { ok: true } | { ok: false; why: string }
 
 const no = (why: string): Check => ({ ok: false, why })
 
+// what an entry is checked against: the market now and the free ausd, there is no position yet
+export type EntryLive = { mark: number; balance: number; maxLeverage: number; maintenance: number; resting: number }
+
+export function validateEntry(r: Extract<Rule, { kind: 'entry' }>, live: EntryLive | null): Check {
+  if (!live) return no('the market is not live right now, try again in a moment')
+  if (r.pid !== 0) return no('an entry has no position yet, pid has to be 0')
+  if (r.when === 'below' ? !(r.px < live.mark) : !(r.px > live.mark)) return no(`the price is ${live.mark} now, ${r.when === 'below' ? 'falls to' : 'rises to'} ${r.px} has already happened`)
+  const long = r.side === 'long'
+  // the limit is the worst price it may fill at: a long pays at most it, a short sells at least it
+  if (long ? r.limit < r.px : r.limit > r.px) return no(`the limit has to be ${long ? 'at or above' : 'at or below'} the entry price`)
+  if (Math.abs(r.limit - r.px) / r.px > 0.05) return no('the limit is more than 5% from the entry price')
+  if (r.leverage > live.maxLeverage) return no(`this market allows up to ${live.maxLeverage}x`)
+  if (r.margin > live.balance) return no(`that needs ${r.margin} ausd, ${live.balance.toFixed(2)} is free`)
+  if (r.stop) {
+    const under = (a: number, b: number) => (long ? a < b : a > b)
+    if (!under(r.stop.px, r.px)) return no(`the stop has to be ${long ? 'below' : 'above'} the entry price`)
+    if (!under(r.stop.floor, r.stop.px)) return no(`the floor has to be ${long ? 'below' : 'above'} the stop`)
+    if (!under(r.stop.backstopPx, r.stop.floor)) return no(`the backstop has to be ${long ? 'below' : 'above'} the floor, it is the last line`)
+    // where a position opened at the limit with this margin would be liquidated
+    const mmr = marginFraction(live.maintenance)
+    const liq = long ? r.limit * (1 - 1 / r.leverage + mmr) : r.limit * (1 + 1 / r.leverage - mmr)
+    if (!under(liq, r.stop.backstopPx)) return no(`at ${r.leverage}x it would be liquidated near ${liq.toPrecision(4)}, before the backstop`)
+    if (live.resting + 1 > TRIGGER_BUDGET) return no(`the backstop needs a perpl order, ${live.resting} of ${TRIGGER_BUDGET} are in use`)
+  }
+  return { ok: true }
+}
+
 export function validate(r: Rule, live: Live | null): Check {
   if (r.kind === 'ping') return { ok: true }
+  if (r.kind === 'entry') return no('an entry is checked with validateEntry')
   if (!live) return no('there is no open position for this rule')
   const long = live.side === 'long'
   // under for a long means below, for a short above

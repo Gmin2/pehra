@@ -1,7 +1,7 @@
 // the rule routes. every write is signed by the account (signedRules.ts). a rule is checked twice before
 // it is stored: its shape by the schema, then its facts against the live position (stop under the mark,
 // trigger budget)
-import { Rule, validate } from '@pehra/perpl'
+import { Rule, validate, validateEntry } from '@pehra/perpl'
 import type { Guard } from './guard'
 import { checkSigned, type Signed } from './signedRules'
 import { proof } from './proof'
@@ -49,7 +49,7 @@ export async function rulesRoute(req: Request, url: URL, guard: Guard): Promise<
   const v = await checkSigned(m[1], { action: 'create', rule, symbol: guard.symbolOf(rule.mkt) }, b)
   if (!v.ok) return json({ error: v.why }, v.status)
   if (guard.engine.exists(rule.id)) return json({ error: 'a rule with that id exists' }, 409)
-  const check = validate(rule, guard.live(address, rule.pid, rule.mkt))
+  const check = rule.kind === 'entry' ? validateEntry(rule, guard.entryLive(address, rule.mkt)) : validate(rule, guard.live(address, rule.pid, rule.mkt))
   if (!check.ok) return json({ error: check.why }, 422)
   const signed = typeof b.sig === 'string'
   const s = guard.engine.add(address, rule, signed ? 'app' : 'dev', 'armed', signed ? b.sig as string : null)

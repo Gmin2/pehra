@@ -26,10 +26,11 @@ import { log } from "../src/log";
 import { violet, ink, muted, green, red, faint, well } from "../src/ui/Position";
 
 const line = "#EEEAF2", mist = "#EFE5FF", deep = "#7C3AED", pink = "#FBE4E6";
-const TABS = ["stop", "take profit", "guard"] as const;
+const TABS = ["stop", "take profit", "guard", "funding"] as const;
+const SHORT: Record<string, string> = { "take profit": "profit" };
 type Tab = (typeof TABS)[number];
 type Step = { px: number; share: number };
-type Draft = { px: number; floor: number; backstop: number; slices: number; steps: Step[]; threshold: number; target: number; maxDay: number };
+type Draft = { px: number; floor: number; backstop: number; slices: number; steps: Step[]; threshold: number; target: number; maxDay: number; floorPct: number };
 type Field = { key: string; label: string; value: number; kind: "price" | "int" | "pct" | "ausd" };
 
 // prices kept to four significant figures, what a person reads and types
@@ -165,7 +166,7 @@ export default function RuleBuilder() {
   const fmt = (v: number) => v.toFixed(dec);
   const sym = h?.symbol.toLowerCase() ?? "";
 
-  const [tab, setTab] = useState<Tab>(kind === "ladder" ? "take profit" : kind === "guard" ? "guard" : "stop");
+  const [tab, setTab] = useState<Tab>(kind === "ladder" ? "take profit" : kind === "guard" ? "guard" : kind === "funding" ? "funding" : "stop");
   const [draft, setDraft] = useState<Draft | null>(null);
   const [editing, setEditing] = useState<Field | null>(null);
   const [text, setText] = useState("");
@@ -191,7 +192,7 @@ export default function RuleBuilder() {
     setDraft({
       px: round(num(given.px, px)), floor: round(num(given.floor, floor)), backstop: round(num(given.bs, backstop)), slices: 4,
       steps: steps?.length ? steps : [{ px: round(base * (1 + dir * 0.05)), share: 50 }, { px: round(base * (1 + dir * 0.1)), share: 50 }],
-      threshold: num(given.th, g?.thresholdPct ?? 30), target: num(given.tg, g?.targetPct ?? 45), maxDay: num(given.max, g?.maxAddAusdPerDay ?? 50),
+      threshold: num(given.th, g?.thresholdPct ?? 30), target: num(given.tg, g?.targetPct ?? 45), maxDay: num(given.max, g?.maxAddAusdPerDay ?? 50), floorPct: 1,
     });
   }, [h, mark, draft]);
 
@@ -200,13 +201,14 @@ export default function RuleBuilder() {
     const base = { v: 1 as const, id: "", pid, mkt: h.mkt, forMs: 0 };
     if (tab === "stop") return { ...base, id: `stop-${pid}`, kind: "stop", px: draft.px, floor: draft.floor, backstopPx: draft.backstop, slices: draft.slices };
     if (tab === "take profit") return { ...base, id: `ladder-${pid}`, kind: "ladder", steps: draft.steps.map((s) => ({ px: s.px, share: s.share, floor: round(s.px * (1 - dir * 0.01)) })) };
+    if (tab === "funding") return { ...base, id: `funding-${pid}`, kind: "funding", floorPct: draft.floorPct };
     return { ...base, id: `guard-${pid}`, kind: "guard", threshold: draft.threshold, target: draft.target, maxAddDay: draft.maxDay };
   }, [draft, tab, h, pid]);
   const check = rule && h ? validate(rule, { mark, side, size: h.size, entry: h.entry, resting: 0 }) : null;
 
   // replay after the numbers settle, never while a line is held
   useEffect(() => {
-    if (!rule || !address || dragging || (check && !check.ok)) return;
+    if (!rule || !address || dragging || (check && !check.ok) || rule.kind === "funding") return;
     let alive = true;
     setReplay(null);
     setReplayErr(null);
@@ -242,6 +244,7 @@ export default function RuleBuilder() {
     else if (key === "threshold") set({ threshold: Math.max(1, Math.min(99, Math.round(v))) });
     else if (key === "target") set({ target: Math.max(1, Math.min(100, Math.round(v))) });
     else if (key === "maxDay") set({ maxDay: Math.max(1, Math.round(v)) });
+    else if (key === "floorPct") set({ floorPct: Math.max(0.1, Math.min(5, Math.round(v * 10) / 10)) });
     else if (key.startsWith("step")) {
       const [, i, what] = key.split(":");
       setDraft((d) => d && { ...d, steps: d.steps.map((s, j) => (j === Number(i) ? (what === "px" ? { ...s, px: round(v) } : { ...s, share: Math.max(1, Math.min(100, Math.round(v))) }) : s)) });
@@ -269,7 +272,9 @@ export default function RuleBuilder() {
       ? [{ key: "px", label: "stop", value: draft.px, color: violet }, { key: "floor", label: "floor", value: draft.floor, color: deep, dash: true }, { key: "backstop", label: "backstop", value: draft.backstop, color: green }]
       : tab === "take profit"
         ? draft.steps.map((s, i) => ({ key: `step:${i}:px`, label: `${s.share}% at`, value: s.px, color: i ? green : violet }))
-        : [{ key: "threshold", label: "steps in", value: stepsIn(draft.threshold), color: violet }];
+        : tab === "funding"
+          ? []
+          : [{ key: "threshold", label: "steps in", value: stepsIn(draft.threshold), color: violet }];
   const onMove = (key: string, v: number) => (key === "threshold" ? set({ threshold: Math.max(1, Math.min(draft.target - 1, fromStepsIn(v))) }) : apply(key, v));
 
   const session = async (): Promise<Session> => {
@@ -289,7 +294,7 @@ export default function RuleBuilder() {
       } else {
         const r = await createRule(await session(), { ...rule, id: `${rule.kind}-${pid}-${Date.now().toString(36)}` }, h.symbol);
         log(`rule ${r.rule.id} ${r.rule.state} (${r.rule.mode})`);
-        a.toast(rule.kind === "stop" ? "the stop is armed" : "the ladder is on perpl");
+        a.toast(rule.kind === "stop" ? "the stop is armed" : rule.kind === "funding" ? "pehra is watching funding" : "the ladder is on perpl");
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       // back to the list the builder came from, or onto it when the builder was opened directly
@@ -311,7 +316,7 @@ export default function RuleBuilder() {
         <Text style={{ flex: 1, textAlign: "center", fontSize: 16, fontWeight: "700", color: ink, marginRight: 44 }}>protect {sym} {side}</Text>
       </View>
       <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 20 }} scrollEnabled={!dragging} keyboardShouldPersistTaps="handled">
-        <Segmented options={TABS} value={tab} onChange={setTab} />
+        <Segmented options={TABS} value={tab} onChange={setTab} render={(v, on) => <Text style={{ fontSize: 14, fontWeight: "700", color: on ? ink : muted }}>{SHORT[v] ?? v}</Text>} />
 
         <Animated.View key={tab} entering={FadeIn.duration(220)} style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", paddingHorizontal: 4, marginTop: 18, columnGap: 4 }}>
           {tab === "stop" && (
@@ -345,6 +350,13 @@ export default function RuleBuilder() {
               <Text style={{ fontSize: 13.5, fontWeight: "700", color: violet }}>+ add a step</Text>
             </Tap>
           )}
+          {tab === "funding" && (
+            <>
+              <Words>{`close my ${sym} ${side} if funding turns against it, never more than`}</Words>
+              <Chip text={`${draft.floorPct}%`} onPress={() => open({ key: "floorPct", label: "from the price", value: draft.floorPct, kind: "pct" })} />
+              <Words>from the price</Words>
+            </>
+          )}
           {tab === "guard" && (
             <>
               <Words>add margin when it gets</Words>
@@ -359,11 +371,25 @@ export default function RuleBuilder() {
         </Animated.View>
         {bad && <Text style={{ marginTop: 6, paddingHorizontal: 8, fontSize: 12.5, fontWeight: "600", color: red }}>{bad}</Text>}
 
+        {tab !== "funding" && (
+        <>
         <View style={{ marginTop: 16, backgroundColor: "white", borderRadius: 26, borderWidth: 1, borderColor: line, padding: 12 }}>
           <LevelChart points={points} mark={mark} liq={h.liq} side={side} lines={lines} fmt={fmt} onMove={(k, v) => { if (!dragging) setDragging(true); onMove(k, v); }} onEnd={() => setDragging(false)} />
         </View>
         <Text style={{ marginTop: 8, textAlign: "center", fontSize: 11.5, fontWeight: "600", color: muted }}>drag a line or tap a number, both move the same rule</Text>
+        </>
+        )}
 
+        {tab === "funding" ? (
+          <View style={{ marginTop: 18, backgroundColor: mist, borderRadius: 22, padding: 16, gap: 4 }}>
+            <Text style={{ fontSize: 12.5, fontWeight: "600", color: violet }}>funding on {sym} now</Text>
+            <Text style={{ fontFamily: "Manrope_700Bold", fontSize: 23, color: ink }}>{m ? `${m.fundingRate >= 0 ? "+" : "−"}${Math.abs(m.fundingRate * 100).toFixed(4)}%` : "—"}</Text>
+            <Text style={{ fontSize: 12.5, fontWeight: "500", color: muted }}>
+              {!m ? " " : (m.fundingRate > 0) === long && m.fundingRate !== 0 ? `your ${side} pays funding right now. pehra waits for it to flip your way, then closes it the moment it turns against you again` : `your ${side} earns funding right now. pehra closes it the moment that flips and you start paying`}
+            </Text>
+          </View>
+        ) : (
+        <>
         <Text style={{ marginTop: 18, paddingHorizontal: 8, fontSize: 13, fontWeight: "700", color: muted }}>if you had this over the last 30 days</Text>
         <View style={{ flexDirection: "row", gap: 12, marginTop: 10 }}>
           {replay && !bad ? (
@@ -394,6 +420,8 @@ export default function RuleBuilder() {
           )}
         </View>
         <Text style={{ marginTop: 10, textAlign: "center", fontSize: 11, fontWeight: "500", color: faint }}>trade candles, worst price first, funding left out</Text>
+        </>
+        )}
       </ScrollView>
 
       <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 10, gap: 8 }}>

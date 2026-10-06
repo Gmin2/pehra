@@ -155,6 +155,13 @@ const server = serve({
       book: mkt => guard.recorder.books.get(mkt),
       position: (a, pid) => guard.startOf(a, pid),
     })
+    // local testing only: feed the engine a funding reading, a real flip on testnet can take hours
+    if (url.pathname === '/dev/funding' && req.method === 'POST' && process.env.ALLOW_DEV === '1') {
+      const b = await req.json().catch(() => null) as { mkt?: number; rate?: number } | null
+      if (!b || typeof b.mkt !== 'number' || typeof b.rate !== 'number') return json({ error: 'send mkt and rate' }, 400)
+      guard.engine.funding([{ id: b.mkt, rate: b.rate }])
+      return json({ ok: true })
+    }
     const rules = await rulesRoute(req, url, guard)
     if (rules) return rules
     // which alerts reach the phone and when not (src/alerts.ts), and what was sent lately
@@ -348,8 +355,11 @@ async function liquidations() {
   }
 }
 async function funding() {
-  try { guard.alerts.fundingTick((await getContext('testnet')).markets.map(m => ({ id: m.id, symbol: m.symbol, rate: m.funding.rate }))) }
-  catch (e) { log(`alerts funding: ${e instanceof Error ? e.message : e}`) }
+  try {
+    const rates = (await getContext('testnet')).markets.map(m => ({ id: m.id, symbol: m.symbol, rate: m.funding.rate }))
+    guard.alerts.fundingTick(rates)
+    guard.engine.funding(rates)
+  } catch (e) { log(`alerts funding: ${e instanceof Error ? e.message : e}`) }
 }
 async function depeg() {
   try { guard.alerts.depegTick((await pairState(pub)).price, Number(process.env.ALERT_DEPEG_BPS ?? 50)) }
@@ -357,7 +367,7 @@ async function depeg() {
 }
 setInterval(() => void liquidations(), 30_000)
 setTimeout(() => void liquidations(), 20_000)
-setInterval(() => void funding(), 10 * 60_000)
+setInterval(() => void funding(), 60_000)
 setTimeout(() => void funding(), 15_000)
 setInterval(() => void depeg(), 5 * 60_000)
 setTimeout(() => void depeg(), 25_000)

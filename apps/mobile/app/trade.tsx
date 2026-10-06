@@ -4,8 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, ScrollView, TextInput, useWindowDimensions } from "react-native";
 import { Stack, useLocalSearchParams } from "expo-router";
 import * as Haptics from "expo-haptics";
-import { freshLiquidationPrice, maxLeverage } from "@pehra/perpl";
-import { Screen, Tap, IconButton, MorphText, s } from "../src/ui/components";
+import { freshLiquidationPrice, maxLeverage, validateEntry, type Rule } from "@pehra/perpl";
+import { Screen, Tap, IconButton, MorphText, Keypad, s } from "../src/ui/components";
+import { Glyph } from "../src/ui/Glyph";
+import { enterDigit } from "../src/ui/model";
+import { createRule, cancelRule, listRules, describeRule, type RuleRow } from "../src/rules";
+import { signIn, type Session } from "../src/account";
 import { Text } from "../src/ui/Text";
 import { Coin } from "../src/ui/Coin";
 import { useApp } from "../src/ui/store";
@@ -18,6 +22,9 @@ import { PriceChart, Segmented, LeverageSlider, TradeButton, FlightLayer, Tray, 
 
 const RANGES = ["1h", "1d", "1w", "1m"] as const;
 const SIDES = ["long", "short"] as const;
+const WHENS = ["now", "at a price"] as const;
+// prices kept to four significant figures, what a person reads and types
+const sig4 = (v: number) => { const d = Math.max(0, 3 - Math.floor(Math.log10(Math.abs(v) || 1))); return Number(v.toFixed(d)); };
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // perpl's reasons in plain words for the button
@@ -53,6 +60,16 @@ export default function Trade() {
     [entry, setEntry] = useState<number | undefined>(undefined),
     [error, setError] = useState(""),
     [tray, setTray] = useState(false),
+    [when, setWhen] = useState<(typeof WHENS)[number]>("now"),
+    [atText, setAtText] = useState(""),
+    [limitText, setLimitText] = useState(""),
+    [withStop, setWithStop] = useState(true),
+    [editing, setEditing] = useState<"at" | "limit" | null>(null),
+    [keyText, setKeyText] = useState(""),
+    // the number shown when the tray opens is replaced by the first key, not appended to
+    [keyFresh, setKeyFresh] = useState(true),
+    [arming, setArming] = useState(false),
+    [waiting, setWaiting] = useState<RuleRow[]>([]),
     [from, setFrom] = useState<{ x: number; y: number } | null>(null),
     [to, setTo] = useState<{ x: number; y: number } | null>(null);
   const points = useCandles(m?.market, range);
@@ -72,10 +89,16 @@ export default function Trade() {
   const threshold = (account?.settings?.thresholdPct ?? 5) / 100;
   const margin = Number(marginText.replace(",", ".")) || 0;
   const mark = m?.mark ?? 0;
-  const size = m && mark > 0 ? Math.floor(((margin * lev) / mark) * 10 ** m.sizeDecimals) / 10 ** m.sizeDecimals : 0;
-  const liq = m ? freshLiquidationPrice(m.market, side, mark, lev) : 0;
+  const later = when === "at a price";
+  // an entry: the price it opens at, which way the mark has to go to get there, and the worst fill
+  const at = Number(atText) || 0;
+  const limit = Number(limitText) || 0;
+  const goes = at < mark ? "below" : "above";
+  const base = later && limit > 0 ? limit : mark;
+  const size = m && base > 0 ? Math.floor(((margin * lev) / base) * 10 ** m.sizeDecimals) / 10 ** m.sizeDecimals : 0;
+  const liq = m ? freshLiquidationPrice(m.market, side, base, lev) : 0;
   const guard = side === "long" ? liq / (1 - threshold) : liq / (1 + threshold);
-  const away = mark > 0 ? Math.abs(mark - liq) / mark : 0;
+  const away = base > 0 ? Math.abs(base - liq) / base : 0;
   const tight = away < threshold * 2;
   const decimals = m?.priceDecimals ?? 2;
   const fmt = useCallback((v: number) => "$" + v.toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals }), [decimals]);
@@ -101,6 +124,67 @@ export default function Trade() {
     dot.current = { x, y };
     requestAnimationFrame(() => void measure());
   }, []);
+
+  // a dip 3% away for a long, a rally 3% away for a short, the limit half a percent past it
+  useEffect(() => {
+    if (!later || !mark) return;
+    const p = sig4(side === "long" ? mark * 0.97 : mark * 1.03);
+    setAtText(String(p));
+    setLimitText(String(sig4(side === "long" ? p * 1.005 : p * 0.995)));
+  }, [later, side, m?.id]);
+
+  // the stop sits halfway from the entry to where it would be liquidated, its floor and backstop under it
+  const dir = side === "long" ? 1 : -1;
+  const stopPx = sig4(limit - (limit - liq) * 0.5);
+  const floorPx = sig4(stopPx - (stopPx - liq) * 0.2);
+  const backstopPx = sig4(floorPx - (floorPx - liq) * 0.3);
+  const entryRule: Rule | null = m && later && at > 0 && limit > 0 ? {
+    v: 1, id: `entry-${m.id}-${Date.now().toString(36)}`, pid: 0, mkt: m.id, forMs: 0, kind: "entry", side, when: goes, px: at, limit, margin, leverage: lev,
+    ...(withStop ? { stop: { px: stopPx, floor: floorPx, backstopPx, slices: 4 } } : {}),
+  } : null;
+  const check = entryRule && entryRule.kind === "entry" && m ? validateEntry(entryRule, { mark, balance, maxLeverage: max, maintenance: m.maintenanceMargin, resting: 0 }) : null;
+
+  const loadWaiting = useCallback(() => {
+    if (!address || !m) return;
+    listRules(address).then((rs) => setWaiting(rs.filter((r) => r.rule.kind === "entry" && r.rule.mkt === m.id && ["armed", "held", "firing", "working", "paused"].includes(r.state)))).catch(() => {});
+  }, [address, m?.id]);
+  useEffect(() => { loadWaiting(); const t = setInterval(loadWaiting, 5000); return () => clearInterval(t); }, [loadWaiting]);
+
+  const session = async (): Promise<Session> => {
+    if (a.session) return a.session;
+    const st = await signIn(a.stored ? { credentialId: a.stored.credentialId } : undefined);
+    a.setSession(st);
+    return st;
+  };
+  const arm = async () => {
+    if (!entryRule || !check?.ok || !m || arming) return;
+    setArming(true);
+    try {
+      const r = await createRule(await session(), entryRule, m.symbol);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      log(`entry ${r.rule.id} ${r.rule.state} ${side} ${m.symbol} at ${at}`);
+      a.toast(`armed. pehra opens it when ${sym} gets to ${at}`);
+      loadWaiting();
+    } catch (e) {
+      log(`entry arm failed: ${e instanceof Error ? e.message : e}`);
+      a.toast(e instanceof Error ? e.message : "couldn’t arm it");
+    }
+    setArming(false);
+  };
+  const drop = async (r: RuleRow) => {
+    try { await cancelRule(await session(), r.id); Haptics.selectionAsync(); log(`entry ${r.id} cancelled`); loadWaiting(); }
+    catch (e) { a.toast("couldn’t cancel it, nothing changed"); log(`entry cancel failed: ${e instanceof Error ? e.message : e}`); }
+  };
+  const openKeys = (k: "at" | "limit") => { setEditing(k); setKeyText(k === "at" ? atText : limitText); setKeyFresh(true); };
+  const commitKeys = () => {
+    const v = Number(keyText);
+    if (v > 0 && editing === "at") {
+      setAtText(String(v));
+      setLimitText(String(sig4(side === "long" ? v * 1.005 : v * 0.995)));
+    }
+    if (v > 0 && editing === "limit") setLimitText(String(v));
+    setEditing(null);
+  };
 
   const place = async () => {
     if (!ok || !m || !address) return;
@@ -182,7 +266,7 @@ export default function Trade() {
               </View>
             </View>
             <View ref={chartBox} collapsable={false} style={{ marginTop: 6 }}>
-              <PriceChart points={points} width={cw} mark={mark} liq={liq} guard={guard} side={side} entry={entry} fmt={fmt} onDot={onDot} />
+              <PriceChart points={points} width={cw} mark={mark} liq={liq} guard={guard} side={side} entry={later && at > 0 ? at : entry} fmt={fmt} onDot={onDot} />
             </View>
             <View style={{ paddingHorizontal: 20, marginTop: 8 }}>
               <Segmented options={RANGES} value={range} onChange={setRange} dark />
@@ -199,6 +283,47 @@ export default function Trade() {
               </Text>
             )}
           />
+
+          <Segmented options={WHENS} value={when} onChange={(v) => phase === "idle" && setWhen(v)} />
+
+          {later && (
+            <View style={{ gap: 12 }}>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", paddingHorizontal: 4, columnGap: 4 }}>
+                <Text style={sentence}>{`open when ${sym} ${goes === "below" ? "falls" : "rises"} to`}</Text>
+                <Chip text={atText || "—"} bad={!!check && !check.ok && /happened/.test(check.why)} onPress={() => openKeys("at")} />
+                <Text style={sentence}>{`never ${side === "long" ? "above" : "below"}`}</Text>
+                <Chip text={limitText || "—"} bad={!!check && !check.ok && /limit/.test(check.why)} onPress={() => openKeys("limit")} />
+              </View>
+              <Tap onPress={() => { Haptics.selectionAsync(); setWithStop(!withStop); }} innerStyle={{ backgroundColor: "white", borderRadius: 22, borderWidth: 1, borderColor: line, padding: 14, flexDirection: "row", alignItems: "center", gap: 12 }}>
+                <Glyph name="crosshairs" size={24} />
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={{ fontSize: 14.5, fontWeight: "700", color: ink }}>{withStop ? `and a hidden stop at ${stopPx}` : "no stop after it opens"}</Text>
+                  <Text style={{ fontSize: 12, fontWeight: "500", color: muted }}>{withStop ? `never ${side === "long" ? "below" : "above"} ${floorPx}, backstop ${backstopPx} on perpl` : "the guard still watches it"}</Text>
+                </View>
+                <View style={{ width: 44, height: 26, borderRadius: 13, backgroundColor: withStop ? violet : line, justifyContent: "center", paddingHorizontal: 3 }}>
+                  <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: "white", alignSelf: withStop ? "flex-end" : "flex-start" }} />
+                </View>
+              </Tap>
+              {check && !check.ok && <Text style={{ paddingHorizontal: 8, fontSize: 12.5, fontWeight: "600", color: red }}>{check.why}</Text>}
+            </View>
+          )}
+
+          {waiting.length > 0 && (
+            <View style={{ backgroundColor: "white", borderRadius: 22, borderWidth: 1, borderColor: line, paddingVertical: 4 }}>
+              <Text style={{ paddingHorizontal: 16, paddingTop: 10, fontSize: 12.5, fontWeight: "700", color: muted }}>waiting to open</Text>
+              {waiting.map((r) => r.rule.kind === "entry" && (
+                <View key={r.id} style={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, paddingVertical: 10 }}>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={{ fontSize: 14, fontWeight: "700", color: ink }}>{`${r.rule.side} at ${r.rule.px}`}</Text>
+                    <Text style={{ fontSize: 12, fontWeight: "500", color: muted }}>{`${r.rule.margin} ausd at ${r.rule.leverage}x${r.rule.stop ? `, stop ${r.rule.stop.px}` : ""}${r.state === "held" ? " · the book was past the limit, trying again" : ""}`}</Text>
+                  </View>
+                  <Tap onPress={() => void drop(r)} innerStyle={{ height: 32, paddingHorizontal: 12, borderRadius: 16, backgroundColor: "#F0EDF3", justifyContent: "center" }}>
+                    <Text style={{ fontSize: 12.5, fontWeight: "700", color: muted }}>cancel</Text>
+                  </Tap>
+                </View>
+              ))}
+            </View>
+          )}
 
           <View style={{ backgroundColor: "white", borderRadius: 24, borderWidth: 1, borderColor: line, padding: 18, gap: 14 }}>
             <View style={{ gap: 6 }}>
@@ -242,6 +367,12 @@ export default function Trade() {
         </ScrollView>
 
         <View ref={buttonBox} collapsable={false} style={[s.footer, { paddingHorizontal: 16 }]}>
+          {later ? (
+            <Tap onPress={check?.ok && !arming && keyed ? arm : undefined} innerStyle={{ height: 58, borderRadius: 29, backgroundColor: ink, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 12, opacity: check?.ok && keyed && !arming ? 1 : 0.45 }}>
+              <Glyph name="lock" size={22} color="white" />
+              <Text style={{ fontSize: 16, fontWeight: "600", color: "white" }}>{arming ? "arming…" : !keyed ? "turn the guard on first" : "arm with fingerprint"}</Text>
+            </Tap>
+          ) : (
           <TradeButton
             phase={phase}
             f={f}
@@ -251,9 +382,40 @@ export default function Trade() {
             label={!address ? "no account" : !keyed ? "turn the guard on to trade" : margin > balance ? "not enough ausd" : away <= threshold ? "too close to liquidation" : `${side} ${sym} · ${money(margin * lev, 0)} ausd`}
             detail={phase === "filled" ? `filled in ${(fillMs / 1000).toFixed(1)}s` : `didn’t fill · ${error}`}
           />
+          )}
+          {later && (
+            <Text numberOfLines={2} style={{ marginTop: 8, textAlign: "center", fontSize: 11, fontWeight: "500", color: "#B9B2C5", paddingHorizontal: 8 }}>
+              {entryRule && check?.ok ? `you sign: ${describeRule(entryRule, m?.symbol ?? "")}` : "nothing is spent until the price gets there. pehra opens it, even with the app closed"}
+            </Text>
+          )}
         </View>
         <FlightLayer f={f} from={from} to={to} />
       </View>
+
+      <Tray visible={!!editing} onClose={() => setEditing(null)}>
+        {editing && (
+          <View style={{ gap: 14 }}>
+            <Text style={{ fontSize: 20, fontWeight: "700", color: ink, paddingHorizontal: 4 }}>{editing === "at" ? "open at" : side === "long" ? "pay at most" : "sell at least"}</Text>
+            <View style={{ height: 64, borderRadius: 20, backgroundColor: "white", borderWidth: 1, borderColor: line, paddingHorizontal: 18, justifyContent: "center" }}>
+              <Text style={{ fontFamily: "Manrope_700Bold", fontSize: 28, color: keyFresh ? "#B9B2C5" : violet }}>{keyText || "0"}</Text>
+            </View>
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              {[-1, -0.25, 0.25, 1].map((k) => (
+                <Tap key={k} onPress={() => { setKeyText(String(sig4((Number(keyText) || mark) * (1 + k / 100)))); setKeyFresh(false); }} style={{ flex: 1 }} innerStyle={{ height: 44, borderRadius: 22, backgroundColor: "#F0EDF3", alignItems: "center", justifyContent: "center" }}>
+                  <Text style={{ fontSize: 14, fontWeight: "700", color: ink }}>{k > 0 ? "+" : "−"}{Math.abs(k)}%</Text>
+                </Tap>
+              ))}
+            </View>
+            <Text style={{ fontSize: 12.5, fontWeight: "500", color: muted, paddingHorizontal: 4 }}>{sym} is at {mark} now</Text>
+            <View style={{ marginHorizontal: -16 }}>
+              <Keypad onKey={(k) => { setKeyText(enterDigit(keyFresh && k !== "back" ? "0" : keyText || "0", k)); setKeyFresh(false); }} />
+            </View>
+            <Tap onPress={commitKeys} innerStyle={{ height: 56, borderRadius: 28, backgroundColor: ink, alignItems: "center", justifyContent: "center" }}>
+              <Text style={{ fontSize: 15.5, fontWeight: "600", color: "white" }}>done</Text>
+            </Tap>
+          </View>
+        )}
+      </Tray>
 
       <Tray visible={tray} onClose={again}>
         <View style={{ gap: 4, paddingHorizontal: 8, marginBottom: 16 }}>
@@ -277,6 +439,16 @@ export default function Trade() {
         </Tap>
       </Tray>
     </Screen>
+  );
+}
+
+const sentence = { fontFamily: "Manrope_700Bold", fontSize: 18, color: ink, marginVertical: 3 } as const;
+
+function Chip({ text, onPress, bad }: { text: string; onPress: () => void; bad?: boolean }) {
+  return (
+    <Tap onPress={onPress} innerStyle={{ height: 34, paddingHorizontal: 10, borderRadius: 11, backgroundColor: bad ? "#FBE4E6" : "#EFE5FF", justifyContent: "center", marginHorizontal: 4, marginVertical: 3 }}>
+      <Text style={{ fontFamily: "Manrope_700Bold", fontSize: 18, color: bad ? red : violet }}>{text}</Text>
+    </Tap>
   );
 }
 

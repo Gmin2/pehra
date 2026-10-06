@@ -15,17 +15,20 @@ export type View = {
 }
 
 // what a rule remembers between ticks, stored with it
-export type Mem = { since?: number; fired?: number; lastAt?: number }
+export type Mem = { since?: number; fired?: number; lastAt?: number; fundingSign?: number }
 
 export type Intent =
   | { kind: 'note'; text: string }
   | { kind: 'add'; pid: number; ausd: number; why: string }
   | { kind: 'close'; pid: number; size: number; floor: number; why: string }
+  | { kind: 'open'; side: 'long' | 'short'; ausd: number; leverage: number; limit: number; why: string }
 
 export type Step = { mem: Mem; intents: Intent[]; done?: string }
 
 // a margin add waits this long after the last one, so a slow fill is not topped up twice
 export const ADD_COOLDOWN_MS = 60_000
+// an entry that filled nothing tries again after this
+export const ENTRY_RETRY_MS = 15_000
 
 // the condition must hold for forMs before the rule acts. since is kept while it holds, dropped when not
 function held(rule: Rule, mem: Mem, tick: Tick, on: boolean): { mem: Mem; ready: boolean } {
@@ -42,6 +45,20 @@ export function step(rule: Rule, mem: Mem, tick: Tick, view: View): Step {
     const h = held(rule, mem, tick, tick.mark > rule.above)
     if (!h.ready) return { mem: h.mem, intents: [] }
     return { mem: { ...h.mem, fired: tick.at }, intents: [{ kind: 'note', text: `mark ${tick.mark} above ${rule.above}` }], done: 'fired' }
+  }
+
+  if (rule.kind === 'entry') {
+    if (mem.fired !== undefined) return { mem, intents: [] }
+    // a try that filled nothing waits a little before the next, so a thin book is not hit every tick
+    if (mem.lastAt !== undefined && tick.at - mem.lastAt < ENTRY_RETRY_MS) return { mem, intents: [] }
+    const crossed = rule.when === 'below' ? tick.mark <= rule.px : tick.mark >= rule.px
+    const h = held(rule, mem, tick, crossed)
+    if (!h.ready) return { mem: h.mem, intents: [] }
+    return {
+      mem: { ...h.mem, fired: tick.at, lastAt: tick.at },
+      intents: [{ kind: 'open', side: rule.side, ausd: rule.margin, leverage: rule.leverage, limit: rule.limit, why: `mark ${tick.mark} reached the entry at ${rule.px}` }],
+      done: 'opened',
+    }
   }
 
   const pos = view.health
@@ -70,4 +87,19 @@ export function step(rule: Rule, mem: Mem, tick: Tick, view: View): Step {
 
   // ladders rest on perpl as trigger orders, the engine places them, nothing to decide per tick
   return { mem, intents: [] }
+}
+
+// funding comes from perpl's market context, not with the tick. a long pays when the rate is positive, a
+// short when it is negative. the rule acts when it flips to paying, the first reading only sets where it starts
+export function onFunding(rule: Rule, mem: Mem, health: Health | null, rate: number, at: number): Step {
+  if (rule.kind !== 'funding') return { mem, intents: [] }
+  if (!health) return { mem, intents: [], done: 'position closed' }
+  const sign = Math.sign(rate)
+  const pays = (s: number) => (health.side === 'long' ? s > 0 : s < 0)
+  const was = mem.fundingSign
+  const next = { ...mem, fundingSign: sign }
+  if (mem.fired !== undefined || was === undefined || pays(was) || !pays(sign)) return { mem: next, intents: [] }
+  const k = rule.floorPct / 100
+  const floor = Number((health.side === 'long' ? health.mark * (1 - k) : health.mark * (1 + k)).toPrecision(4))
+  return { mem: { ...next, fired: at }, intents: [{ kind: 'close', pid: health.pid, size: health.size, floor, why: `funding turned against the ${health.side}, rate ${rate}` }] }
 }
