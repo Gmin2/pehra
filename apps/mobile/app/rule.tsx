@@ -371,17 +371,21 @@ export default function RuleBuilder() {
         </Animated.View>
         {bad && <Text style={{ marginTop: 6, paddingHorizontal: 8, fontSize: 12.5, fontWeight: "600", color: red }}>{bad}</Text>}
 
+        {tab !== "funding" && (
+        <>
         <View style={{ marginTop: 16, backgroundColor: "white", borderRadius: 26, borderWidth: 1, borderColor: line, padding: 12 }}>
           <LevelChart points={points} mark={mark} liq={h.liq} side={side} lines={lines} fmt={fmt} onMove={(k, v) => { if (!dragging) setDragging(true); onMove(k, v); }} onEnd={() => setDragging(false)} />
         </View>
         <Text style={{ marginTop: 8, textAlign: "center", fontSize: 11.5, fontWeight: "600", color: muted }}>drag a line or tap a number, both move the same rule</Text>
+        </>
+        )}
 
         {tab === "funding" ? (
           <View style={{ marginTop: 18, backgroundColor: mist, borderRadius: 22, padding: 16, gap: 4 }}>
             <Text style={{ fontSize: 12.5, fontWeight: "600", color: violet }}>funding on {sym} now</Text>
             <Text style={{ fontFamily: "Manrope_700Bold", fontSize: 23, color: ink }}>{m ? `${m.fundingRate >= 0 ? "+" : "−"}${Math.abs(m.fundingRate * 100).toFixed(4)}%` : "—"}</Text>
             <Text style={{ fontSize: 12.5, fontWeight: "500", color: muted }}>
-              {!m ? " " : (m.fundingRate > 0) === long && m.fundingRate !== 0 ? `your ${side} pays now. pehra closes it the next time it turns against you, after it flips back first` : `your ${side} earns now. pehra closes it if that flips`}
+              {!m ? " " : (m.fundingRate > 0) === long && m.fundingRate !== 0 ? `your ${side} pays funding right now. pehra waits for it to flip your way, then closes it the moment it turns against you again` : `your ${side} earns funding right now. pehra closes it the moment that flips and you start paying`}
             </Text>
           </View>
         ) : (
