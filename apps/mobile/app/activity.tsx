@@ -66,12 +66,18 @@ function describe(e: GuardEvent): { title: string; sub: string; right: string; c
       return { title: `${pos || sym(e)} got close`, sub: `${(e.distancePct ?? 0).toFixed(1)}% from liquidation, guard watching`, right: "", color: ink };
     case "failed":
       if (/liquidated/.test(e.text)) return { title: `${pos} liquidated`, sub: "perpl closed it at the liquidation price", right: e.pnl !== undefined ? signed(e.pnl) : "", color: red };
-      return { title: "the guard couldn’t add margin", sub: e.text, right: "", color: red };
+      if (e.rule === "floor") return { title: `${pos || sym(e)} stop held at its floor`, sub: e.text, right: "", color: amber };
+      if (/margin/.test(e.text)) return { title: "the guard couldn’t add margin", sub: e.text, right: "", color: red };
+      return { title: "a rule couldn’t act", sub: e.text, right: "", color: red };
     case "manual":
       return { title: `you added ${money(e.addAusd ?? 0)} ausd`, sub: e.after ? `${pos}, now ${e.after.distancePct.toFixed(1)}% away` : pos, right: "+" + money(e.addAusd ?? 0), color: ink };
     case "opened":
+      if (e.rule === "entry") return { title: `pehra opened ${pos}${e.lv ? " " + e.lv / 100 + "x" : ""}`, sub: `your price was reached, ${e.amount ?? ""} ${sym(e)} at ${e.price ?? ""}`, right: "", color: violet };
       return { title: `opened ${pos}${e.lv ? " " + e.lv / 100 + "x" : ""}`, sub: `${e.amount ?? ""} ${sym(e)} at ${e.price ?? ""}`, right: "", color: ink };
     case "closed":
+      if (e.rule === "funding") return { title: `pehra closed ${pos}`, sub: `funding turned against it, ${e.amount ?? ""} ${sym(e)} at ${e.price ?? ""}`, right: e.pnl !== undefined ? signed(e.pnl) : "", color: violet };
+      if (e.rule === "stop") return { title: `the stop sold ${pos}`, sub: `${e.amount ?? ""} ${sym(e)} at ${e.price ?? ""}, never below the floor`, right: e.pnl !== undefined ? signed(e.pnl) : "", color: violet };
+      if (e.rule === "backstop" || e.rule === "step") return { title: e.rule === "step" ? "take profit filled" : `the backstop sold ${pos}`.trim(), sub: `${e.amount ?? ""} ${sym(e)} at ${e.price ?? ""} on perpl`, right: "", color: violet };
       return { title: `closed ${pos}`, sub: `${e.amount ?? ""} ${sym(e)} at ${e.price ?? ""}`, right: e.pnl !== undefined ? signed(e.pnl) : "", color: (e.pnl ?? 0) >= 0 ? green : red };
     case "bracket":
       return { title: "stop and take profit set", sub: e.text.replace(/^[A-Z]+: /, ""), right: "", color: ink };
