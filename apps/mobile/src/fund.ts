@@ -1,7 +1,7 @@
 // the money in and out of perpl, through agora's instant settlement pair (spikes/t8.ts): usdc in the
 // wallet swaps 1:1 to AUSD and lands in the perpl account, AUSD already in the wallet goes straight in,
 // and withdraw runs it back to usdc. each is one batch the passkey session signs at once.
-import { formatUnits, parseUnits, type Address } from 'viem'
+import { encodeFunctionData, formatUnits, parseUnits, type Address } from 'viem'
 import { AGORA, NETWORKS, depositCalls, erc20Abi, fundCalls, getPerplAccount, pairState, publicClient, quote, sendBatch, withdrawCalls, type PairState } from '@pehra/perpl'
 import type { Session } from './account'
 import { API } from './trade'
@@ -71,4 +71,20 @@ export async function ensureGas(address: Address, mon: number): Promise<bigint |
   if (mon >= 0.2) return undefined
   const r = await testUsdc(address)
   return r.block && r.txs?.length ? BigInt(r.block) : undefined
+}
+
+// money out of the pehra wallet to any address: ausd, usdc or mon. the passkey signs it, gas comes from the
+// wallet's own mon (a send of all the mon keeps enough back for that gas)
+export type Asset = 'ausd' | 'usdc' | 'mon'
+const TRANSFER_GAS = 80_000n, NATIVE_GAS = 25_000n
+export async function sendOut(s: Session, asset: Asset, to: Address, amount: number) {
+  const pub = publicClient('testnet')
+  const calls = asset === 'mon'
+    ? [{ to, value: parseUnits(amount.toFixed(18), 18), gas: NATIVE_GAS }]
+    : [{
+        to: asset === 'ausd' ? NETWORKS.testnet.ausd : AGORA.testnet.usdc,
+        data: encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [to, parseUnits(amount.toFixed(asset === 'ausd' ? 6 : AGORA.testnet.usdcDecimals), asset === 'ausd' ? 6 : AGORA.testnet.usdcDecimals)] }),
+        gas: TRANSFER_GAS,
+      }]
+  return run(s, calls, amount)
 }

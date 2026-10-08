@@ -161,7 +161,7 @@ export default function Portfolio() {
           <MorphText text={a.stealth ? "✱✱✱✱✱" : total === null ? "$—" : "$" + money(total)} size={44} />
           <View style={[space.row, { gap: 8, marginTop: 8 }]}>
             <Text style={{ color: muted, fontWeight: "500", fontVariant: ["tabular-nums"] }}>
-              {balance === null ? "loading your account" : health.length ? `${money(balance)} free · ${money(inPositions)} in positions` : `${money(balance)} free · nothing open`}
+              {balance === null ? (account && !account.enrolled ? "the guard is off. turn it on in settings to trade" : "loading your account") : health.length ? `${money(balance)} free · ${money(inPositions)} in positions` : `${money(balance)} free · nothing open`}
             </Text>
             {!!health.length && (
               <Text style={{ color: pnl >= 0 ? green : red, fontWeight: "600", fontVariant: ["tabular-nums"] }}>

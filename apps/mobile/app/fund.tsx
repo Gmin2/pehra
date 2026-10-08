@@ -94,7 +94,12 @@ export default function Fund() {
       const msg = e instanceof Error ? e.message : String(e);
       log(`fund ${k} ${amount} failed: ${msg}`);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      setFailed(/cancel/i.test(msg) ? "the passkey sheet was closed" : "it didn’t go through, nothing moved");
+      if (/cancel|NotAllowed/i.test(msg)) { setFailed("the passkey sheet was closed, nothing moved"); return; }
+      // a fund is a few transactions in a row, not one. say what actually landed, read from the chain
+      const after = address ? await walletBalances(address as `0x${string}`).catch(() => null) : null;
+      const moved = after && w && (Math.abs(after.usdc - w.usdc) > 0.001 || Math.abs(after.ausd - w.ausd) > 0.001 || Math.abs(after.perpl - w.perpl) > 0.001);
+      setFailed(moved ? "part of it went through. the rest is safe in your wallet, you can move it from here" : "it didn’t go through, nothing moved");
+      refresh();
     }
   };
 
@@ -163,9 +168,12 @@ export default function Fund() {
           </Animated.View>
         )}
       </ScrollView>
-      <View style={{ paddingHorizontal: 16, paddingVertical: 12 }}>
-        <Tap onPress={w && w.perpl > 0 ? () => setKind("withdraw") : undefined} innerStyle={{ height: 56, borderRadius: 28, backgroundColor: well, alignItems: "center", justifyContent: "center", opacity: w && w.perpl > 0 ? 1 : 0.5 }}>
-          <Text style={{ fontSize: 15.5, fontWeight: "600", color: ink }}>withdraw to usdc</Text>
+      <View style={{ paddingHorizontal: 16, paddingVertical: 12, flexDirection: "row", gap: 10 }}>
+        <Tap onPress={w && w.perpl > 0 ? () => setKind("withdraw") : undefined} style={{ flex: 1 }} innerStyle={{ height: 56, borderRadius: 28, backgroundColor: well, alignItems: "center", justifyContent: "center", opacity: w && w.perpl > 0 ? 1 : 0.5 }}>
+          <Text style={{ fontSize: 15.5, fontWeight: "600", color: ink }}>withdraw</Text>
+        </Tap>
+        <Tap onPress={() => a.go("/send")} style={{ flex: 1 }} innerStyle={{ height: 56, borderRadius: 28, backgroundColor: well, alignItems: "center", justifyContent: "center" }}>
+          <Text style={{ fontSize: 15.5, fontWeight: "600", color: ink }}>send out</Text>
         </Tap>
       </View>
 
@@ -174,7 +182,7 @@ export default function Fund() {
         {landing ? (
           <LandedBody landing={landing} moved={moved} final={final} failed={failed} onClose={() => { setKind(null); setLanding(null); }} onTrade={() => { setKind(null); setLanding(null); a.go("/portfolio"); }} />
         ) : kind ? (
-          <AmountBody kind={kind} max={kind === "usdc" ? w?.usdc ?? 0 : kind === "ausd" ? w?.ausd ?? 0 : w?.perpl ?? 0} onGo={go} />
+          <AmountBody p={p} kind={kind} max={kind === "usdc" ? w?.usdc ?? 0 : kind === "ausd" ? w?.ausd ?? 0 : w?.perpl ?? 0} onGo={go} />
         ) : null}
       </Tray>
     </Screen>
@@ -208,7 +216,7 @@ function Option({ icon, title, sub, right, onPress, dim, index }: { icon: React.
 }
 
 // how much: the amount big, a few quick picks, one line about the rate, one button
-function AmountBody({ kind, max, onGo }: { kind: Kind; max: number; onGo: (k: Kind, amount: number) => void }) {
+function AmountBody({ kind, max, onGo, p }: { kind: Kind; max: number; onGo: (k: Kind, amount: number) => void; p: PairState | null }) {
   const [text, setText] = useState("");
   useEffect(() => {
     setText(String(Math.min(25, Math.floor(max))));
@@ -229,7 +237,7 @@ function AmountBody({ kind, max, onGo }: { kind: Kind; max: number; onGo: (k: Ki
         <Roll text={"$" + (text || "0")} style={{ fontFamily: "Manrope_700Bold", fontSize: 50, color: amount > max ? red : text ? ink : faint, letterSpacing: -1 }} />
       </View>
       <Text style={{ textAlign: "center", marginTop: 4, fontSize: 13.5, fontWeight: "600", color: muted }}>
-        {kind === "ausd" ? `${amount} ausd straight into perpl` : kind === "usdc" ? `${amount} usdc → ${amount} ausd at 1.0000, no fee` : `${amount} ausd → ${amount} usdc at 1.0000, no fee`}
+        {kind === "ausd" ? `${amount} ausd straight into perpl` : kind === "usdc" ? `${amount} usdc → ausd at ${p ? p.price.toFixed(4) : "1.0000"}${p && p.fee > 0 ? `, ${(p.fee * 100).toFixed(2)}% fee` : ", no fee"}` : `${amount} ausd → usdc at ${p ? p.price.toFixed(4) : "1.0000"}${p && p.fee > 0 ? `, ${(p.fee * 100).toFixed(2)}% fee` : ", no fee"}`}
       </Text>
       <View style={{ flexDirection: "row", gap: 8, justifyContent: "center", marginTop: 16 }}>
         {quick.map((q) => (
