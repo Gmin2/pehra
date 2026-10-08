@@ -50,6 +50,12 @@ describe('entry', () => {
     expect(validateEntry(entry({ stop: { px: 0.0270, floor: 0.0265, backstopPx: 0.0260 } }), live)).toMatchObject({ ok: false, why: expect.stringContaining('liquidated near') })
   })
 
+  test('a short reads the other way round', () => {
+    const r = entry({ side: 'short', when: 'above', px: 0.034, limit: 0.0338, stop: { px: 0.0355, floor: 0.0358, backstopPx: 0.0362, slices: 4 } })
+    expect(summary(r, 'MON')).toBe('open a short on MON when it rises to 0.034, 10 ausd at 3x, never below 0.0338, then a hidden stop at 0.0355, never above 0.0358, backstop 0.0362 on perpl')
+    expect(summary(Rule.parse({ v: 1, id: 's', pid: 1, mkt: 64, kind: 'stop', px: 0.0355, floor: 0.0358, backstopPx: 0.0362 }), 'MON')).toBe('hidden stop on MON at 0.0355, never above 0.0358, backstop 0.0362 on perpl')
+  })
+
   test('what the passkey signs says all of it', () => {
     expect(summary(entry({ stop: { px: 0.0285, floor: 0.0282, backstopPx: 0.0278, slices: 4 } }), 'MON')).toBe(
       'open a long on MON when it falls to 0.03, 10 ausd at 3x, never above 0.0302, then a hidden stop at 0.0285, never below 0.0282, backstop 0.0278 on perpl')

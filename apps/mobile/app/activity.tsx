@@ -57,6 +57,9 @@ function backfill(e: GuardEvent): GuardEvent {
 }
 
 // what a row says for each kind
+// "1161 mon at 0.02593", or just the price when the chain row carries no size
+const fill = (e: GuardEvent) => `${e.amount ? `${e.amount} ` : ""}${sym(e)} at ${e.price ?? ""}`.trim();
+
 function describe(e: GuardEvent): { title: string; sub: string; right: string; color: string } {
   const pos = `${sym(e)} ${e.side ?? ""}`.trim();
   switch (e.kind) {
@@ -72,14 +75,14 @@ function describe(e: GuardEvent): { title: string; sub: string; right: string; c
     case "manual":
       return { title: `you added ${money(e.addAusd ?? 0)} ausd`, sub: e.after ? `${pos}, now ${e.after.distancePct.toFixed(1)}% away` : pos, right: "+" + money(e.addAusd ?? 0), color: ink };
     case "opened":
-      if (e.rule === "entry") return { title: `pehra opened ${pos}${e.lv ? " " + e.lv / 100 + "x" : ""}`, sub: `your price was reached, ${e.amount ?? ""} ${sym(e)} at ${e.price ?? ""}`, right: "", color: violet };
-      return { title: `opened ${pos}${e.lv ? " " + e.lv / 100 + "x" : ""}`, sub: `${e.amount ?? ""} ${sym(e)} at ${e.price ?? ""}`, right: "", color: ink };
+      if (e.rule === "entry") return { title: `pehra opened ${pos}${e.lv ? " " + e.lv / 100 + "x" : ""}`, sub: `your price was reached, ${fill(e)}`, right: "", color: violet };
+      return { title: `opened ${pos}${e.lv ? " " + e.lv / 100 + "x" : ""}`, sub: `${fill(e)}`, right: "", color: ink };
     case "closed":
-      if (e.rule === "sl" || e.rule === "tp") return { title: e.rule === "sl" ? `your stop sold ${pos}` : `take profit filled on ${pos}`, sub: `${e.amount ?? ""} ${sym(e)} at ${e.price ?? ""} on perpl`, right: e.pnl !== undefined ? signed(e.pnl) : "", color: e.rule === "sl" ? ink : green };
-      if (e.rule === "funding") return { title: `pehra closed ${pos}`, sub: `funding turned against it, ${e.amount ?? ""} ${sym(e)} at ${e.price ?? ""}`, right: e.pnl !== undefined ? signed(e.pnl) : "", color: violet };
-      if (e.rule === "stop") return { title: `the stop sold ${pos}`, sub: `${e.amount ?? ""} ${sym(e)} at ${e.price ?? ""}, never below the floor`, right: e.pnl !== undefined ? signed(e.pnl) : "", color: violet };
-      if (e.rule === "backstop" || e.rule === "step") return { title: e.rule === "step" ? "take profit filled" : `the backstop sold ${pos}`.trim(), sub: `${e.amount ?? ""} ${sym(e)} at ${e.price ?? ""} on perpl`, right: "", color: violet };
-      return { title: `closed ${pos}`, sub: `${e.amount ?? ""} ${sym(e)} at ${e.price ?? ""}`, right: e.pnl !== undefined ? signed(e.pnl) : "", color: (e.pnl ?? 0) >= 0 ? green : red };
+      if (e.rule === "sl" || e.rule === "tp") return { title: e.rule === "sl" ? `your stop sold ${pos}` : `take profit filled on ${pos}`, sub: `${fill(e)} on perpl`, right: e.pnl !== undefined ? signed(e.pnl) : "", color: e.rule === "sl" ? ink : green };
+      if (e.rule === "funding") return { title: `pehra closed ${pos}`, sub: `funding turned against it, ${fill(e)}`, right: e.pnl !== undefined ? signed(e.pnl) : "", color: violet };
+      if (e.rule === "stop") return { title: `the stop sold ${pos}`, sub: `${fill(e)}, never past the floor`, right: e.pnl !== undefined ? signed(e.pnl) : "", color: violet };
+      if (e.rule === "backstop" || e.rule === "step") return { title: e.rule === "step" ? "take profit filled" : `the backstop sold ${pos}`.trim(), sub: `${fill(e)} on perpl`, right: "", color: violet };
+      return { title: `closed ${pos}`, sub: `${fill(e)}`, right: e.pnl !== undefined ? signed(e.pnl) : "", color: (e.pnl ?? 0) >= 0 ? green : red };
     case "bracket":
       return { title: "stop and take profit set", sub: e.text.replace(/^[A-Z]+: /, ""), right: "", color: ink };
     case "funded":
