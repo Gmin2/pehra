@@ -209,7 +209,7 @@ export default function Position() {
                 <Row
                   index={3}
                   glyph="crosshairs"
-                  label="stop and take profit"
+                  label="stop · take profit"
                   value={h.stop || h.take ? [h.stop ? (backstop !== null && Math.abs(h.stop - backstop) < h.stop * 0.001 ? `backstop ${fmt(h.stop)}` : fmt(h.stop)) : "", h.take ? fmt(h.take) : ""].filter(Boolean).join(" · ") : "set one"}
                   color={h.stop || h.take ? ink : violet}
                   onPress={() => setBracketTray(true)}

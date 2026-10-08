@@ -43,7 +43,7 @@ type State = {
   dismiss: () => void;
   go: (path: string) => void;
   back: () => void;
-  toast: (s: string) => void;
+  toast: (s: string, ms?: number) => void;
   notice: string;
   pending: boolean;
   setPending: Dispatch<SetStateAction<boolean>>;
@@ -126,10 +126,10 @@ export function Provider({ children }: { children: React.ReactNode }) {
       if (router.canGoBack()) router.back();
       else router.replace("/");
     },
-    toast = (s: string) => {
+    toast = (s: string, ms = 2400) => {
       setNotice(s);
       if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(() => setNotice(""), 2400);
+      timer.current = setTimeout(() => setNotice(""), ms);
     };
   const launch = (scene: string) => {
     if (pendingTimer.current) clearTimeout(pendingTimer.current);

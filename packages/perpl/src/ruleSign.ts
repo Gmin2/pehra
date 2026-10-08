@@ -18,9 +18,10 @@ export const ruleHash = (r: Rule) => bytesToHex(sha256(new TextEncoder().encode(
 
 // one plain line a person can check before signing
 export function summary(r: Rule, symbol = `market ${r.mkt}`): string {
-  if (r.kind === 'stop') return `hidden stop on ${symbol} at ${r.px}, never below ${r.floor}, backstop ${r.backstopPx} on perpl`
+  // a stop's floor sits past its price on the side the position loses: under it for a long, over it for a short
+  if (r.kind === 'stop') return `hidden stop on ${symbol} at ${r.px}, never ${r.floor < r.px ? 'below' : 'above'} ${r.floor}, backstop ${r.backstopPx} on perpl`
   if (r.kind === 'funding') return `close the ${symbol} position when funding turns against it, never more than ${r.floorPct}% from the price`
-  if (r.kind === 'entry') return `open a ${r.side} on ${symbol} when it ${r.when === 'below' ? 'falls' : 'rises'} to ${r.px}, ${r.margin} ausd at ${r.leverage}x, never ${r.side === 'long' ? 'above' : 'below'} ${r.limit}${r.stop ? `, then a hidden stop at ${r.stop.px}, never below ${r.stop.floor}, backstop ${r.stop.backstopPx} on perpl` : ''}`
+  if (r.kind === 'entry') return `open a ${r.side} on ${symbol} when it ${r.when === 'below' ? 'falls' : 'rises'} to ${r.px}, ${r.margin} ausd at ${r.leverage}x, never ${r.side === 'long' ? 'above' : 'below'} ${r.limit}${r.stop ? `, then a hidden stop at ${r.stop.px}, never ${r.side === 'long' ? 'below' : 'above'} ${r.stop.floor}, backstop ${r.stop.backstopPx} on perpl` : ''}`
   if (r.kind === 'ladder') return `take profit on ${symbol}: ${r.steps.map(s => `${s.share}% at ${s.px}`).join(', ')}`
   if (r.kind === 'guard') return `guard on ${symbol}: add margin under ${r.threshold}% from liquidation, back to ${r.target}%, at most ${r.maxAddDay} ausd a day`
   return `ping when ${symbol} goes above ${r.above}`

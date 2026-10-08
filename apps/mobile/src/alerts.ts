@@ -6,10 +6,12 @@ export const ALERT_KINDS = ['near_liq', 'acted', 'filled', 'liquidated', 'fundin
 export type AlertKind = (typeof ALERT_KINDS)[number]
 export type AlertPrefs = { on: Record<AlertKind, boolean>; quiet: { from: number; to: number } | null; tz: number }
 
-export async function readAlerts(address: string): Promise<{ prefs: AlertPrefs }> {
+export type SentAlert = { kind: string; title: string; body: string; at: number; held: number }
+
+export async function readAlerts(address: string): Promise<{ prefs: AlertPrefs; recent: SentAlert[] }> {
   const r = await fetch(`${API}/alerts/${address}`)
   if (!r.ok) throw new Error(`alerts ${r.status}`)
-  return r.json() as Promise<{ prefs: AlertPrefs }>
+  return r.json() as Promise<{ prefs: AlertPrefs; recent: SentAlert[] }>
 }
 
 export async function saveAlerts(address: string, patch: { on?: Partial<Record<AlertKind, boolean>>; quiet?: AlertPrefs['quiet'] }): Promise<AlertPrefs> {
