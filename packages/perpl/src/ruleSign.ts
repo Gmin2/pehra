@@ -54,7 +54,15 @@ export function summary(r: Rule, symbol = `market ${r.mkt}`): string {
     + (r.breakeven ? `, moves to entry plus fees after take profit step ${r.breakeven.afterStep} of ${r.breakeven.ladder} fills` : '')
   if (r.kind === 'when') return `when ${whenText(r.on, symbol)}, ${r.then.map(a => doText(a, symbol)).join(', then ')}${r.repeat ? ', every time' : ''}`
   if (r.kind === 'funding') return `close the ${symbol} position when funding turns against it, never more than ${r.floorPct}% from the price`
-  if (r.kind === 'entry') return `open a ${r.side} on ${symbol} when it ${r.when === 'below' ? 'falls' : 'rises'} to ${r.px}, ${r.margin} ausd at ${r.leverage}x, never ${r.side === 'long' ? 'above' : 'below'} ${r.limit}${r.stop ? `, then a hidden stop at ${r.stop.px}, never ${r.side === 'long' ? 'below' : 'above'} ${r.stop.floor}, backstop ${r.stop.backstopPx} on perpl` : ''}`
+  if (r.kind === 'entry') {
+    const up = r.side === 'long' ? 'above' : 'below', down = r.side === 'long' ? 'below' : 'above'
+    const t = r.then
+    return `open a ${r.side} on ${symbol} when it ${r.when === 'below' ? 'falls' : 'rises'} to ${r.px}, ${r.margin} ausd at ${r.leverage}x, never ${up} ${r.limit}`
+      + (r.stop ? `, then a hidden stop at ${r.stop.px}, never ${down} ${r.stop.floor}, backstop ${r.stop.backstopPx} on perpl` : '')
+      + (t?.stop ? `, then a hidden stop ${t.stop.pct}% ${down} the fill, never past ${t.stop.floorPct}%, backstop ${t.stop.backstopPct}% on perpl${t.stop.trailPct ? `, trailing ${t.stop.trailPct}%` : ''}` : '')
+      + (t?.ladder ? `, take profit ${t.ladder.map(x => `${x.share}% at ${x.pct}% ${up}`).join(', ')}` : '')
+      + (t?.breakeven ? ', the stop moves to entry plus fees after the first take profit' : '')
+  }
   if (r.kind === 'ladder') return `take profit on ${symbol}: ${r.steps.map(s => `${s.share}% at ${s.px}`).join(', ')}`
   if (r.kind === 'guard') return `guard on ${symbol}: add margin under ${r.threshold}% from liquidation, back to ${r.target}%, at most ${r.maxAddDay} ausd a day`
   return `ping when ${symbol} goes above ${r.above}`
@@ -63,6 +71,8 @@ export function summary(r: Rule, symbol = `market ${r.mkt}`): string {
 export type SignedAction = { action: 'create'; rule: Rule; symbol?: string } | { action: 'cancel'; id: string } | { action: 'pause' } | { action: 'hold'; id: string } | { action: 'resume'; id: string }
   // a device session: one fingerprint, then trades and settings ride a token for SESSION_DAYS
   | { action: 'session'; device: string }
+  // a recipe: several rules on one fingerprint, every one of them listed in what is signed
+  | { action: 'createMany'; name: string; rules: Rule[]; symbol?: string }
 
 export const SESSION_DAYS = 7
 
@@ -74,6 +84,7 @@ export function ruleMessage(address: string, a: SignedAction, nonce: string, exp
     : a.action === 'hold' ? [`pause rule ${a.id}`]
     : a.action === 'resume' ? [`resume rule ${a.id}`]
     : a.action === 'session' ? [`open a session on ${a.device}, good for ${SESSION_DAYS} days`]
+    : a.action === 'createMany' ? [`recipe ${a.name}, ${a.rules.length} rules`, ...a.rules.map((r, i) => `${i + 1}. ${summary(r, a.symbol)}`), `ids ${a.rules.map(r => r.id).join(',')}`, `sha256 ${bytesToHex(sha256(new TextEncoder().encode(canonicalJson(a.rules)))).slice(2)}`]
     : ['pause every rule']
   return [head, ...what, `nonce ${nonce}`, `expires ${new Date(exp).toISOString()}`].join('\n')
 }

@@ -72,6 +72,13 @@ export const Rule = z.discriminatedUnion('kind', [
     ...base, kind: z.literal('entry'), side: z.enum(['long', 'short']), when: z.enum(['below', 'above']), px: price, limit: price,
     margin: z.number().positive().max(10_000), leverage: z.number().gt(0).lte(100),
     stop: z.object({ px: price, floor: price, backstopPx: price, slices: z.number().int().min(1).max(8).default(4) }).optional(),
+    // what the new position gets once it opens, as distances from the actual fill (an entry can fill up to
+    // 5% from its trigger, so absolute prices would be wrong): a stop, a take profit ladder, breakeven
+    then: z.object({
+      stop: z.object({ pct: pct, floorPct: pct, backstopPct: pct, slices: z.number().int().min(1).max(8).optional(), trailPct: z.number().gt(0).lte(50).optional() }).optional(),
+      ladder: z.array(z.object({ pct: pct, share: pct, floorPct: z.number().min(0).lte(100) })).min(1).max(4).optional(),
+      breakeven: z.boolean().optional(),
+    }).optional(),
   }),
 ])
 export type Rule = z.infer<typeof Rule>
@@ -126,6 +133,22 @@ export function validateEntry(r: Extract<Rule, { kind: 'entry' }>, live: EntryLi
     const liq = long ? r.limit * (1 - 1 / r.leverage + mmr) : r.limit * (1 + 1 / r.leverage - mmr)
     if (!under(liq, r.stop.backstopPx)) return no(`at ${r.leverage}x it would be liquidated near ${liq.toPrecision(4)}, before the backstop`)
     if (live.resting + 1 > TRIGGER_BUDGET) return no(`the backstop needs a perpl order, ${live.resting} of ${TRIGGER_BUDGET} are in use`)
+  }
+  if (r.then) {
+    const st = r.then.stop, ld = r.then.ladder
+    if (st && !(st.pct < st.floorPct && st.floorPct < st.backstopPct)) return no('the stop, its floor and its backstop each sit further from the fill than the one before')
+    if (st) {
+      const mmr = marginFraction(live.maintenance)
+      const away = 1 / r.leverage - mmr
+      if (st.backstopPct / 100 >= away) return no(`at ${r.leverage}x the position would be liquidated about ${(away * 100).toFixed(1)}% from the fill, before the backstop`)
+    }
+    if (ld) {
+      if (ld.reduce((t, x) => t + x.share, 0) > 100) return no('the take profit steps sell more than the whole position')
+      if (ld.some(x => x.floorPct >= x.pct)) return no('each take profit step needs its floor closer to the fill than its price')
+    }
+    if (r.then.breakeven && !(st && ld)) return no('moving to entry needs both a stop and a take profit')
+    const need = (st ? 1 : 0) + (ld?.length ?? 0) + (r.stop ? 1 : 0)
+    if (live.resting + need > TRIGGER_BUDGET) return no(`this needs ${need} perpl orders once it opens, ${live.resting} of ${TRIGGER_BUDGET} are in use`)
   }
   return { ok: true }
 }
