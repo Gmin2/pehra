@@ -305,9 +305,23 @@ export class Engine {
       if (hist.some(o => o.oid === row.oid && o.st === 5)) break
       await new Promise(res => setTimeout(res, 3000))
     }
-    if (!fired?.at) { q.orderState.run('gone', row.size, r.id, row.step); return }
-    const child = hist.find(o => o.at?.b === fired.at?.b && o.st === 4 && (o.t === 3 || o.t === 4) && o.oid !== row.oid)
     const m = this.deps.ctx()?.markets.find(x => x.id === r.rule.mkt)
+    if (!fired?.at) {
+      // the history can lag for longer than that. the live session saw the trigger execute (st 10) and the
+      // close it made, which is enough to know it fired and at what price
+      const ts = this.deps.session(r.owner)
+      const sock = ts?.orders.get(row.oid)
+      if (!m || !ts || sock?.st !== 10) { q.orderState.run('gone', row.size, r.id, row.step); return }
+      const kid = [...ts.orders.values()].filter(o => o.oid > row.oid && o.lp === sock.lp && (o.t === 3 || o.t === 4) && (o.fs ?? 0) > 0 && o.st === 4).sort((x, y) => y.oid - x.oid)[0]
+      q.orderState.run('fired', row.size, r.id, row.step)
+      const price = kid?.fp ? fromPrice(m, kid.fp) : row.px, size = kid?.fs ? fromSize(m, kid.fs) : row.size
+      writeRun({ owner: r.owner, rule: r.id, kind: 'fill', body: { kind: row.step === 'backstop' ? 'backstop' : 'step', step: row.step, by: 'perpl', trigger: row.px, size, price, tx: null, from: 'session, history lagged' } })
+      this.event(r.owner, row.step === 'backstop' ? { kind: 'backstop', rule: r.id, pid: r.rule.pid, price } : { kind: 'step', rule: r.id, pid: r.rule.pid, n: Number(row.step.slice(1)) + 1, price })
+      this.deps.emit(r.owner, { kind: 'closed', rule: row.step === 'backstop' ? 'backstop' : 'step', pid: r.rule.pid, symbol: m.symbol, amount: size, price, text: `${row.step === 'backstop' ? 'the backstop' : `take profit ${row.step}`} on perpl sold ${size} ${m.symbol} at ${price}` })
+      this.deps.log(`rule ${r.id} ${row.step} fired on perpl (seen on the session, history lagged), ${size} at ${price}`)
+      return
+    }
+    const child = hist.find(o => o.at?.b === fired.at?.b && o.st === 4 && (o.t === 3 || o.t === 4) && o.oid !== row.oid)
     q.orderState.run('fired', row.size, r.id, row.step)
     if (!m || !child) return
     const price = fromPrice(m, child.fp ?? 0), size = fromSize(m, child.fs ?? 0)
@@ -689,19 +703,47 @@ export class Engine {
       writeRun({ owner: r.owner, rule: r.id, kind: 'fill', body: { intent: id, kind: 'open', side: i.side, size: filled / z, price, limit: i.limit, pid: pos?.pid ?? null, tx: landed?.tx ?? null, stamps: st } })
       this.deps.emit(r.owner, { kind: 'opened', rule: 'entry', pid: pos?.pid, symbol: m.symbol, side: i.side, lv: Math.round(i.leverage * 100), tx: landed?.tx, amount: filled / z, price, text: `entry opened ${i.side} ${filled / z} ${m.symbol} at ${price}, limit ${i.limit}` })
       this.deps.log(`rule ${r.id} opened ${i.side} ${filled / z} at ${price}, pid ${pos?.pid ?? '?'}`)
-      if (pos) { this.handOff(r, pos.pid); this.event(r.owner, { kind: 'opened', rule: r.id, pid: pos.pid, price }) }
+      if (pos) { this.handOff(r, pos.pid, price); this.event(r.owner, { kind: 'opened', rule: r.id, pid: pos.pid, price }) }
       else this.deps.log(`rule ${r.id} filled but the position did not show, reconcile attaches the stop`)
     } finally { this.inflight.delete(id) }
   }
 
   // the entry's stop becomes its own rule on the position it opened, signed by the same signature
-  private handOff(r: Stored, pid: number) {
-    if (r.rule.kind !== 'entry' || !r.rule.stop) return
-    const id = `stop-${pid}-from-${r.id}`.slice(0, 64)
-    if (this.exists(id)) return
-    const st = r.rule.stop
-    this.add(r.owner, { v: 1, id, pid, mkt: r.rule.mkt, forMs: 0, kind: 'stop', px: st.px, floor: st.floor, backstopPx: st.backstopPx, slices: st.slices }, r.by)
-    writeRun({ owner: r.owner, rule: r.id, kind: 'note', body: { text: `stop handed to ${id} on position ${pid}` } })
+  // an entry hands its children to the position it opened: the old absolute stop, or the newer ones written
+  // as distances from the fill. the ladder goes first so a breakeven stop can point at it. they ride the
+  // entry's signature, the way every child here does
+  private handOff(r: Stored, pid: number, fill?: number) {
+    if (r.rule.kind !== 'entry') return
+    const base = { v: 1 as const, pid, mkt: r.rule.mkt, forMs: 0 }
+    const kids: Rule[] = []
+    if (r.rule.stop) {
+      const st = r.rule.stop
+      kids.push({ ...base, id: `stop-${pid}-from-${r.id}`.slice(0, 64), kind: 'stop', px: st.px, floor: st.floor, backstopPx: st.backstopPx, slices: st.slices })
+    }
+    const t = r.rule.then
+    if (t && fill) {
+      const up = r.rule.side === 'long' ? 1 : -1
+      const at = (pct: number) => Number((fill * (1 + up * pct / 100)).toPrecision(4))
+      const ladderId = `ladder-${pid}-from-${r.id}`.slice(0, 64)
+      if (t.ladder) kids.push({ ...base, id: ladderId, kind: 'ladder', steps: t.ladder.map(x => ({ px: at(x.pct), share: x.share, floor: at(x.floorPct) })) })
+      if (t.stop) kids.push({
+        ...base, id: `stop-${pid}-then-${r.id}`.slice(0, 64), kind: 'stop', px: at(-t.stop.pct), floor: at(-t.stop.floorPct), backstopPx: at(-t.stop.backstopPct), slices: t.stop.slices ?? 4,
+        ...(t.stop.trailPct ? { trail: { pct: t.stop.trailPct, minMovePct: 0.5 } } : {}),
+        ...(t.breakeven && t.ladder ? { breakeven: { ladder: ladderId, afterStep: 1 } } : {}),
+      })
+    }
+    for (const k of kids) {
+      if (this.exists(k.id)) continue
+      this.add(r.owner, k, r.by)
+      writeRun({ owner: r.owner, rule: r.id, kind: 'note', body: { text: `${k.kind} handed to ${k.id} on position ${pid}` } })
+    }
+  }
+
+  // a recipe: every rule stored in one transaction, perpl orders placed after, in order
+  addMany(owner: string, rules: Rule[], by: Stored['by'], sig: string | null) {
+    db.exec('begin')
+    try { for (const r of rules) this.add(owner, r, by, 'armed', sig) ; db.exec('commit') } catch (e) { db.exec('rollback'); throw e }
+    return rules.map(r => this.rules.get(r.id)).filter((x): x is Stored => !!x)
   }
 
   private async addMargin(r: Stored, id: string, ts: TradingSocket, pos: Position, m: Market, before: ReturnType<typeof positionHealth>, ausd: number, why: string, stamps: Record<string, number>) {
@@ -768,7 +810,7 @@ export class Engine {
         writeRun({ owner, rule: it.rule, kind: 'reconcile', body: { intent: it.id, was: it.state, now: state, why } })
         this.deps.log(`reconcile ${it.id}: ${it.state} -> ${state}, ${why}`)
         const r = this.rules.get(it.rule)
-        if (r && made) { this.handOff(r, made.pid); this.finish(r, 'opened, found by reconcile') }
+        if (r && made) { this.handOff(r, made.pid, made.ep / 10 ** (this.deps.ctx()?.markets.find(x => x.id === made.mkt)?.config.price_decimals ?? 5)); this.finish(r, 'opened, found by reconcile') }
         continue
       }
       if (!pos) { state = it.kind === 'close' ? 'filled' : 'void'; why = it.kind === 'close' ? 'the position is gone, the close or another took it' : 'the position is gone' }

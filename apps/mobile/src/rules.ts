@@ -30,6 +30,12 @@ export async function createRule(s: Session, draft: Rule, symbol: string) {
   return post<{ rule: { id: string; state: string; mode: string } }>(`/rules/${s.address}`, { rule, ...(await signed(s, { action: 'create', rule, symbol })) })
 }
 
+// a recipe: several rules, one fingerprint over every one of them
+export async function createRules(s: Session, name: string, drafts: Rule[], symbol: string) {
+  const rules = drafts.map(d => RuleSchema.parse(d))
+  return post<{ rules: { id: string; state: string; mode: string }[] }>(`/rules/${s.address}/many`, { name, rules, ...(await signed(s, { action: 'createMany', name, rules, symbol })) })
+}
+
 export async function cancelRule(s: Session, id: string) {
   return post<{ ok: true }>(`/rules/${s.address}/${id}/cancel`, await signed(s, { action: 'cancel', id }))
 }
