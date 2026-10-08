@@ -15,13 +15,25 @@ export type View = {
 }
 
 // what a rule remembers between ticks, stored with it
-export type Mem = { since?: number; fired?: number; lastAt?: number; fundingSign?: number }
+export type Mem = {
+  since?: number; fired?: number; lastAt?: number; fundingSign?: number
+  // a stop that moved (trailing, breakeven, a chain): its live levels. the signed body keeps the first ones
+  px?: number; floor?: number; backstopPx?: number
+  // the best price since a trailing stop was armed, and the backstop price resting on perpl right now
+  best?: number; placed?: number
+  // a daily chain remembers the day it last ran, a price chain whether it was on the other side first
+  day?: number
+}
 
 export type Intent =
   | { kind: 'note'; text: string }
   | { kind: 'add'; pid: number; ausd: number; why: string }
   | { kind: 'close'; pid: number; size: number; floor: number; why: string }
   | { kind: 'open'; side: 'long' | 'short'; ausd: number; leverage: number; limit: number; why: string }
+  // a stop's levels move. the hidden ones change in memory, the backstop is placed again on perpl
+  | { kind: 'move'; rule: string; px: number; floor: number; backstopPx: number; why: string }
+  | { kind: 'cancel'; rule: string; why: string }
+  | { kind: 'notify'; text: string }
 
 export type Step = { mem: Mem; intents: Intent[]; done?: string }
 
@@ -61,6 +73,9 @@ export function step(rule: Rule, mem: Mem, tick: Tick, view: View): Step {
     }
   }
 
+  // chains are polled and fed events by the engine through chain.ts, a tick alone decides nothing for them
+  if (rule.kind === 'when') return { mem, intents: [] }
+
   const pos = view.health
   if (!pos) return { mem, intents: [], done: 'position closed' }
 
@@ -76,17 +91,55 @@ export function step(rule: Rule, mem: Mem, tick: Tick, view: View): Step {
 
   if (rule.kind === 'stop') {
     if (mem.fired !== undefined) return { mem, intents: [] }
-    const crossed = pos.side === 'long' ? tick.mark <= rule.px : tick.mark >= rule.px
+    const lv = levels(rule, mem)
+    const long = pos.side === 'long'
+    const crossed = long ? tick.mark <= lv.px : tick.mark >= lv.px
     const h = held(rule, mem, tick, crossed)
-    if (!h.ready) return { mem: h.mem, intents: [] }
-    return {
-      mem: { ...h.mem, fired: tick.at },
-      intents: [{ kind: 'close', pid: pos.pid, size: pos.size, floor: rule.floor, why: `mark ${tick.mark} crossed the stop at ${rule.px}` }],
+    if (h.ready) {
+      return {
+        mem: { ...h.mem, fired: tick.at },
+        intents: [{ kind: 'close', pid: pos.pid, size: pos.size, floor: lv.floor, why: `mark ${tick.mark} crossed the stop at ${lv.px}` }],
+      }
     }
+    if (!rule.trail) return { mem: h.mem, intents: [] }
+    return trail(rule, h.mem, tick.mark, long)
   }
 
   // ladders rest on perpl as trigger orders, the engine places them, nothing to decide per tick
   return { mem, intents: [] }
+}
+
+// a stop's live levels: moved ones from memory, else the signed ones
+export function levels(rule: Extract<Rule, { kind: 'stop' }>, mem: Mem) {
+  return { px: mem.px ?? rule.px, floor: mem.floor ?? rule.floor, backstopPx: mem.backstopPx ?? rule.backstopPx }
+}
+
+const sig = (v: number) => Number(v.toPrecision(4))
+
+// the levels shifted by d (up for a long, down for a short), kept to four figures
+export function shifted(lv: { px: number; floor: number; backstopPx: number }, d: number) {
+  return { px: sig(lv.px + d), floor: sig(lv.floor + d), backstopPx: sig(lv.backstopPx + d) }
+}
+
+// a trailing stop follows the best price since it was armed, pct behind it, and never loosens. the hidden
+// levels follow every tick in memory. the backstop on perpl only moves once it would move more than
+// minMovePct, perpl allows about 60 requests a minute
+export function trail(rule: Extract<Rule, { kind: 'stop' }>, mem: Mem, mark: number, long: boolean): Step {
+  if (!rule.trail) return { mem, intents: [] }
+  const best = mem.best === undefined ? mark : long ? Math.max(mem.best, mark) : Math.min(mem.best, mark)
+  const lv = levels(rule, mem)
+  const want = long ? best * (1 - rule.trail.pct / 100) : best * (1 + rule.trail.pct / 100)
+  const d = want - lv.px
+  if (long ? d <= 0 : d >= 0) return { mem: { ...mem, best }, intents: [] }
+  const next = shifted(lv, d)
+  const placed = mem.placed ?? rule.backstopPx
+  const min = (rule.trail.minMovePct ?? 0.5) / 100
+  const moveBackstop = Math.abs(next.backstopPx - placed) / placed >= min
+  const nextMem = { ...mem, best, px: next.px, floor: next.floor, backstopPx: next.backstopPx }
+  return {
+    mem: nextMem,
+    intents: moveBackstop ? [{ kind: 'move', rule: rule.id, ...next, why: `trailing ${rule.trail.pct}% behind ${sig(best)}` }] : [],
+  }
 }
 
 // funding comes from perpl's market context, not with the tick. a long pays when the rate is positive, a
