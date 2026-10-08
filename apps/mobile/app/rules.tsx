@@ -28,12 +28,27 @@ const holder = { pehra: { label: "run by pehra", bg: mist, fg: violet }, both: {
 // prices to four significant figures, the same way the builder shows them
 const at = (v: number, ref: number) => v.toFixed(Math.max(0, 3 - Math.floor(Math.log10(ref || 1))));
 
-function describe(r: Rule): { glyph: string; title: string; line: string } {
+// a chain in a few words: what it waits for, then what it does
+function whenLine(r: Extract<Rule, { kind: "when" }>) {
+  const t = r.on;
+  const on = t.on === "step" ? `take profit step ${t.n} fills` : t.on === "stopSold" ? "the stop sells" : t.on === "opened" ? "the entry opens" : t.on === "backstop" ? "the backstop fires"
+    : t.on === "price" ? `price ${t.dir} ${at(t.px, t.px)}` : t.on === "distance" ? `within ${t.belowPct}% of liquidation` : t.on === "fundingFlip" ? "funding flips"
+    : t.on === "daily" ? `every day at ${String(Math.floor(t.minute / 60)).padStart(2, "0")}:${String(t.minute % 60).padStart(2, "0")}` : t.on === "depeg" ? "ausd drifts off the dollar" : "at a set time";
+  const a = r.then[0];
+  const act = a.do === "moveStop" ? "move the stop to entry" : a.do === "tightenStop" ? `tighten the stop ${a.byPct}%` : a.do === "close" ? (a.sharePct >= 100 ? "close it" : `close ${a.sharePct}%`)
+    : a.do === "closeAll" ? "close everything" : a.do === "addMargin" ? `add ${a.ausd} ausd` : a.do === "open" ? `open a ${a.side}` : a.do === "cancel" ? "cancel a rule" : "tell me";
+  return `when ${on}, ${act}`;
+}
+
+function describe(r: Rule, live?: RuleRow["live"]): { glyph: string; title: string; line: string } {
   if (r.kind === "guard") return { glyph: "shield", title: "guard", line: `adds margin under ${r.threshold}%, back to ${r.target}%` };
+  if (r.kind === "stop" && live && live.px !== r.px) return { glyph: "crosshairs", title: `hidden stop at ${at(live.px, live.px)}`, line: `moved from ${at(r.px, r.px)}${r.trail ? `, trailing ${r.trail.pct}%` : ""}, backstop ${at(live.backstopPx, live.px)}` };
+  if (r.kind === "stop" && (r.trail || r.breakeven)) return { glyph: "crosshairs", title: `hidden stop at ${at(r.px, r.px)}`, line: [r.trail && `trails ${r.trail.pct}%`, r.breakeven && "to entry after take profit 1", `backstop ${at(r.backstopPx, r.px)}`].filter(Boolean).join(", ") };
   if (r.kind === "stop") return { glyph: "crosshairs", title: `hidden stop at ${at(r.px, r.px)}`, line: `${r.slices} slices, never ${r.floor < r.px ? "below" : "above"} ${at(r.floor, r.px)}, backstop ${at(r.backstopPx, r.px)}` };
   if (r.kind === "ladder") return { glyph: "flame", title: "take profit ladder", line: r.steps.map((s) => `${s.share}% at ${at(s.px, s.px)}`).join(" · ") };
   if (r.kind === "funding") return { glyph: "magic-wand-sparkle", title: "close if funding turns", line: `never more than ${r.floorPct}% from the price` };
   if (r.kind === "entry") return { glyph: "flame", title: `open a ${r.side} at ${at(r.px, r.px)}`, line: `${r.margin} ausd at ${r.leverage}x, never ${r.side === "long" ? "above" : "below"} ${at(r.limit, r.px)}` };
+  if (r.kind === "when") return { glyph: "magic-wand-sparkle", title: "when this happens", line: whenLine(r) };
   return { glyph: "bell", title: "price alert", line: `when it goes above ${r.above}` };
 }
 
@@ -62,7 +77,7 @@ function Switch({ on, busy, onPress }: { on: boolean; busy: boolean; onPress: ()
 
 // a ladder lives on perpl as trigger orders, pausing it on pehra would change nothing, so it has no switch
 function Card({ r, index, busy, onToggle, onRemove }: { r: RuleRow; index: number; busy: boolean; onToggle: () => void; onRemove: () => void }) {
-  const d = describe(r.rule), h = holder[r.mode];
+  const d = describe(r.rule, r.live), h = holder[r.mode];
   return (
     <Animated.View entering={FadeInDown.delay(80 * index).duration(260).reduceMotion(ReduceMotion.System)} style={{ backgroundColor: "white", borderRadius: 24, borderWidth: 1, borderColor: line, padding: 16, gap: 12 }}>
       <View style={{ flexDirection: "row", gap: 12 }}>

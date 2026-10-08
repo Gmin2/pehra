@@ -1,11 +1,11 @@
 // the app's side of rules: every write is signed by the passkey over the same plain lines the screen
 // shows (packages/perpl/src/ruleSign.ts), the server rebuilds them before it accepts anything
-import { ruleMessage, summary, SIGN_TTL_MS, type Rule, type SignedAction, type Report, type Profile } from '@pehra/perpl'
+import { Rule as RuleSchema, ruleMessage, summary, SIGN_TTL_MS, type Rule, type SignedAction, type Report, type Profile } from '@pehra/perpl'
 import type { Session } from './account'
 import { API } from './trade'
 import { authedGet } from './session'
 
-export type RuleRow = { id: string; kind: Rule['kind']; state: string; mode: 'pehra' | 'perpl' | 'both'; by: string; fires: number; rule: Rule; lastRun: number | null; created: number }
+export type RuleRow = { id: string; kind: Rule['kind']; state: string; mode: 'pehra' | 'perpl' | 'both'; by: string; fires: number; rule: Rule; live?: { px: number; floor: number; backstopPx: number }; lastRun: number | null; created: number }
 
 async function signed(s: Session, a: SignedAction) {
   const nonce = Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, '0')).join('')
@@ -24,7 +24,9 @@ async function post<T>(path: string, body: unknown): Promise<T> {
 // the line the confirm sheet shows is the line that gets signed
 export const describeRule = (r: Rule, symbol: string) => summary(r, symbol)
 
-export async function createRule(s: Session, rule: Rule, symbol: string) {
+export async function createRule(s: Session, draft: Rule, symbol: string) {
+  // the server rebuilds the signed message from the parsed rule, so the phone signs the parsed one too
+  const rule = RuleSchema.parse(draft)
   return post<{ rule: { id: string; state: string; mode: string } }>(`/rules/${s.address}`, { rule, ...(await signed(s, { action: 'create', rule, symbol })) })
 }
 

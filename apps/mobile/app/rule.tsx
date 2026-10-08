@@ -19,18 +19,44 @@ import { Segmented, Tray } from "../src/ui/Trade";
 import { useApp } from "../src/ui/store";
 import { useAccount, useMarkets } from "../src/live";
 import { useCandles, type Point } from "../src/candles";
-import { createRule, describeRule, replayRule, type ReplayResult } from "../src/rules";
+import { createRule, describeRule, replayRule, listRules, type ReplayResult, type RuleRow } from "../src/rules";
 import { updateGuard } from "../src/guard";
 import { signIn, type Session } from "../src/account";
 import { log } from "../src/log";
 import { violet, ink, muted, green, red, faint, well } from "../src/ui/Position";
 
 const line = "#EEEAF2", mist = "#EFE5FF", deep = "#7C3AED", pink = "#FBE4E6";
-const TABS = ["stop", "take profit", "guard", "funding"] as const;
+const TABS = ["stop", "take profit", "guard", "funding", "when"] as const;
 const SHORT: Record<string, string> = { "take profit": "profit" };
 type Tab = (typeof TABS)[number];
 type Step = { px: number; share: number };
-type Draft = { px: number; floor: number; backstop: number; slices: number; steps: Step[]; threshold: number; target: number; maxDay: number; floorPct: number };
+type Draft = {
+  px: number; floor: number; backstop: number; slices: number; steps: Step[]; threshold: number; target: number; maxDay: number; floorPct: number
+  // the stop can trail the best price and move to entry after a take profit step
+  trail: boolean; trailPct: number; breakeven: boolean
+  // a chain: one trigger and one action, picked from the lists below
+  on: WhenOn; onPx: number; onPct: number; onMinute: number; act: WhenDo; actPct: number; actAusd: number
+};
+type WhenOn = "step1" | "stopSold" | "above" | "below" | "near" | "funding" | "daily";
+type WhenDo = "breakeven" | "tighten" | "closeHalf" | "closeAll" | "add" | "notify";
+const ONS: { key: WhenOn; label: string; needs?: "ladder" | "stop" }[] = [
+  { key: "step1", label: "take profit step 1 fills", needs: "ladder" },
+  { key: "stopSold", label: "the stop sells", needs: "stop" },
+  { key: "above", label: "the price goes above" },
+  { key: "below", label: "the price goes below" },
+  { key: "near", label: "it gets close to liquidation" },
+  { key: "funding", label: "funding flips" },
+  { key: "daily", label: "every day at" },
+];
+const DOS: { key: WhenDo; label: string; needs?: "stop" }[] = [
+  { key: "breakeven", label: "move my stop to entry", needs: "stop" },
+  { key: "tighten", label: "tighten my stop", needs: "stop" },
+  { key: "closeHalf", label: "close half" },
+  { key: "closeAll", label: "close it all" },
+  { key: "add", label: "add margin" },
+  { key: "notify", label: "just tell me" },
+];
+const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 type Field = { key: string; label: string; value: number; kind: "price" | "int" | "pct" | "ausd" };
 
 // prices kept to four significant figures, what a person reads and types
@@ -38,6 +64,20 @@ function rounder(mark: number, decimals: number) {
   const e = Math.floor(Math.log10(mark || 1)) - 3;
   const dec = Math.min(decimals, Math.max(0, -e));
   return { dec, round: (v: number) => Number(v.toFixed(dec)) };
+}
+
+function Toggle({ on, onPress, title, sub, disabled, onNumber }: { on: boolean; onPress: () => void; title: string; sub: string; disabled?: boolean; onNumber?: () => void }) {
+  return (
+    <Tap onPress={disabled ? undefined : onPress} innerStyle={{ flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 11, opacity: disabled ? 0.45 : 1 }}>
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text onPress={onNumber} style={{ fontSize: 14.5, fontWeight: "700", color: ink }}>{title}</Text>
+        <Text style={{ fontSize: 12, fontWeight: "500", color: muted }}>{sub}</Text>
+      </View>
+      <View style={{ width: 44, height: 26, borderRadius: 13, backgroundColor: on ? violet : line, justifyContent: "center", paddingHorizontal: 3 }}>
+        <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: "white", alignSelf: on ? "flex-end" : "flex-start" }} />
+      </View>
+    </Tap>
+  );
 }
 
 function Chip({ text, onPress, bad }: { text: string; onPress: () => void; bad?: boolean }) {
@@ -177,6 +217,14 @@ export default function RuleBuilder() {
   const [replay, setReplay] = useState<ReplayResult | null>(null);
   const [replayErr, setReplayErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [mine, setMine] = useState<RuleRow[]>([]);
+  useEffect(() => {
+    if (!address) return;
+    listRules(address).then((rs) => setMine(rs.filter((r) => r.rule.pid === pid && ["armed", "held", "paused", "firing", "working"].includes(r.state)))).catch(() => {});
+  }, [address, pid]);
+  const ladderId = mine.find((r) => r.rule.kind === "ladder")?.id ?? null;
+  const stopId = mine.find((r) => r.rule.kind === "stop")?.id ?? null;
+  const [picking, setPicking] = useState<"on" | "act" | null>(null);
 
   // starting numbers from the price now: a stop 5% away, take profit 5% and 10% past entry or the price
   useEffect(() => {
@@ -194,13 +242,35 @@ export default function RuleBuilder() {
       px: round(num(given.px, px)), floor: round(num(given.floor, floor)), backstop: round(num(given.bs, backstop)), slices: 4,
       steps: steps?.length ? steps : [{ px: round(base * (1 + dir * 0.05)), share: 50 }, { px: round(base * (1 + dir * 0.1)), share: 50 }],
       threshold: num(given.th, g?.thresholdPct ?? 30), target: num(given.tg, g?.targetPct ?? 45), maxDay: num(given.max, g?.maxAddAusdPerDay ?? 50), floorPct: 1,
+      trail: false, trailPct: 3, breakeven: false,
+      on: "above", onPx: round(mark * (1 + dir * 0.05)), onPct: 10, onMinute: 9 * 60, act: "notify", actPct: 30, actAusd: 5,
     });
   }, [h, mark, draft]);
 
   const rule: Rule | null = useMemo(() => {
     if (!draft || !h) return null;
     const base = { v: 1 as const, id: "", pid, mkt: h.mkt, forMs: 0 };
-    if (tab === "stop") return { ...base, id: `stop-${pid}`, kind: "stop", px: draft.px, floor: draft.floor, backstopPx: draft.backstop, slices: draft.slices };
+    if (tab === "stop") return {
+      ...base, id: `stop-${pid}`, kind: "stop", px: draft.px, floor: draft.floor, backstopPx: draft.backstop, slices: draft.slices,
+      ...(draft.trail ? { trail: { pct: draft.trailPct, minMovePct: 0.5 } } : {}),
+      ...(draft.breakeven && ladderId ? { breakeven: { ladder: ladderId, afterStep: 1 } } : {}),
+    };
+    if (tab === "when") {
+      const on = draft.on === "step1" && ladderId ? { on: "step" as const, rule: ladderId, n: 1 }
+        : draft.on === "stopSold" && stopId ? { on: "stopSold" as const, rule: stopId }
+        : draft.on === "below" ? { on: "price" as const, dir: "below" as const, px: draft.onPx }
+        : draft.on === "near" ? { on: "distance" as const, belowPct: draft.onPct }
+        : draft.on === "funding" ? { on: "fundingFlip" as const }
+        : draft.on === "daily" ? { on: "daily" as const, minute: draft.onMinute, tz: -new Date().getTimezoneOffset() }
+        : { on: "price" as const, dir: "above" as const, px: draft.onPx };
+      const act = draft.act === "breakeven" && stopId ? { do: "moveStop" as const, rule: stopId, to: "entryPlusFees" as const }
+        : draft.act === "tighten" && stopId ? { do: "tightenStop" as const, rule: stopId, byPct: draft.actPct }
+        : draft.act === "closeHalf" ? { do: "close" as const, sharePct: 50, floorPct: 1 }
+        : draft.act === "closeAll" ? { do: "close" as const, sharePct: 100, floorPct: 1 }
+        : draft.act === "add" ? { do: "addMargin" as const, ausd: draft.actAusd }
+        : { do: "notify" as const, text: `${sym} ${side}: ${ONS.find((o) => o.key === draft.on)?.label ?? "your rule fired"}` };
+      return { ...base, id: `when-${pid}`, kind: "when", on, then: [act], ...(draft.on === "daily" ? { repeat: true } : {}) };
+    }
     if (tab === "take profit") return { ...base, id: `ladder-${pid}`, kind: "ladder", steps: draft.steps.map((s) => ({ px: s.px, share: s.share, floor: round(s.px * (1 - dir * 0.01)) })) };
     if (tab === "funding") return { ...base, id: `funding-${pid}`, kind: "funding", floorPct: draft.floorPct };
     return { ...base, id: `guard-${pid}`, kind: "guard", threshold: draft.threshold, target: draft.target, maxAddDay: draft.maxDay };
@@ -209,7 +279,7 @@ export default function RuleBuilder() {
 
   // replay after the numbers settle, never while a line is held
   useEffect(() => {
-    if (!rule || !address || dragging || (check && !check.ok) || rule.kind === "funding") return;
+    if (!rule || !address || dragging || (check && !check.ok) || rule.kind === "funding" || rule.kind === "when") return;
     let alive = true;
     setReplay(null);
     setReplayErr(null);
@@ -246,6 +316,12 @@ export default function RuleBuilder() {
     else if (key === "target") set({ target: Math.max(1, Math.min(100, Math.round(v))) });
     else if (key === "maxDay") set({ maxDay: Math.max(1, Math.round(v)) });
     else if (key === "floorPct") set({ floorPct: Math.max(0.1, Math.min(5, Math.round(v * 10) / 10)) });
+    else if (key === "trailPct") set({ trailPct: Math.max(0.2, Math.min(20, Math.round(v * 10) / 10)) });
+    else if (key === "onPx") set({ onPx: round(v) });
+    else if (key === "onPct") set({ onPct: Math.max(1, Math.min(90, Math.round(v))) });
+    else if (key === "onMinute") set({ onMinute: Math.max(0, Math.min(1439, Math.round(v))) });
+    else if (key === "actPct") set({ actPct: Math.max(5, Math.min(90, Math.round(v))) });
+    else if (key === "actAusd") set({ actAusd: Math.max(1, Math.min(100, Math.round(v))) });
     else if (key.startsWith("step")) {
       const [, i, what] = key.split(":");
       setDraft((d) => d && { ...d, steps: d.steps.map((s, j) => (j === Number(i) ? (what === "px" ? { ...s, px: round(v) } : { ...s, share: Math.max(1, Math.min(100, Math.round(v))) }) : s)) });
@@ -273,7 +349,7 @@ export default function RuleBuilder() {
       ? [{ key: "px", label: "stop", value: draft.px, color: violet }, { key: "floor", label: "floor", value: draft.floor, color: deep, dash: true }, { key: "backstop", label: "backstop", value: draft.backstop, color: green }]
       : tab === "take profit"
         ? draft.steps.map((s, i) => ({ key: `step:${i}:px`, label: `${s.share}% at`, value: s.px, color: i ? green : violet }))
-        : tab === "funding"
+        : tab === "funding" || tab === "when"
           ? []
           : [{ key: "threshold", label: "steps in", value: stepsIn(draft.threshold), color: violet }];
   const onMove = (key: string, v: number) => (key === "threshold" ? set({ threshold: Math.max(1, Math.min(draft.target - 1, fromStepsIn(v))) }) : apply(key, v));
@@ -295,7 +371,7 @@ export default function RuleBuilder() {
       } else {
         const r = await createRule(await session(), { ...rule, id: `${rule.kind}-${pid}-${Date.now().toString(36)}` }, h.symbol);
         log(`rule ${r.rule.id} ${r.rule.state} (${r.rule.mode})`);
-        a.toast(rule.kind === "stop" ? "the stop is armed" : rule.kind === "funding" ? "pehra is watching funding" : "the ladder is on perpl");
+        a.toast(rule.kind === "stop" ? "the stop is armed" : rule.kind === "funding" ? "pehra is watching funding" : rule.kind === "when" ? "pehra is watching for it" : "the ladder is on perpl");
       }
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       // back to the list the builder came from, or onto it when the builder was opened directly
@@ -370,9 +446,28 @@ export default function RuleBuilder() {
             </>
           )}
         </Animated.View>
+        {tab === "stop" && (
+          <View style={{ marginTop: 12, backgroundColor: "white", borderRadius: 22, borderWidth: 1, borderColor: line, paddingVertical: 4 }}>
+            <Toggle on={draft.trail} onPress={() => set({ trail: !draft.trail })} title={`trail it ${draft.trailPct}% behind the best price`} sub="it follows the price up and never loosens" onNumber={() => open({ key: "trailPct", label: "how far behind", value: draft.trailPct, kind: "pct" })} />
+            <Toggle on={draft.breakeven && !!ladderId} disabled={!ladderId} onPress={() => ladderId && set({ breakeven: !draft.breakeven })} title="move to entry after take profit 1" sub={ladderId ? "once the first step fills, the rest can't turn into a loss" : "add a take profit ladder first"} />
+          </View>
+        )}
+        {tab === "when" && (
+          <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", paddingHorizontal: 4, marginTop: 4, columnGap: 4 }}>
+            <Words>when</Words>
+            <Chip text={ONS.find((o) => o.key === draft.on)?.label ?? ""} onPress={() => setPicking("on")} />
+            {(draft.on === "above" || draft.on === "below") && <Chip text={fmt(draft.onPx)} bad={!!bad} onPress={() => open({ key: "onPx", label: "the price", value: draft.onPx, kind: "price" })} />}
+            {draft.on === "near" && <><Words>within</Words><Chip text={`${draft.onPct}%`} onPress={() => open({ key: "onPct", label: "of liquidation", value: draft.onPct, kind: "pct" })} /></>}
+            {draft.on === "daily" && <Chip text={hhmm(draft.onMinute)} onPress={() => open({ key: "onMinute", label: "minutes after midnight", value: draft.onMinute, kind: "int" })} />}
+            <Words>then</Words>
+            <Chip text={DOS.find((o) => o.key === draft.act)?.label ?? ""} onPress={() => setPicking("act")} />
+            {draft.act === "tighten" && <><Words>by</Words><Chip text={`${draft.actPct}%`} onPress={() => open({ key: "actPct", label: "closer to the price", value: draft.actPct, kind: "pct" })} /></>}
+            {draft.act === "add" && <Chip text={`${draft.actAusd} ausd`} onPress={() => open({ key: "actAusd", label: "ausd to add", value: draft.actAusd, kind: "ausd" })} />}
+          </View>
+        )}
         {bad && <Text style={{ marginTop: 6, paddingHorizontal: 8, fontSize: 12.5, fontWeight: "600", color: red }}>{bad}</Text>}
 
-        {tab !== "funding" && (
+        {tab !== "funding" && tab !== "when" && (
         <>
         <View style={{ marginTop: 16, backgroundColor: "white", borderRadius: 26, borderWidth: 1, borderColor: line, padding: 12 }}>
           <LevelChart points={points} mark={mark} liq={h.liq} side={side} lines={lines} fmt={fmt} onMove={(k, v) => { if (!dragging) setDragging(true); onMove(k, v); }} onEnd={() => setDragging(false)} />
@@ -381,7 +476,12 @@ export default function RuleBuilder() {
         </>
         )}
 
-        {tab === "funding" ? (
+        {tab === "when" ? (
+          <View style={{ marginTop: 18, backgroundColor: mist, borderRadius: 22, padding: 16, gap: 4 }}>
+            <Text style={{ fontSize: 12.5, fontWeight: "600", color: violet }}>how it runs</Text>
+            <Text style={{ fontSize: 13, fontWeight: "500", color: ink }}>pehra watches for it every block, and on the clock for daily ones. it acts once, then this rule is done{draft.on === "daily" ? ", except a daily one, that runs every day" : ""}. every step it takes lands on proof.</Text>
+          </View>
+        ) : tab === "funding" ? (
           <View style={{ marginTop: 18, backgroundColor: mist, borderRadius: 22, padding: 16, gap: 4 }}>
             <Text style={{ fontSize: 12.5, fontWeight: "600", color: violet }}>funding on {sym} now</Text>
             <Text style={{ fontFamily: "Manrope_700Bold", fontSize: 23, color: ink }}>{m ? `${m.fundingRate >= 0 ? "+" : "−"}${Math.abs(m.fundingRate * 100).toFixed(4)}%` : "—"}</Text>
@@ -434,6 +534,24 @@ export default function RuleBuilder() {
           {tab === "guard" ? "the guard covers every position on this account" : rule ? `you sign: ${describeRule(rule, h.symbol)}` : ""}
         </Text>
       </View>
+
+      <Tray visible={!!picking} onClose={() => setPicking(null)}>
+        {picking && (
+          <View style={{ gap: 6 }}>
+            <Text style={{ fontSize: 20, fontWeight: "700", color: ink, paddingHorizontal: 4, marginBottom: 6 }}>{picking === "on" ? "when" : "then"}</Text>
+            {(picking === "on" ? ONS : DOS).map((o) => {
+              const missing = o.needs === "ladder" ? !ladderId : o.needs === "stop" ? !stopId : false;
+              const on = picking === "on" ? draft.on === o.key : draft.act === o.key;
+              return (
+                <Tap key={o.key} onPress={missing ? undefined : () => { set(picking === "on" ? { on: o.key as WhenOn } : { act: o.key as WhenDo }); setPicking(null); }} innerStyle={{ height: 52, borderRadius: 18, paddingHorizontal: 16, backgroundColor: on ? mist : "white", borderWidth: 1, borderColor: line, flexDirection: "row", alignItems: "center", justifyContent: "space-between", opacity: missing ? 0.4 : 1 }}>
+                  <Text style={{ fontSize: 15, fontWeight: "700", color: on ? violet : ink }}>{o.label}</Text>
+                  {missing && <Text style={{ fontSize: 11.5, fontWeight: "600", color: faint }}>{o.needs === "ladder" ? "needs a take profit" : "needs a stop"}</Text>}
+                </Tap>
+              );
+            })}
+          </View>
+        )}
+      </Tray>
 
       <Tray visible={!!editing} onClose={() => setEditing(null)}>
         {editing && (

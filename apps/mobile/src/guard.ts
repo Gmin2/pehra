@@ -15,7 +15,7 @@ export type GuardEvent = {
   text: string; distancePct?: number; addAusd?: number; price?: number; amount?: number; pnl?: number
   side?: string; lv?: number; before?: Snapshot; after?: Snapshot; tx?: string
   // which rule acted, when one did
-  rule?: 'stop' | 'backstop' | 'step' | 'guard' | 'floor' | 'entry' | 'funding' | 'sl' | 'tp'
+  rule?: 'stop' | 'backstop' | 'step' | 'guard' | 'floor' | 'entry' | 'funding' | 'sl' | 'tp' | 'move' | 'notify'
 }
 export type GuardState = { enrolled: boolean; live?: boolean; forwarding?: boolean | null; enrolledAt?: number | null; balance?: number; settings?: { enabled: boolean; thresholdPct: number; targetPct: number; minAddAusd: number; maxAddAusdPerDay: number }; health?: PositionHealth[]; events?: GuardEvent[] }
 

@@ -150,22 +150,36 @@ export class Engine {
         let placed: number | null = null
         try { placed = await this.placeBackstop(r, next.backstopPx) } catch (e) {
           if (!(e instanceof Error && e.message === 'MaximumAccountOrders') || !order) throw e
-          await ts.cancel(order)
-          q.orderState.run('cancelled', old.size, r.id, `backstop#${old.oid}`)
+          await this.cancelOld(r, ts, old)
           placed = await this.placeBackstop(r, next.backstopPx)
         }
         if (placed === null) {
           // the new one did not land, the old one stays the backstop
           db.prepare(`update orders set step = 'backstop', state = 'resting' where rule = ? and step = ?`).run(r.id, `backstop#${old.oid}`)
-        } else if (order && order.st === 8) {
-          await ts.cancel(order)
-          q.orderState.run('cancelled', old.size, r.id, `backstop#${old.oid}`)
-        }
+        } else await this.cancelOld(r, ts, old)
       }
-      writeRun({ owner: r.owner, rule: r.id, kind: 'note', body: { text: why, move: { from, to: next } } })
-      this.deps.emit(r.owner, { kind: 'bracket', rule: 'move', pid: r.rule.pid, symbol: m?.symbol, price: next.px, text: `${why}: stop ${from.px} to ${next.px}, backstop ${from.backstopPx} to ${next.backstopPx}` })
-      this.deps.log(`rule ${r.id} moved ${from.px} -> ${next.px}, backstop ${from.backstopPx} -> ${next.backstopPx}`)
+      // a trailing stop moved its hidden levels already, the backstop it rested at is the real before
+      const before = { ...from, backstopPx: old?.px ?? from.backstopPx }
+      writeRun({ owner: r.owner, rule: r.id, kind: 'note', body: { text: why, move: { from: before, to: next } } })
+      this.deps.emit(r.owner, { kind: 'bracket', rule: 'move', pid: r.rule.pid, symbol: m?.symbol, price: next.px, text: `${why}: stop ${before.px} to ${next.px}, backstop ${before.backstopPx} to ${next.backstopPx}` })
+      this.deps.log(`rule ${r.id} moved ${before.px} -> ${next.px}, backstop ${before.backstopPx} -> ${next.backstopPx}`)
     } finally { this.moving.delete(r.id) }
+  }
+
+  // the backstop a move replaced comes off perpl. it is only called cancelled when perpl says so (st 5),
+  // tried twice, else left as an orphan that reconcile keeps cancelling until it is gone
+  private async cancelOld(r: Stored, ts: TradingSocket, old: OrderRow) {
+    const step = `backstop#${old.oid}`
+    for (let k = 0; k < 2; k++) {
+      const order = ts.orders.get(old.oid)
+      if (!order || order.st !== 8) { q.orderState.run(order?.st === 10 ? 'fired' : 'gone', old.size, r.id, step); return }
+      const res = await ts.cancel(order).catch(() => null)
+      if (res?.order?.st === 5) { q.orderState.run('cancelled', old.size, r.id, step); return }
+      this.deps.log(`rule ${r.id} cancel of the old backstop ${old.oid} refused: ${res?.order ? Reason[res.order.sr] ?? res.order.sr : 'no answer'}`)
+      await new Promise(res => setTimeout(res, 800))
+    }
+    q.orderState.run('orphan', old.size, r.id, step)
+    writeRun({ owner: r.owner, rule: r.id, kind: 'reject', body: { text: 'the old backstop did not cancel, reconcile keeps trying', oid: old.oid } })
   }
 
   // what a chain may look at for this account right now
@@ -773,6 +787,15 @@ export class Engine {
       settle(it.id, state, { fill: state === 'filled' ? it.size ?? undefined : undefined, stamps: { ...JSON.parse(it.stamps), reconciled: Date.now() } })
       writeRun({ owner, rule: it.rule, kind: 'reconcile', body: { intent: it.id, was: it.state, now: state, why } })
       this.deps.log(`reconcile ${it.id}: ${it.state} -> ${state}, ${why}`)
+    }
+    // old backstops a move could not cancel come off now, whatever rule they belonged to
+    for (const row of db.prepare(`select * from orders where owner = ? and state = 'orphan'`).all(owner) as OrderRow[]) {
+      const order = ts.orders.get(row.oid)
+      if (!order || order.st !== 8) { q.orderState.run('gone', row.size, row.rule, row.step); continue }
+      void this.lane(owner, async () => {
+        const res = await ts.cancel(order).catch(() => null)
+        if (res?.order?.st === 5) { q.orderState.run('cancelled', row.size, row.rule, row.step); writeRun({ owner, rule: row.rule, kind: 'reconcile', body: { orphan: row.oid, why: 'old backstop cancelled' } }) }
+      }).catch(() => {})
     }
     // a rule caught mid fire by a crash goes back to watching once its intents are settled
     for (const r of this.rules.values()) {
