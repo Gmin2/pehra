@@ -11,12 +11,12 @@ db.exec(`create table if not exists alert_prefs (owner text primary key, body te
 db.exec(`create table if not exists alert_sent (key text primary key, owner text not null, at integer not null)`)
 db.exec(`create table if not exists alert_log (id integer primary key autoincrement, owner text not null, kind text not null, title text not null, body text not null, at integer not null, held integer not null default 0)`)
 
-export const KINDS = ['near_liq', 'acted', 'filled', 'liquidated', 'funding', 'depeg'] as const
+export const KINDS = ['near_liq', 'acted', 'filled', 'liquidated', 'funding', 'depeg', 'watched'] as const
 export type AlertKind = (typeof KINDS)[number]
 // quiet hours are minutes of the phone's local day, tz is the phone's offset from utc in minutes
 export type Prefs = { on: Record<AlertKind, boolean>; quiet: { from: number; to: number } | null; tz: number }
 
-const DEFAULTS: Prefs = { on: { near_liq: true, acted: true, filled: true, liquidated: true, funding: false, depeg: true }, quiet: null, tz: 0 }
+const DEFAULTS: Prefs = { on: { near_liq: true, acted: true, filled: true, liquidated: true, funding: false, depeg: true, watched: true }, quiet: null, tz: 0 }
 const REPEAT_MS = 4 * 3600_000
 const SLICE_MS = 8000
 const URGENT: AlertKind[] = ['near_liq', 'liquidated']

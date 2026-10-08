@@ -282,6 +282,7 @@ export class Guard {
   }
 
   marketOf(mkt: number) { return this.ctx?.markets.find(m => m.id === mkt) }
+  openMarkets() { return this.ctx?.markets.filter(m => m.config.is_open) ?? [] }
 
   // side, size and leverage of a live position, what replay opens at the start of its window
   startOf(address: string, pid: number): { side: 'long' | 'short'; size: number; leverage: number } | null {

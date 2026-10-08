@@ -220,6 +220,9 @@ export default function Onboarding() {
               <View style={{ paddingHorizontal: 24, paddingTop: 26, gap: 12 }}>
                 <ChoiceCard icon="plus" color={accent} title="create account" subtitle="make a passkey and open a funded testnet account." onPress={() => next("terms")} />
                 <ChoiceCard icon="key" color={ink} title="sign in" subtitle="use the passkey you already made on this or another phone." onPress={() => create(true)} />
+                <Tap onPress={() => a.go("/watch")} innerStyle={{ alignItems: "center", paddingVertical: 10 }}>
+                  <Text style={{ fontSize: 14, fontWeight: "600", color: accent }}>just looking? watch any trader, no account needed</Text>
+                </Tap>
               </View>
             </View>
           )}

@@ -220,6 +220,11 @@ export default function Portfolio() {
         </View>
         {tab === "markets" ? (
           <Animated.View key="markets" entering={FadeIn.duration(160).reduceMotion(ReduceMotion.System)}>
+            <Tap onPress={() => a.go("/watch")} innerStyle={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "white", borderRadius: 20, borderWidth: 1, borderColor: "#EEEAF2", paddingHorizontal: 14, paddingVertical: 11, marginBottom: 10 }}>
+              <Glyph name="gauge" size={22} />
+              <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: ink }}>watch any trader</Text>
+              <Chevron />
+            </Tap>
             <View style={{ marginBottom: 6 }}>
               <Segmented options={SORTS} value={sort} onChange={setSort} dark={false} />
             </View>

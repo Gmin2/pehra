@@ -73,3 +73,40 @@ export type ManyResult = ManyReport & { days: number; ms: number }
 export async function replayMany(address: string, rules: Rule[], entry: { side: 'long' | 'short'; margin: number; leverage: number } | null, days = 30) {
   return post<ManyResult>('/replay', { address, rules, entry, days })
 }
+
+// a recipe as a link: the server keeps which recipe, the market and the sizes, the link is a short id
+export const LINK_HOST = 'https://pehra-passkeys.vercel.app'
+export type SharedRecipe = { id: string; recipe: string; symbol: string; margin: number; leverage: number; author: string; created: number; copies: number; name: string; blurb: string; needs: 'position' | 'none' }
+export async function shareRecipe(address: string, s: { recipe: string; symbol: string; margin: number; leverage: number }) {
+  const { authedPost } = await import('./session')
+  const r = await authedPost<{ id: string }>('/recipes', address, { address, ...s })
+  return { id: r.id, url: `${LINK_HOST}/r/${r.id}` }
+}
+export async function readShared(id: string): Promise<SharedRecipe> {
+  const r = await fetch(`${API}/recipes/${id}`)
+  const j = (await r.json()) as SharedRecipe & { error?: string }
+  if (!r.ok) throw new Error(j.error ?? `recipe ${r.status}`)
+  return j
+}
+export const markCopied = (id: string) => fetch(`${API}/recipes/${id}/copied`, { method: 'POST' }).catch(() => null)
+
+// any address: positions from the chain, recent trades from the indexer, how it trades, and whether it
+// runs pehra. the watch list lives on the server so a watched account can push
+export type WatchedPos = { pid: number; mkt: number; symbol: string; side: 'long' | 'short'; entry: number; mark: number; liq: number; distance: number; collateral: number; size: number; pnl: number }
+export type WatchRead = { address: string; accountId: number | null; balance: number; positions: WatchedPos[]; recent: { kind: string; perpId: string | null; side: string | null; timestamp: number; tx?: string }[]; profile: Profile; onPehra: boolean; receipts: number; stopsKnown: false }
+export async function readWatch(address: string): Promise<WatchRead> {
+  const r = await fetch(`${API}/watch/${address}`)
+  const j = (await r.json()) as WatchRead & { error?: string }
+  if (!r.ok) throw new Error(j.error ?? `watch ${r.status}`)
+  return j
+}
+export async function setWatch(owner: string, target: string, on: boolean) {
+  const { authedPost } = await import('./session')
+  return authedPost<{ watching: { target: string; created: number }[] }>(on ? '/watch' : '/unwatch', owner, { address: owner, target })
+}
+export async function myWatches(owner: string) {
+  const { authedGet } = await import('./session')
+  const r = await authedGet(`/watches/${owner}`, owner)
+  if (!r.ok) return []
+  return ((await r.json()) as { watching: { target: string; created: number }[] }).watching
+}

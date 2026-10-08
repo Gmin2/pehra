@@ -2,7 +2,7 @@
 // phone's offset goes with every write so the server reads the same clock
 import { authedGet, authedPost } from './session'
 
-export const ALERT_KINDS = ['near_liq', 'acted', 'filled', 'liquidated', 'funding', 'depeg'] as const
+export const ALERT_KINDS = ['near_liq', 'acted', 'filled', 'liquidated', 'funding', 'depeg', 'watched'] as const
 export type AlertKind = (typeof ALERT_KINDS)[number]
 export type AlertPrefs = { on: Record<AlertKind, boolean>; quiet: { from: number; to: number } | null; tz: number }
 

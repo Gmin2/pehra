@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>a pehra recipe</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root { --paper: #FAF8F2; --ink: #28243E; --muted: #706A7D; --violet: #9E4DFD; --mist: #EFE5FF; --line: #EEEAF2; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: Manrope, system-ui, sans-serif; }
+  main { max-width: 440px; margin: 0 auto; padding: 48px 20px; }
+  .by { color: var(--violet); font-weight: 700; font-size: 14px; }
+  h1 { font-size: 30px; line-height: 1.15; margin: 8px 0 12px; letter-spacing: -0.5px; }
+  p { color: var(--muted); font-size: 15px; line-height: 1.5; margin: 0 0 24px; }
+  .card { background: white; border: 1px solid var(--line); border-radius: 24px; padding: 18px; margin-bottom: 20px; }
+  a.btn { display: block; text-align: center; text-decoration: none; padding: 17px; border-radius: 30px; font-weight: 600; font-size: 16px; margin-bottom: 10px; }
+  .main { background: var(--ink); color: white; }
+  .soft { background: var(--mist); color: var(--violet); }
+  small { color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="by" id="by">a pehra recipe</div>
+  <h1 id="name">rules that trade for you</h1>
+  <p id="blurb">open it in pehra and arm it with your own fingerprint. it runs on your own account, your money never leaves it.</p>
+  <div class="card"><small id="meta">monad testnet · perpl</small></div>
+  <a class="btn main" id="open" href="#">open in pehra</a>
+  <a class="btn soft" href="https://pehra-eight.vercel.app">get the app</a>
+  <small>pehra is the automation layer of monad, through perpl.</small>
+</main>
+<script>
+  // the api that holds shared recipes, set when the server is hosted
+  const API = window.PEHRA_API || 'https://api.pehra.trade'
+  const id = location.pathname.split('/').filter(Boolean).pop()
+  document.getElementById('open').href = 'pehra://r/' + id
+  fetch(API + '/recipes/' + id).then(r => r.ok ? r.json() : null).then(s => {
+    if (!s) return
+    document.getElementById('by').textContent = 'shared by ' + s.author
+    document.getElementById('name').textContent = s.name
+    document.getElementById('blurb').textContent = s.blurb
+    document.getElementById('meta').textContent = s.symbol.toLowerCase() + ' · ' + s.margin + ' ausd at ' + s.leverage + 'x · copied ' + s.copies + ' times'
+  }).catch(() => {})
+</script>
+</body>
+</html>

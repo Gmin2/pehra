@@ -2,7 +2,7 @@
 // that position, without it the ones that open something or watch the whole account. each card lists
 // every sentence it signs and what the last 30 days say
 import { useEffect, useMemo, useState } from "react";
-import { View, ScrollView } from "react-native";
+import { View, ScrollView, Share } from "react-native";
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import Animated, { FadeInDown, ReduceMotion } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
@@ -12,7 +12,7 @@ import { Text } from "../src/ui/Text";
 import { Glyph } from "../src/ui/Glyph";
 import { useApp } from "../src/ui/store";
 import { useAccount, useMarkets } from "../src/live";
-import { createRule, createRules, describeRule, replayMany, type ManyResult } from "../src/rules";
+import { createRule, createRules, describeRule, replayMany, shareRecipe, markCopied, type ManyResult } from "../src/rules";
 import { signIn, type Session } from "../src/account";
 import { log } from "../src/log";
 import { ink, muted, green, red, faint, well } from "../src/ui/Position";
@@ -22,11 +22,14 @@ const GLYPH: Record<string, string> = { dip: "flame", breakout: "gauge", run: "c
 
 export default function Recipes() {
   const a = useApp(),
-    { pid: pidParam, symbol: symParam } = useLocalSearchParams<{ pid?: string; symbol?: string }>(),
-    pid = Number(pidParam) || 0,
+    // a shared link opens with only, from (the link), by (who shared it), margin and lev
+    { pid: pidParam, symbol: symParam, only, from, by, margin: marginParam, lev: levParam } = useLocalSearchParams<{ pid?: string; symbol?: string; only?: string; from?: string; by?: string; margin?: string; lev?: string }>(),
     address = a.stored?.address ?? a.session?.address ?? null,
     { account } = useAccount(address),
     markets = useMarkets();
+  const onlyRecipe = RECIPES.find((r) => r.id === only);
+  // a shared recipe that protects a position picks the first open one on its market
+  const pid = Number(pidParam) || (onlyRecipe?.needs === "position" ? account?.health?.find((x) => x.symbol === (symParam ?? "MON"))?.pid ?? 0 : 0);
   const h = account?.health?.find((x) => x.pid === pid);
   const m = markets.find((x) => (h ? x.id === h.mkt : x.symbol === (symParam ?? "MON")));
   const sym = (m?.symbol ?? "MON").toLowerCase();
@@ -34,12 +37,14 @@ export default function Recipes() {
   const [replays, setReplays] = useState<Record<string, ManyResult | "none">>({});
   const tag = useMemo(() => Date.now().toString(36), []);
 
-  const shown = RECIPES.filter((r) => (pid ? r.needs === "position" : r.needs === "none"));
+  const shown = onlyRecipe ? [onlyRecipe] : RECIPES.filter((r) => (pid ? r.needs === "position" : r.needs === "none"));
+  const margin = Number(marginParam) > 0 ? Number(marginParam) : 10;
+  const blocked = onlyRecipe?.needs === "position" && !h ? `${onlyRecipe.name} protects an open position. open a ${(symParam ?? "mon").toLowerCase()} position first` : null;
   const make = (r: Recipe): Rule[] | null => {
     if (!m) return null;
     try {
       return instantiate(r.id, {
-        mkt: m.id, mark: m.mark, tz: -new Date().getTimezoneOffset(), margin: 10, leverage: Math.min(3, Math.floor(m.market.config.initial_margin / 100)),
+        mkt: m.id, mark: m.mark, tz: -new Date().getTimezoneOffset(), margin, leverage: Math.min(Number(levParam) > 0 ? Number(levParam) : 3, Math.floor(m.market.config.initial_margin / 100)),
         pos: h ? { pid: h.pid, side: h.side === "short" ? "short" : "long", entry: h.entry, size: h.size } : undefined,
       }, tag);
     } catch { return null; }
@@ -71,7 +76,8 @@ export default function Recipes() {
       if (rules.length === 1) await createRule(s, rules[0], m.symbol);
       else await createRules(s, r.name, rules, m.symbol);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      log(`recipe ${r.id} armed, ${rules.length} rules`);
+      log(`recipe ${r.id} armed, ${rules.length} rules${from ? `, copied from ${from}` : ""}`);
+      if (from) void markCopied(from);
       a.toast(`${r.name} is on`);
       router.dismissTo(pid ? `/rules?pid=${pid}` : `/trade?symbol=${m.symbol}`);
     } catch (e) {
@@ -79,6 +85,15 @@ export default function Recipes() {
       a.toast(e instanceof Error ? e.message : "couldn’t arm it");
     }
     setBusy(null);
+  };
+
+  const share = async (r: Recipe) => {
+    if (!address || !m) return;
+    try {
+      const link = await shareRecipe(address, { recipe: r.id, symbol: m.symbol, margin, leverage: 3 });
+      log(`recipe ${r.id} shared as ${link.id}`);
+      await Share.share({ message: `${r.name} on pehra, the rules i run on ${sym}: ${link.url}` });
+    } catch (e) { a.toast("couldn’t make the link"); log(`share failed: ${e instanceof Error ? e.message : e}`); }
   };
 
   const heading = { fontFamily: "Manrope_700Bold", fontSize: 26, lineHeight: 34, color: ink, letterSpacing: -0.5 };
@@ -91,10 +106,12 @@ export default function Recipes() {
       </View>
       <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 28, gap: 12 }}>
         <View style={{ paddingHorizontal: 8, marginTop: 4, marginBottom: 6 }}>
+          {by && <Text style={{ fontSize: 13, fontWeight: "700", color: "#9E4DFD", marginBottom: 6 }}>shared by {by}</Text>}
           <Text style={heading}>{pid ? `a few rules for your ${sym} ${h?.side ?? ""},` : `a few rules that trade ${sym},`}</Text>
           <Text style={heading}>one fingerprint.</Text>
           <Text style={{ marginTop: 8, fontSize: 14, fontWeight: "500", color: muted }}>each one is written from the price now. you sign every line below it.</Text>
         </View>
+        {blocked && <Text style={{ paddingHorizontal: 8, fontSize: 13.5, fontWeight: "600", color: red }}>{blocked}</Text>}
         {shown.map((r, i) => {
           const rules = make(r);
           const rp = replays[r.id];
@@ -124,7 +141,12 @@ export default function Recipes() {
                     {rp.withRules.pnl >= rp.without.pnl ? "+" : "−"}{Math.abs(rp.withRules.pnl - rp.without.pnl).toFixed(2)} vs holding, last 30 days
                   </Text>
                 )}
-                <Tap onPress={busy || !rules ? undefined : () => arm(r)} innerStyle={{ height: 38, paddingHorizontal: 18, borderRadius: 19, backgroundColor: ink, flexDirection: "row", alignItems: "center", gap: 8, opacity: busy && busy !== r.id ? 0.4 : 1 }}>
+                {!from && (
+                  <Tap onPress={() => void share(r)} innerStyle={{ height: 38, paddingHorizontal: 14, borderRadius: 19, backgroundColor: "#F0EDF3", justifyContent: "center" }}>
+                    <Text style={{ fontSize: 13, fontWeight: "600", color: ink }}>share</Text>
+                  </Tap>
+                )}
+                <Tap onPress={busy || !rules || blocked ? undefined : () => arm(r)} innerStyle={{ height: 38, paddingHorizontal: 18, borderRadius: 19, backgroundColor: ink, flexDirection: "row", alignItems: "center", gap: 8, opacity: busy && busy !== r.id ? 0.4 : 1 }}>
                   <Glyph name="lock" size={16} color="white" />
                   <Text style={{ fontSize: 13.5, fontWeight: "600", color: "white" }}>{busy === r.id ? "arming…" : "arm"}</Text>
                 </Tap>
