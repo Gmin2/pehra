@@ -381,10 +381,15 @@ async function funding() {
     const rates = (await getContext('testnet')).markets.map(m => ({ id: m.id, symbol: m.symbol, rate: m.funding.rate }))
     guard.alerts.fundingTick(rates)
     guard.engine.funding(rates)
+    for (const r of rates) guard.engine.pollChains({ at: Date.now(), fundingRate: r.rate, mkt: r.id })
   } catch (e) { log(`alerts funding: ${e instanceof Error ? e.message : e}`) }
 }
 async function depeg() {
-  try { guard.alerts.depegTick((await pairState(pub)).price, Number(process.env.ALERT_DEPEG_BPS ?? 50)) }
+  try {
+    const price = (await pairState(pub)).price
+    guard.alerts.depegTick(price, Number(process.env.ALERT_DEPEG_BPS ?? 50))
+    guard.engine.pollChains({ at: Date.now(), ausdPrice: price })
+  }
   catch (e) { log(`alerts depeg: ${e instanceof Error ? e.message : e}`) }
 }
 setInterval(() => void liquidations(), 30_000)
@@ -394,6 +399,8 @@ setTimeout(() => void funding(), 15_000)
 setInterval(() => void depeg(), 5 * 60_000)
 setTimeout(() => void depeg(), 25_000)
 setInterval(() => guard.alerts.quietTick(), 60_000)
+// chains on the clock (a set time, every day) are checked twice a minute
+setInterval(() => guard.engine.pollChains({ at: Date.now() }), 30_000)
 
 setTimeout(() => void anchor(), 30_000)
 setInterval(() => void anchor(), ANCHOR_MS)

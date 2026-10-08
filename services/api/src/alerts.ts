@@ -132,6 +132,8 @@ export class Alerts {
       this.slices.set(k, { size: e.amount, cost: e.amount * e.price, n: 1, symbol: sym, side: e.side ?? '', timer })
       return
     }
+    if (e.rule === 'move') return void this.push(addr, 'acted', e.text.startsWith('trailing') ? `trail:${addr}:${e.pid}` : null, `i moved your ${sym} stop to ${px(e.price ?? 0)}`, `${e.text.split(':')[0]}.`, { pid: String(e.pid ?? '') })
+    if (e.rule === 'notify') return void this.push(addr, 'acted', null, 'your rule says', e.text, {})
     if (e.rule === 'sl') return void this.push(addr, 'acted', null, `your ${sym} stop fired on perpl`, `sold ${e.amount ?? ''} ${sym} at ${px(e.price ?? 0)}. the position is closed.`.replace('  ', ' '), { pid: String(e.pid ?? '') })
     if (e.rule === 'tp') return void this.push(addr, 'filled', null, `your ${sym} take profit filled`, `sold ${e.amount ?? ''} ${sym} at ${px(e.price ?? 0)} on perpl.`.replace('  ', ' '), { pid: String(e.pid ?? '') })
     if (e.rule === 'funding') return void this.push(addr, 'acted', null, `funding turned against your ${sym} ${e.side ?? ''}, i closed it`.replace(/\s+,/, ','), `sold ${e.amount} ${sym} at ${px(e.price ?? 0)}, before it started costing you.`, { pid: String(e.pid ?? '') })

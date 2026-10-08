@@ -132,11 +132,11 @@ export function validateEntry(r: Extract<Rule, { kind: 'entry' }>, live: EntryLi
 
 // a chain is checked for what can be known without the market: an action that needs a position has one,
 // the rules it points at are this account's (the route checks they exist)
-export function validateWhen(r: Extract<Rule, { kind: 'when' }>, live: Live | null): Check {
+export function validateWhen(r: Extract<Rule, { kind: 'when' }>, live: Live | null, mark = live?.mark): Check {
   const needsPos = r.then.some(a => a.do === 'close' || a.do === 'addMargin') || r.on.on === 'distance'
   if (needsPos && (r.pid === 0 || !live)) return no('this needs an open position')
   if (r.on.on === 'time' && r.on.at < Date.now()) return no('that time has already passed')
-  if (r.on.on === 'price' && live && (r.on.dir === 'above' ? r.on.px <= live.mark : r.on.px >= live.mark)) return no(`the price is ${live.mark} now, that has already happened`)
+  if (r.on.on === 'price' && mark !== undefined && (r.on.dir === 'above' ? r.on.px <= mark : r.on.px >= mark)) return no(`the price is ${mark} now, that has already happened`)
   return { ok: true }
 }
 

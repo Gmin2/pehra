@@ -23,7 +23,7 @@ export type GuardEvent = {
   side?: string; lv?: number; before?: Snapshot; after?: Snapshot; tx?: string
   // which rule acted, for alerts: the hidden stop, its backstop or a take profit step firing on perpl, the
   // guard adding margin, or the stop holding at its floor
-  rule?: 'stop' | 'backstop' | 'step' | 'guard' | 'floor' | 'entry' | 'funding' | 'sl' | 'tp'
+  rule?: 'stop' | 'backstop' | 'step' | 'guard' | 'floor' | 'entry' | 'funding' | 'sl' | 'tp' | 'move' | 'notify'
 }
 type Stored = { address: Hex; key: Enrolled; settings: GuardSettings; enrolledAt: number }
 
