@@ -3,9 +3,15 @@
 import * as Notifications from 'expo-notifications'
 import { Platform } from 'react-native'
 import { API } from './trade'
+import { log } from './log'
 
+// a push that lands while the app is open is shown the same as one in the background
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }),
+  handleNotification: async (n) => {
+    log(`push in foreground: ${n.request.content.title ?? ''}`)
+    return { shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }
+  },
+  handleError: (id, e) => log(`push not shown ${id}: ${e.message}`),
 })
 
 // three channels: guard is loud (close to liquidation, liquidated), alerts for what rules did, digest for the
@@ -24,8 +30,8 @@ export async function setupPush() {
 // the token again on every start without asking, it can change after an update or a restore
 export async function refreshPush(address: string) {
   const perm = await Notifications.getPermissionsAsync()
-  if (!perm.granted) return null
-  return registerPush(address, () => {})
+  if (!perm.granted) { log('push permission not granted'); return null }
+  return registerPush(address, log)
 }
 
 export async function registerPush(address: string, say: (s: string) => void) {
