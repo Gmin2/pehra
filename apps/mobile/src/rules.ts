@@ -3,6 +3,7 @@
 import { ruleMessage, summary, SIGN_TTL_MS, type Rule, type SignedAction, type Report, type Profile } from '@pehra/perpl'
 import type { Session } from './account'
 import { API } from './trade'
+import { authedGet } from './session'
 
 export type RuleRow = { id: string; kind: Rule['kind']; state: string; mode: 'pehra' | 'perpl' | 'both'; by: string; fires: number; rule: Rule; lastRun: number | null; created: number }
 
@@ -40,7 +41,7 @@ export async function pauseRules(s: Session) {
 }
 
 export async function listRules(address: string): Promise<RuleRow[]> {
-  const r = await fetch(`${API}/rules/${address}`)
+  const r = await authedGet(`/rules/${address}`, address)
   if (!r.ok) throw new Error(`rules ${r.status}`)
   return ((await r.json()) as { rules: RuleRow[] }).rules
 }

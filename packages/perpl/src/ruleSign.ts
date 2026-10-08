@@ -28,6 +28,10 @@ export function summary(r: Rule, symbol = `market ${r.mkt}`): string {
 }
 
 export type SignedAction = { action: 'create'; rule: Rule; symbol?: string } | { action: 'cancel'; id: string } | { action: 'pause' } | { action: 'hold'; id: string } | { action: 'resume'; id: string }
+  // a device session: one fingerprint, then trades and settings ride a token for SESSION_DAYS
+  | { action: 'session'; device: string }
+
+export const SESSION_DAYS = 7
 
 export function ruleMessage(address: string, a: SignedAction, nonce: string, exp: number): string {
   const head = `pehra rules for ${address.toLowerCase()}`
@@ -36,6 +40,7 @@ export function ruleMessage(address: string, a: SignedAction, nonce: string, exp
     : a.action === 'cancel' ? [`cancel rule ${a.id}`]
     : a.action === 'hold' ? [`pause rule ${a.id}`]
     : a.action === 'resume' ? [`resume rule ${a.id}`]
+    : a.action === 'session' ? [`open a session on ${a.device}, good for ${SESSION_DAYS} days`]
     : ['pause every rule']
   return [head, ...what, `nonce ${nonce}`, `expires ${new Date(exp).toISOString()}`].join('\n')
 }

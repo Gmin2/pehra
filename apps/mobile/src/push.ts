@@ -2,7 +2,7 @@
 // server sends with its service account. a tapped "add" notification adds margin from the phone.
 import * as Notifications from 'expo-notifications'
 import { Platform } from 'react-native'
-import { API } from './trade'
+import { authedPost, quietToken } from './session'
 import { log } from './log'
 
 // a push that lands while the app is open is shown the same as one in the background
@@ -31,6 +31,8 @@ export async function setupPush() {
 export async function refreshPush(address: string) {
   const perm = await Notifications.getPermissionsAsync()
   if (!perm.granted) { log('push permission not granted'); return null }
+  // on start it never asks for the passkey, without a session it waits for the next sign in
+  if (!(await quietToken(address))) return null
   return registerPush(address, log)
 }
 
@@ -40,9 +42,7 @@ export async function registerPush(address: string, say: (s: string) => void) {
   const status = perm.granted ? 'granted' : (await Notifications.requestPermissionsAsync()).status
   if (status !== 'granted') { say('push permission denied'); return null }
   const { data: token } = await Notifications.getDevicePushTokenAsync()
-  const r = await fetch(`${API}/push/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ address, token }) })
-  const j = (await r.json()) as { devices?: number; pushReady?: boolean; error?: string }
-  if (!r.ok) throw new Error(j.error ?? 'register failed')
+  const j = await authedPost<{ devices?: number; pushReady?: boolean }>('/push/register', address, { address, token })
   say(`push registered, ${j.devices} device(s), server ${j.pushReady ? 'can send' : 'has no service account yet'}`)
   return token as string
 }
@@ -68,7 +68,7 @@ export function onPushTap(handler: (data: Record<string, string>) => void) {
 }
 
 export const testPush = (address: string) =>
-  fetch(`${API}/push/test`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ address }) }).then(r => r.json() as Promise<{ sent: number; reason?: string }>)
+  authedPost<{ sent: number; reason?: string }>('/push/test', address, { address })
 
 export const addFromPush = (address: string, pid: number, ausd: number) =>
-  fetch(`${API}/guard/add`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ address, pid, ausd }) }).then(r => r.json() as Promise<{ health?: { distance: number; collateral: number }; error?: string }>)
+  authedPost<{ health?: { distance: number; collateral: number }; error?: string }>('/guard/add', address, { address, pid, ausd }).catch((e: unknown) => ({ health: undefined, error: e instanceof Error ? e.message : String(e) }))

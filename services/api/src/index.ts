@@ -7,6 +7,7 @@ import { Guard } from './guard'
 import { serve } from './serve'
 import { rulesRoute } from './rules'
 import { replayRoute } from './replayRoute'
+import { openSession, owns } from './sessions'
 import { prefsOf, setPrefs, recentAlerts, KINDS } from './alerts'
 import { startBeats } from './proof'
 import { verify, writeRun } from './runs'
@@ -141,6 +142,7 @@ async function anchor() {
 
 const guard = new Guard()
 const pendingEnroll = new Map<string, EnrollPayload>()
+const GATED = new Set(['/order', '/close', '/close-all', '/brackets', '/guard/add', '/activity', '/push/register', '/push/test'])
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
@@ -162,11 +164,29 @@ const server = serve({
       guard.engine.funding([{ id: b.mkt, rate: b.rate }])
       return json({ ok: true })
     }
+    if (url.pathname === '/session' && req.method === 'POST') {
+      const b = await req.json().catch(() => ({})) as { address?: string } & Record<string, unknown>
+      if (!b.address || !isAddress(b.address)) return json({ error: 'bad address' }, 400)
+      const r = await openSession(b.address, b as Parameters<typeof openSession>[1])
+      return r.ok ? json({ token: r.token, exp: r.exp }) : json({ error: r.why }, r.status)
+    }
+    // writes that are not signed one by one need the account's session token. the address comes from the
+    // path or the body, and has to be the token's owner
+    const gated = req.method === 'POST' && (GATED.has(url.pathname) || /^\/(guard|alerts)\/0x[0-9a-fA-F]{40}$/.test(url.pathname))
+    if (gated) {
+      const fromPath = url.pathname.match(/0x[0-9a-fA-F]{40}$/)?.[0]
+      const fromBody = fromPath ? null : ((await req.clone().json().catch(() => ({}))) as { address?: string }).address
+      const address = fromPath ?? fromBody
+      if (!address || !owns(req, address)) return json({ error: 'sign in again', code: 'session' }, 401)
+    }
     const rules = await rulesRoute(req, url, guard)
     if (rules) return rules
     // which alerts reach the phone and when not (src/alerts.ts), and what was sent lately
     const al = url.pathname.match(/^\/alerts\/(0x[0-9a-fA-F]{40})$/)
-    if (al && req.method === 'GET') return json({ prefs: prefsOf(al[1]), recent: recentAlerts(al[1]) })
+    if (al && req.method === 'GET') {
+      if (!owns(req, al[1])) return json({ error: 'sign in again', code: 'session' }, 401)
+      return json({ prefs: prefsOf(al[1]), recent: recentAlerts(al[1]) })
+    }
     if (al && req.method === 'POST') {
       const b = await req.json().catch(() => null) as { on?: Record<string, boolean>; quiet?: { from: number; to: number } | null; tz?: number } | null
       if (!b) return json({ error: 'send the changes' }, 400)
@@ -260,7 +280,9 @@ const server = serve({
       if (!guard.has(address)) return json({ enrolled: false })
       const ts = guard.session(address)
       if (url.searchParams.has('fresh')) guard.forgetForwarding(address)
-      return json({ enrolled: true, live: !!ts, forwarding: await guard.forwarding(address), enrolledAt: guard.enrolledAt(address), settings: guard.settings(address), balance: guard.balance(address), health: guard.health(address), events: guard.recent(address, 200) })
+      // balance and positions are on chain anyway, settings and the event history are the owner's
+      const mine = owns(req, address)
+      return json({ enrolled: true, live: !!ts, forwarding: await guard.forwarding(address), enrolledAt: guard.enrolledAt(address), settings: mine ? guard.settings(address) : undefined, balance: guard.balance(address), health: guard.health(address), events: mine ? guard.recent(address, 200) : [] })
     }
     if (m && req.method === 'POST') {
       const body = await req.json().catch(() => ({})) as Partial<GuardSettings>

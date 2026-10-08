@@ -337,9 +337,20 @@ export class Guard {
   }
 
   // the phone's own orders ride the same session
+  // perpl drops a session about once a minute (its ping timeout) and it is back within a second or two.
+  // a tap that lands in that gap waits for it instead of failing
+  private async liveSession(address: string, ms = 6000): Promise<TradingSocket> {
+    const addr = address.toLowerCase()
+    for (const t0 = Date.now(); Date.now() - t0 < ms; await new Promise(r => setTimeout(r, 200))) {
+      const ts = this.sessions.get(addr)
+      if (ts?.account && this.ctx) return ts
+    }
+    throw new Error('no live session')
+  }
+
   async openMarket(address: string, symbol: string, side: 'long' | 'short', size: number, leverage: number) {
-    const ts = this.sessions.get(address.toLowerCase())
-    if (!ts || !this.ctx) throw new Error('no live session')
+    const ts = await this.liveSession(address)
+    if (!this.ctx) throw new Error('no live session')
     const m = this.ctx.markets.find(x => x.symbol === symbol)
     if (!m) throw new Error('no market ' + symbol)
     // size arrives in coins, perpl wants it scaled by the market's size decimals
@@ -371,9 +382,9 @@ export class Guard {
     })
   }
 
-  private pos(address: string, pid: number) {
-    const ts = this.sessions.get(address.toLowerCase())
-    if (!ts || !this.ctx) throw new Error('no live session')
+  private async pos(address: string, pid: number) {
+    const ts = await this.liveSession(address)
+    if (!this.ctx) throw new Error('no live session')
     const pos = ts.positions.get(pid)
     if (!pos) throw new Error('no such position')
     const m = this.ctx.markets.find(x => x.id === pos.mkt)
@@ -382,7 +393,7 @@ export class Guard {
   }
 
   async closePosition(address: string, pid: number) {
-    const { ts, pos, m } = this.pos(address, pid)
+    const { ts, pos, m } = await this.pos(address, pid)
     const entry = fromPrice(m, pos.ep), size = fromSize(m, pos.s), side = pos.sd === 1 ? 'long' : 'short'
     const txP = this.nextTx(ts)
     const r = await ts.closeMarket(pos)
@@ -396,7 +407,7 @@ export class Guard {
 
   // stop and take profit in human prices. perpl will not cancel a resting trigger yet, so these are set once
   async setBrackets(address: string, pid: number, b: { stop?: number; take?: number }) {
-    const { ts, pos, m } = this.pos(address, pid)
+    const { ts, pos, m } = await this.pos(address, pid)
     const out: { stop?: number; take?: number } = {}
     if (b.stop) { const r = await ts.stopLoss(pos, toPrice(m, b.stop)); if (r.order && r.order.st !== 7) out.stop = b.stop }
     if (b.take) { const r = await ts.takeProfit(pos, toPrice(m, b.take)); if (r.order && r.order.st !== 7) out.take = b.take }
@@ -407,8 +418,8 @@ export class Guard {
 
   // a manual add from the phone, the push's "add" action lands here
   async addMargin(address: string, pid: number, ausd: number) {
-    const ts = this.sessions.get(address.toLowerCase())
-    if (!ts || !this.ctx) throw new Error('no live session')
+    const ts = await this.liveSession(address)
+    if (!this.ctx) throw new Error('no live session')
     const pos = ts.positions.get(pid)
     if (!pos) throw new Error('no such position')
     const m = this.ctx.markets.find(x => x.id === pos.mkt)
@@ -424,8 +435,7 @@ export class Guard {
   }
 
   async closeAll(address: string) {
-    const ts = this.sessions.get(address.toLowerCase())
-    if (!ts) throw new Error('no live session')
+    const ts = await this.liveSession(address)
     const out = []
     for (const pos of [...ts.positions.values()]) out.push(await ts.closeMarket(pos))
     return out

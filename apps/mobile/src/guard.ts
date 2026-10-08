@@ -4,6 +4,7 @@ import { encodeFunctionData, type TypedDataDefinition } from 'viem'
 import { exchangeAbi, GAS, NETWORKS, publicClient, sendBatch } from '@pehra/perpl'
 import type { Session } from './account'
 import { API } from './trade'
+import { authedPost, authedGet } from './session'
 
 type Wire = { types: Record<string, { name: string; type: string }[]>; domain: { name: string; version: string; chainId: string; verifyingContract?: `0x${string}`; salt?: `0x${string}` }; primaryType: string; message: Record<string, unknown> }
 export type PositionHealth = { pid: number; side: string; entry: number; mark: number; liq: number; distance: number; collateral: number; size: number; symbol: string; lv: number; mkt: number; stop?: number; take?: number }
@@ -34,24 +35,24 @@ export async function enrollGuard(s: Session) {
 }
 
 export async function guardState(address: string): Promise<GuardState> {
-  const r = await fetch(`${API}/guard/${address}`)
+  const r = await authedGet(`/guard/${address}`, address)
   return (await r.json()) as GuardState
 }
 
 export const relayOrder = (address: string, symbol: string, side: 'long' | 'short', size: number, leverage: number) =>
-  post<{ filled: boolean; status?: number; reason?: unknown; size: number; price: number }>('/order', { address, symbol, side, size, leverage })
+  authedPost<{ filled: boolean; status?: number; reason?: unknown; size: number; price: number }>('/order', address, { address, symbol, side, size, leverage })
 
-export const relayCloseAll = (address: string) => post<{ closed: number }>('/close-all', { address })
-export const relayClose = (address: string, pid: number) => post<{ price: number; pnl: number; collateral: number }>('/close', { address, pid })
-export const relayBrackets = (address: string, pid: number, b: { stop?: number; take?: number }) => post<{ stop?: number; take?: number }>('/brackets', { address, pid, ...b })
-export const relayAddMargin = (address: string, pid: number, ausd: number) => post<{ health?: { distance: number; collateral: number } }>('/guard/add', { address, pid, ausd })
+export const relayCloseAll = (address: string) => authedPost<{ closed: number }>('/close-all', address, { address })
+export const relayClose = (address: string, pid: number) => authedPost<{ price: number; pnl: number; collateral: number }>('/close', address, { address, pid })
+export const relayBrackets = (address: string, pid: number, b: { stop?: number; take?: number }) => authedPost<{ stop?: number; take?: number }>('/brackets', address, { address, pid, ...b })
+export const relayAddMargin = (address: string, pid: number, ausd: number) => authedPost<{ health?: { distance: number; collateral: number } }>('/guard/add', address, { address, pid, ausd })
 
 // the phone's own agora batches go into the same history as the guard's actions
 export const reportActivity = (address: string, e: { kind: 'funded' | 'withdrew'; amount: number; tx?: string; text: string }) =>
-  post<{ ok: boolean }>('/activity', { address, ...e }).catch(() => ({ ok: false }))
+  authedPost<{ ok: boolean }>('/activity', address, { address, ...e }).catch(() => ({ ok: false }))
 
 export type GuardPatch = Partial<{ enabled: boolean; thresholdPct: number; targetPct: number; maxAddAusdPerDay: number }>
-export const updateGuard = (address: string, patch: GuardPatch) => post<{ settings: NonNullable<GuardState['settings']> }>(`/guard/${address}`, patch)
+export const updateGuard = (address: string, patch: GuardPatch) => authedPost<{ settings: NonNullable<GuardState['settings']> }>(`/guard/${address}`, address, patch)
 
 // taking the key back: the passkey turns order forwarding off on perpl (so perpl refuses the key from
 // then on, whoever holds it) and signs a message so the server drops its copy

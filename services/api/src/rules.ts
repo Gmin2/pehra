@@ -6,6 +6,7 @@ import type { Guard } from './guard'
 import { checkSigned, type Signed } from './signedRules'
 import { proof } from './proof'
 import { verify } from './runs'
+import { owns } from './sessions'
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
@@ -13,7 +14,7 @@ export async function rulesRoute(req: Request, url: URL, guard: Guard): Promise<
   if (url.pathname === '/proof/verify') return json(verify())
   if (url.pathname === '/proof') return json(proof(null))
   const own = url.pathname.match(/^\/proof\/(0x[0-9a-fA-F]{40})$/)
-  if (own) return json(proof(own[1]))
+  if (own) return json(proof(own[1], { full: owns(req, own[1]) }))
   const pa = url.pathname.match(/^\/rules\/(0x[0-9a-fA-F]{40})\/pause$/)
   if (pa && req.method === 'POST') {
     const v = await checkSigned(pa[1], { action: 'pause' }, await body(req))
@@ -38,7 +39,11 @@ export async function rulesRoute(req: Request, url: URL, guard: Guard): Promise<
   const m = url.pathname.match(/^\/rules\/(0x[0-9a-fA-F]{40})$/)
   if (!m) return null
   const address = m[1].toLowerCase()
-  if (req.method === 'GET') return json({ rules: guard.engine.list(address) })
+  // a hidden stop stays hidden: anyone but the owner sees what kind of rule runs, not its prices
+  if (req.method === 'GET') {
+    const all = guard.engine.list(address)
+    return json({ rules: owns(req, address) ? all : all.map(r => ({ id: r.id, kind: r.kind, state: r.state, mode: r.mode, fires: r.fires, lastRun: r.lastRun, created: r.created })) })
+  }
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405)
 
   // { rule, nonce, exp, sig } from the app. a bare rule is only accepted with ALLOW_UNSIGNED_RULES=1 (local dev)

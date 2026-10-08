@@ -24,7 +24,7 @@ test('the chain verifies, then a changed row is found by its seq', () => {
   writeRun({ kind: 'beat', body: { evaluations: 9 }, at: t0 + 800_000 })
   const v = verify()
   assert.equal(v.ok, true)
-  const p = proof(null, t0 + 820_000)
+  const p = proof(null, {}, t0 + 820_000)
   assert.equal(p.uptime.gaps.length, 1)
   assert.equal(p.uptime.gaps[0].ms, 620_000)
   assert.ok(p.uptime.pct < 30 && p.uptime.pct > 20)
@@ -34,7 +34,7 @@ test('the chain verifies, then a changed row is found by its seq', () => {
   // beats are not runs a person cares about, a public view shows owners cut short
   assert.ok(p.runs.every(r => r.kind !== 'beat'))
   assert.equal(p.runs[0].owner, cut('0xabc'))
-  assert.equal(proof('0xabc', t0 + 820_000).runs[0].owner, '0xabc')
+  assert.equal(proof('0xabc', {}, t0 + 820_000).runs[0].owner, '0xabc')
   db.prepare(`update runs set body = '{"to":"done"}' where seq = 1`).run()
   const bad = verify()
   assert.deepEqual(bad, { ok: false, at: 1, why: 'row was changed after it was written' })

@@ -28,6 +28,7 @@ import { prepareAccount } from "../src/trade";
 import { money } from "../src/live";
 import { enrollGuard, guardState } from "../src/guard";
 import { registerPush } from "../src/push";
+import { openSession as openDeviceSession } from "../src/session";
 import { log } from "../src/log";
 import { setOnboarded } from "../src/keys";
 
@@ -144,6 +145,8 @@ export default function Onboarding() {
     try {
       const t2 = Date.now();
       const r = await enrollGuard(sess);
+      // the same passkey session opens the device session, so pushes and the first trade need no other prompt
+      await openDeviceSession(sess).catch((e) => log(`session open failed: ${e instanceof Error ? e.message : e}`));
       setPhase(2);
       log(`onboarding: guard holds account ${r.account}, ${Date.now() - t2}ms`);
       registerPush(sess.address, log).catch(() => {});

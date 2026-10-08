@@ -11,7 +11,8 @@ import { router, type Href } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { initialWallets, tokens, type Wallet, type Token } from "./data";
-import { loadStored, type Session, type StoredAccount } from "../account";
+import { loadStored, signIn, type Session, type StoredAccount } from "../account";
+import { setSigner, quietToken, token, openSession as openDeviceSession } from "../session";
 import {
   flowScene,
   initialTransaction,
@@ -88,6 +89,31 @@ export function Provider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     loadStored().then(setStored).catch(() => {});
   }, []);
+  // a write that needs a device session and has none asks for the passkey here, once, and keeps it
+  const live = useRef<{ session: Session | null; stored: StoredAccount | null }>({ session: null, stored: null });
+  live.current = { session, stored };
+  useEffect(() => {
+    setSigner(async (address) => {
+      const cur = live.current.session;
+      if (cur && cur.address.toLowerCase() === address.toLowerCase()) return cur;
+      const st = live.current.stored;
+      const s = await signIn(st ? { credentialId: st.credentialId } : undefined);
+      setSession(s);
+      return s;
+    });
+  }, []);
+  // any time the passkey is open anyway, open the device session with it too, so the first trade after
+  // a sign in never prompts again
+  useEffect(() => {
+    if (!session) return;
+    quietToken(session.address).then((t) => t ?? openDeviceSession(session)).catch(() => {});
+  }, [session]);
+  // a signed in phone with no device session (a new install, or a week gone) unlocks once on open, so
+  // activity, settings and alerts are there without waiting for the first trade
+  useEffect(() => {
+    if (!stored) return;
+    quietToken(stored.address).then((t) => (t ? null : token(stored.address))).catch(() => {});
+  }, [stored?.address]);
   useEffect(() => {
     AsyncStorage.getItem("family-native-wallets-v1")
       .then((raw) => {
