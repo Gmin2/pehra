@@ -1,6 +1,6 @@
 // the app's side of rules: every write is signed by the passkey over the same plain lines the screen
 // shows (packages/perpl/src/ruleSign.ts), the server rebuilds them before it accepts anything
-import { Rule as RuleSchema, ruleMessage, summary, SIGN_TTL_MS, type Rule, type SignedAction, type Report, type Profile } from '@pehra/perpl'
+import { Rule as RuleSchema, ruleMessage, summary, SIGN_TTL_MS, type Rule, type SignedAction, type Report, type Profile, type ManyReport } from '@pehra/perpl'
 import type { Session } from './account'
 import { API } from './trade'
 import { authedGet } from './session'
@@ -66,4 +66,10 @@ export async function readProfile(address: string): Promise<Profile> {
   const j = (await r.json()) as Profile & { error?: string }
   if (!r.ok) throw new Error(j.error ?? `profile ${r.status}`)
   return j
+}
+
+// several rules replayed together: from the open position they protect, or flat for an entry recipe
+export type ManyResult = ManyReport & { days: number; ms: number }
+export async function replayMany(address: string, rules: Rule[], entry: { side: 'long' | 'short'; margin: number; leverage: number } | null, days = 30) {
+  return post<ManyResult>('/replay', { address, rules, entry, days })
 }

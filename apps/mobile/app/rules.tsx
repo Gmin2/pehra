@@ -230,9 +230,14 @@ export default function Rules() {
         {rows === null ? [0, 1, 2].map((i) => <Skeleton key={i} />) : rows.map((r, i) => <Card key={r.id} r={r} index={i} busy={busy === r.id} onToggle={() => toggle(r)} onRemove={() => remove(r)} />)}
       </ScrollView>
       <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 12 }}>
-        <Tap onPress={() => a.go(`/rule?pid=${pid}`)} innerStyle={{ height: 56, borderRadius: 28, backgroundColor: ink, alignItems: "center", justifyContent: "center" }}>
-          <Text style={{ fontSize: 15.5, fontWeight: "600", color: "white" }}>add a rule</Text>
-        </Tap>
+        <View style={{ flexDirection: "row", gap: 10 }}>
+          <Tap onPress={() => a.go(`/recipes?pid=${pid}`)} style={{ flex: 1 }} innerStyle={{ height: 56, borderRadius: 28, backgroundColor: "#F0EDF3", alignItems: "center", justifyContent: "center" }}>
+            <Text style={{ fontSize: 15.5, fontWeight: "600", color: ink }}>recipes</Text>
+          </Tap>
+          <Tap onPress={() => a.go(`/rule?pid=${pid}`)} style={{ flex: 1 }} innerStyle={{ height: 56, borderRadius: 28, backgroundColor: ink, alignItems: "center", justifyContent: "center" }}>
+            <Text style={{ fontSize: 15.5, fontWeight: "600", color: "white" }}>add a rule</Text>
+          </Tap>
+        </View>
       </View>
     </Screen>
   );

@@ -285,6 +285,10 @@ export default function Trade() {
           />
 
           <Segmented options={WHENS} value={when} onChange={(v) => phase === "idle" && setWhen(v)} />
+          <Tap onPress={() => a.go(`/recipes?symbol=${symbol}`)} innerStyle={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#EFE5FF", borderRadius: 20, paddingHorizontal: 16, paddingVertical: 12 }}>
+            <Glyph name="magic-wand-sparkle" size={22} />
+            <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: violet }}>or pick a recipe: buy the dip, catch the breakout, daily stack</Text>
+          </Tap>
 
           {later && (
             <View style={{ gap: 12 }}>
