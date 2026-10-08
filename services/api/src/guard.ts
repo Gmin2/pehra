@@ -8,8 +8,8 @@ import { Recorder } from './record'
 import type { Hex } from 'viem'
 import { Alerts } from './alerts'
 import {
-  decide, defaultGuardSettings, restOrderHistory, restWallet, getContext, MarketDataSocket, positionHealth, TradingSocket, fromCns, fromPrice, fromSize, toCns, toLeverage, toPrice, toSize, Trigger, maxLeverage,
-  type AccountUpdateFrame, type MarketStateFrame, type Context, type Enrolled, type GuardSettings, type Health, type Market, type Position, type Live, type EntryLive,
+  decide, defaultGuardSettings, restOrderHistory, restWallet, getContext, MarketDataSocket, positionHealth, TradingSocket, fromCns, fromPrice, fromSize, toCns, toLeverage, toPrice, toSize, Trigger, maxLeverage, OrderType,
+  type AccountUpdateFrame, type MarketStateFrame, type Context, type Enrolled, type GuardSettings, type Health, type Market, type Position, type Live, type EntryLive, type Order,
 } from '@pehra/perpl'
 
 // guard kinds: warn, add, added, failed, session. the user's own actions: opened, closed, bracket, manual
@@ -23,7 +23,7 @@ export type GuardEvent = {
   side?: string; lv?: number; before?: Snapshot; after?: Snapshot; tx?: string
   // which rule acted, for alerts: the hidden stop, its backstop or a take profit step firing on perpl, the
   // guard adding margin, or the stop holding at its floor
-  rule?: 'stop' | 'backstop' | 'step' | 'guard' | 'floor' | 'entry' | 'funding'
+  rule?: 'stop' | 'backstop' | 'step' | 'guard' | 'floor' | 'entry' | 'funding' | 'sl' | 'tp'
 }
 type Stored = { address: Hex; key: Enrolled; settings: GuardSettings; enrolledAt: number }
 
@@ -155,6 +155,31 @@ export class Guard {
     this.alerts.event(addr, e)
   }
 
+  // a plain stop or take profit the phone set (not a rule's) fired on perpl. the frame lands before the
+  // socket applies it, so the orders known now are the ones from before, and the close fill that shows up
+  // after is the trigger's child
+  private firedSeen = new Set<number>()
+  private bracketFired(addr: string, ts: TradingSocket, frame: Order[]) {
+    const known = new Set(ts.orders.keys())
+    for (const o of frame) {
+      if (o.st !== 10 || !o.lp || !o.tp || this.firedSeen.has(o.oid) || this.engine.owns(o.oid)) continue
+      this.firedSeen.add(o.oid)
+      const pos = ts.positions.get(o.lp)
+      const m = this.ctx?.markets.find(x => x.id === o.mkt)
+      if (!m) continue
+      const below = o.tpc === Trigger.lteLast || o.tpc === Trigger.lteMark
+      const long = pos ? pos.sd === 1 : o.t === OrderType.closeLong
+      const isStop = long ? below : !below
+      setTimeout(() => {
+        const child = [...ts.orders.values()].find(c => !known.has(c.oid) && c.oid !== o.oid && c.lp === o.lp && (c.t === OrderType.closeLong || c.t === OrderType.closeShort) && (c.fs ?? 0) > 0)
+        const price = child?.fp ? fromPrice(m, child.fp) : fromPrice(m, o.tp ?? 0)
+        const size = child?.fs ? fromSize(m, child.fs) : pos ? fromSize(m, pos.s) : undefined
+        const side = long ? 'long' : 'short'
+        this.emit(addr, { kind: 'closed', rule: isStop ? 'sl' : 'tp', pid: o.lp, symbol: m.symbol, side, price, amount: size, text: `your ${isStop ? 'stop' : 'take profit'} at ${fromPrice(m, o.tp ?? 0)} fired on perpl, sold ${size ?? ''} ${m.symbol} at ${price}` })
+      }, 2500)
+    }
+  }
+
   // the phone's own chain actions (agora funds and withdrawals) join the same history
   record(address: string, e: Omit<GuardEvent, 'at'>) { this.emit(address.toLowerCase(), e) }
 
@@ -177,7 +202,10 @@ export class Guard {
     } })
     ts.onFrame(f => {
       // a trigger perpl executed (st 10) is recorded soon rather than at the next 30s reconcile
-      if (f.mt === 24 && (f as { d: { st: number }[] }).d.some(o => o.st === 10)) setTimeout(() => this.engine.reconcile(addr), 1500)
+      if (f.mt === 24 && (f as { d: { st: number }[] }).d.some(o => o.st === 10)) {
+        setTimeout(() => this.engine.reconcile(addr), 1500)
+        this.bracketFired(addr, ts, (f as { d: Order[] }).d)
+      }
       if (f.mt !== 26 && f.mt !== 27) return
       // listeners run before the socket applies the frame to its maps, so read them a tick later
       setTimeout(() => {

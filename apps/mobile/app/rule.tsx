@@ -163,7 +163,8 @@ export default function RuleBuilder() {
   const long = side === "long", dir = long ? 1 : -1;
   const mark = m?.mark || h?.mark || 0;
   const { dec, round } = rounder(mark, m?.priceDecimals ?? 6);
-  const fmt = (v: number) => v.toFixed(dec);
+  // the same digits the signed sentence shows, no trailing zeros
+  const fmt = (v: number) => String(Number(v.toFixed(dec)));
   const sym = h?.symbol.toLowerCase() ?? "";
 
   const [tab, setTab] = useState<Tab>(kind === "ladder" ? "take profit" : kind === "guard" ? "guard" : kind === "funding" ? "funding" : "stop");

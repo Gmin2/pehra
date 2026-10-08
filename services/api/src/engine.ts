@@ -41,6 +41,7 @@ const q = {
   saveBody: db.prepare('update rules set body = ?, updated = ? where id = ?'),
   putOrder: db.prepare(`insert or replace into orders (rule, step, owner, oid, pid, size, px, tp, tpc, state) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
   orderOf: db.prepare('select * from orders where rule = ? and step = ?'),
+  byOid: db.prepare('select 1 from orders where oid = ?'),
   ordersOf: db.prepare('select * from orders where rule = ?'),
   orderState: db.prepare('update orders set state = ?, size = ? where rule = ? and step = ?'),
 }
@@ -267,6 +268,9 @@ export class Engine {
   }
 
   exists(id: string) { return q.exists.get(id) !== undefined }
+
+  // a perpl order one of pehra's rules placed (a backstop or a ladder step), the engine reports those itself
+  owns(oid: number) { return q.byOid.get(oid) !== undefined }
 
   list(owner: string) {
     return (q.byOwner.all(owner.toLowerCase()) as Row[]).map(r => {
