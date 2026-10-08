@@ -12,7 +12,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { initialWallets, tokens, type Wallet, type Token } from "./data";
 import { loadStored, signIn, type Session, type StoredAccount } from "../account";
-import { setSigner, quietToken, token, openSession as openDeviceSession } from "../session";
+import { setSigner, quietToken, token as sessionToken, openSession as openDeviceSession } from "../session";
 import {
   flowScene,
   initialTransaction,
@@ -112,7 +112,7 @@ export function Provider({ children }: { children: React.ReactNode }) {
   // activity, settings and alerts are there without waiting for the first trade
   useEffect(() => {
     if (!stored) return;
-    quietToken(stored.address).then((t) => (t ? null : token(stored.address))).catch(() => {});
+    quietToken(stored.address).then((t) => (t ? null : sessionToken(stored.address))).catch(() => {});
   }, [stored?.address]);
   useEffect(() => {
     AsyncStorage.getItem("family-native-wallets-v1")
