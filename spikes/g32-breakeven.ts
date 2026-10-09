@@ -22,11 +22,11 @@ console.log('arm stop', await arm(stop))
 const t0 = Date.now()
 let last = ''
 while (Date.now() - t0 < 60 * 60_000) {
-  const r = (await rows()).find(x => x.id === sid)
+  const r = (await rows().catch(() => [] as Awaited<ReturnType<typeof rows>>)).find(x => x.id === sid)
   const now = JSON.stringify(r?.live) + ' ' + [...ts.orders.values()].filter(o => o.st === 8 && o.lp === pos.pid).map(o => (o.tp ?? 0) / 1e5).join(',')
   if (now !== last) { console.log(`${Math.round((Date.now() - t0) / 1000)}s`, r?.state, now); last = now }
   if (r && r.live && r.live.px >= entry) { console.log('the stop is at or past entry'); break }
-  if (!r || r.state === 'done') { console.log('the stop is done'); break }
+  if (r && r.state === 'done') { console.log('the stop is done'); break }
   await sleep(5000)
 }
 console.log('cancel', await cancel(sid), await cancel(lid))

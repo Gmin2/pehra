@@ -675,7 +675,7 @@ export class Engine {
       writeRun({ owner: r.owner, rule: r.id, kind: 'fill', body: { intent: id, kind: 'close', size: filled, price, floor, tx: landed?.tx ?? null, stamps: st } })
       const side = pos.sd === 1 ? 'long' : 'short'
       if (r.rule.kind === 'stop') this.event(r.owner, { kind: 'stopSold', rule: r.id, pid: pos.pid, price })
-      this.deps.emit(r.owner, { kind: 'closed', rule: r.rule.kind === 'funding' ? 'funding' : 'stop', pid: pos.pid, symbol: m.symbol, side, lv: pos.lv, tx: landed?.tx, amount: filled, price, text: `${r.rule.kind === 'funding' ? 'funding turned, sold' : 'stop sold'} ${filled} ${m.symbol} at ${price}, never below ${floor}` })
+      this.deps.emit(r.owner, { kind: 'closed', rule: r.rule.kind === 'funding' ? 'funding' : r.rule.kind === 'copy' ? 'copy' : 'stop', pid: pos.pid, symbol: m.symbol, side, lv: pos.lv, tx: landed?.tx, amount: filled, price, text: r.rule.kind === 'copy' ? why : `${r.rule.kind === 'funding' ? 'funding turned, sold' : 'stop sold'} ${filled} ${m.symbol} at ${price}, never below ${floor}` })
       this.deps.log(`rule ${r.id} close ${filled} at ${price}, floor ${floor}`)
       return filled
     } finally { this.inflight.delete(id) }
@@ -731,7 +731,7 @@ export class Engine {
       const st = { ...stamps, t3, t4: t5, t5, ...(landed?.block ? { b6: landed.block } : {}) }
       settle(id, 'filled', { fill: filled / z, tx: landed?.tx, oid: o.oid, stamps: st })
       writeRun({ owner: r.owner, rule: r.id, kind: 'fill', body: { intent: id, kind: 'open', side: i.side, size: filled / z, price, limit: i.limit, pid: pos?.pid ?? null, tx: landed?.tx ?? null, stamps: st } })
-      this.deps.emit(r.owner, { kind: 'opened', rule: 'entry', pid: pos?.pid, symbol: m.symbol, side: i.side, lv: Math.round(i.leverage * 100), tx: landed?.tx, amount: filled / z, price, text: `entry opened ${i.side} ${filled / z} ${m.symbol} at ${price}, limit ${i.limit}` })
+      this.deps.emit(r.owner, { kind: 'opened', rule: r.rule.kind === 'copy' ? 'copy' : 'entry', pid: pos?.pid, symbol: m.symbol, side: i.side, lv: Math.round(i.leverage * 100), tx: landed?.tx, amount: filled / z, price, text: r.rule.kind === 'copy' ? i.why : `entry opened ${i.side} ${filled / z} ${m.symbol} at ${price}, limit ${i.limit}` })
       this.deps.log(`rule ${r.id} opened ${i.side} ${filled / z} at ${price}, pid ${pos?.pid ?? '?'}`)
       if (pos) { this.handOff(r, pos.pid, price); this.event(r.owner, { kind: 'opened', rule: r.id, pid: pos.pid, price }) }
       else this.deps.log(`rule ${r.id} filled but the position did not show, reconcile attaches the stop`)
@@ -885,7 +885,7 @@ export class Engine {
     for (const r of this.rules.values()) {
       if (r.owner !== owner || [...this.inflight.values()].includes(r.id)) continue
       if (r.state === 'firing' || r.state === 'working') move(r, 'armed', 'reconciled after a restart or a drop')
-      const pos = r.rule.kind === 'ping' || r.rule.kind === 'entry' ? true : ts.positions.get(r.rule.pid)
+      const pos = r.rule.kind === 'ping' || r.rule.kind === 'entry' || r.rule.kind === 'copy' || r.rule.pid === 0 ? true : ts.positions.get(r.rule.pid)
       const back = r.rule.kind === 'stop' ? q.orderOf.get(r.id, 'backstop') as OrderRow | undefined : undefined
       if (!pos && (r.state === 'armed' || r.state === 'held' || r.state === 'paused')) {
         // the position went while this rule watched it. if pehra never sold it and a backstop rested, the

@@ -41,7 +41,7 @@ export default function Leaders() {
         <View style={{ paddingHorizontal: 8 }}>
           <Text style={heading}>top traders on perpl,</Text>
           <Text style={heading}>read from monad.</Text>
-          <Text style={{ marginTop: 8, fontSize: 14, fontWeight: "500", color: muted }}>realized profit, every account on perpl testnet. watch one, or copy their next trade at your own size.</Text>
+          <Text style={{ marginTop: 8, fontSize: 14, fontWeight: "500", color: muted }}>profit on closed trades, every account on perpl testnet. watch one, or copy their next trade at your own size.</Text>
         </View>
         <Segmented options={RANGES} value={range} onChange={setRange} />
         {err && <Text style={{ paddingHorizontal: 8, fontSize: 13, fontWeight: "600", color: red }}>couldn’t load the board: {err}</Text>}
@@ -56,7 +56,7 @@ export default function Leaders() {
                       <Text style={{ width: 22, fontFamily: "Manrope_700Bold", fontSize: 15, color: i < 3 ? "#9E4DFD" : faint }}>{i + 1}</Text>
                       <View style={{ flex: 1, gap: 2 }}>
                         <Text style={{ fontFamily: "monospace", fontSize: 14, fontWeight: "600", color: ink }}>{cut(l.address)}{l.address.toLowerCase() === me ? "  (you)" : ""}</Text>
-                        <Text style={{ fontSize: 12, fontWeight: "500", color: muted }}>{l.trades} trades · {l.trades ? Math.round((l.wins / l.trades) * 100) : 0}% wins{l.liquidations ? ` · ${l.liquidations} liquidated` : ""}</Text>
+                        <Text style={{ fontSize: 12, fontWeight: "500", color: muted }}>{l.closed} closed · {Math.round((l.wins / l.closed) * 100)}% won{l.liquidations ? ` · ${l.liquidations} liquidated` : ""}</Text>
                       </View>
                       <Text style={{ fontSize: 15, fontWeight: "700", color: l.pnl >= 0 ? green : red }}>{l.pnl >= 0 ? "+" : "−"}{Math.abs(l.pnl).toFixed(2)}</Text>
                     </Tap>
