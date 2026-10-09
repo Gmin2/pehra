@@ -32,7 +32,7 @@ export default function WatchIndex() {
         <View style={{ paddingHorizontal: 8 }}>
           <Text style={heading}>watch any trader</Text>
           <Text style={heading}>on perpl.</Text>
-          <Text style={{ marginTop: 8, fontSize: 14, fontWeight: "500", color: muted }}>their positions and how close each is to liquidation, read from monad. star one and pehra tells you when they trade.</Text>
+          <Text style={{ marginTop: 8, fontSize: 14, fontWeight: "500", color: muted }}>their positions and how close each is to liquidation, read from monad. watch one and pehra tells you when they trade.</Text>
         </View>
         <View style={{ backgroundColor: "white", borderRadius: 22, borderWidth: 1, borderColor: line, padding: 14, gap: 10 }}>
           <TextInput value={text} onChangeText={setText} placeholder="0x… address" placeholderTextColor={faint} autoCapitalize="none" autoCorrect={false} onSubmitEditing={() => isAddress(text) && go(text)}

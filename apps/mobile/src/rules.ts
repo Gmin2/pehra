@@ -3,7 +3,7 @@
 import { Rule as RuleSchema, ruleMessage, summary, SIGN_TTL_MS, type Rule, type SignedAction, type Report, type Profile, type ManyReport } from '@pehra/perpl'
 import type { Session } from './account'
 import { API } from './trade'
-import { authedGet } from './session'
+import { authedGet, authedPost } from './session'
 
 export type RuleRow = { id: string; kind: Rule['kind']; state: string; mode: 'pehra' | 'perpl' | 'both'; by: string; fires: number; rule: Rule; live?: { px: number; floor: number; backstopPx: number }; lastRun: number | null; created: number }
 
@@ -78,7 +78,6 @@ export async function replayMany(address: string, rules: Rule[], entry: { side: 
 export const LINK_HOST = 'https://pehra-passkeys.vercel.app'
 export type SharedRecipe = { id: string; recipe: string; symbol: string; margin: number; leverage: number; author: string; created: number; copies: number; name: string; blurb: string; needs: 'position' | 'none' }
 export async function shareRecipe(address: string, s: { recipe: string; symbol: string; margin: number; leverage: number }) {
-  const { authedPost } = await import('./session')
   const r = await authedPost<{ id: string }>('/recipes', address, { address, ...s })
   return { id: r.id, url: `${LINK_HOST}/r/${r.id}` }
 }
@@ -101,11 +100,9 @@ export async function readWatch(address: string): Promise<WatchRead> {
   return j
 }
 export async function setWatch(owner: string, target: string, on: boolean) {
-  const { authedPost } = await import('./session')
   return authedPost<{ watching: { target: string; created: number }[] }>(on ? '/watch' : '/unwatch', owner, { address: owner, target })
 }
 export async function myWatches(owner: string) {
-  const { authedGet } = await import('./session')
   const r = await authedGet(`/watches/${owner}`, owner)
   if (!r.ok) return []
   return ((await r.json()) as { watching: { target: string; created: number }[] }).watching

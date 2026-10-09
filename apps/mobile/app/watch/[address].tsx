@@ -50,7 +50,7 @@ export default function Watch() {
     setStarred(next);
     Haptics.selectionAsync();
     try { await setWatch(me, address, next); a.toast(next ? "watching. you’ll hear when they trade" : "not watching any more"); log(`watch ${address} ${next}`); }
-    catch (e) { setStarred(!next); a.toast("couldn’t change the watch list"); }
+    catch (e) { setStarred(!next); a.toast("couldn’t change the watch list"); log(`watch failed: ${e instanceof Error ? e.message : e}`); }
   };
 
   const session = async (): Promise<Session> => {
@@ -99,7 +99,7 @@ export default function Watch() {
             <>
               <Text style={heading}>{open.length ? `${open.length} position${open.length === 1 ? "" : "s"} open,` : "nothing open right now,"}</Text>
               <Text style={heading}>{w.profile.labels.join(", ")}.</Text>
-              <Text style={{ marginTop: 8, fontSize: 14, fontWeight: "500", color: muted }}>{w.balance.toFixed(2)} ausd free on perpl · {w.profile.trades} trades read from monad</Text>
+              <Text style={{ marginTop: 8, fontSize: 14, fontWeight: "500", color: muted }}>{w.balance.toFixed(2)} ausd free on perpl · last {w.profile.trades} trades read from monad</Text>
             </>
           )}
           {err && <Text style={{ marginTop: 6, fontSize: 12.5, fontWeight: "600", color: red }}>{err}</Text>}
@@ -116,7 +116,7 @@ export default function Watch() {
               <Text style={{ fontSize: 14, fontWeight: "700", color: p.pnl >= 0 ? green : red }}>{p.pnl >= 0 ? "+" : "−"}{Math.abs(p.pnl).toFixed(2)}</Text>
             </View>
             <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-              <Text style={{ fontSize: 12.5, fontWeight: "600", color: p.distance < 0.1 ? red : muted }}>{(p.distance * 100).toFixed(1)}% from liquidation at {p.liq.toPrecision(4)}</Text>
+              <Text style={{ fontSize: 12.5, fontWeight: "600", color: p.distance < 0.1 ? red : muted }}>{(p.distance * 100).toFixed(1)}% from liquidation at {Number(p.liq.toPrecision(4)).toLocaleString("en-US", { maximumFractionDigits: 8 })}</Text>
               <Text style={{ fontSize: 12, fontWeight: "500", color: faint }}>stops unknown</Text>
             </View>
           </Animated.View>
@@ -159,7 +159,7 @@ export default function Watch() {
       <Tray visible={sheet} onClose={() => setSheet(false)}>
         <View style={{ gap: 14, paddingHorizontal: 4 }}>
           <Text style={{ fontSize: 21, fontWeight: "700", color: ink }}>copy {address ? cut(address) : ""}</Text>
-          <Text style={{ fontSize: 13.5, fontWeight: "500", color: muted }}>when they open a position on perpl, pehra opens the same side on your account, at your size. it runs on your own account with your own key, their money and yours never mix.</Text>
+          <Text style={{ fontSize: 13.5, fontWeight: "500", color: muted }}>when they open a position on perpl, pehra opens the same side on your account, at your size. it runs on your account through a key that can trade but never withdraw. their money and yours never mix.</Text>
           {([["each trade", [5, 10, 25], cm, setCm, " ausd"], ["leverage up to", [1, 2, 3], cl, setCl, "x"]] as const).map(([label, opts, v, set, unit]) => (
             <View key={label} style={{ gap: 8 }}>
               <Text style={{ fontSize: 12.5, fontWeight: "600", color: muted }}>{label}</Text>
