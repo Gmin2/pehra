@@ -9,7 +9,7 @@ import { rulesRoute } from './rules'
 import { replayRoute } from './replayRoute'
 import { openSession, owns } from './sessions'
 import { share, shared, copied } from './shares'
-import { leaders } from './leaders'
+import { leaders, trader } from './leaders'
 import { watchRead, watch, unwatch, watchesOf, watchTick } from './watches'
 import { proof } from './proof'
 import { prefsOf, setPrefs, recentAlerts, KINDS } from './alerts'
@@ -186,6 +186,11 @@ const server = serve({
     if (url.pathname === '/leaderboard' && req.method === 'GET') {
       const days = Math.min(Math.max(Number(url.searchParams.get('days') ?? 7), 1), 30)
       try { return json({ days, leaders: await leaders(INDEXER, days) }) } catch (e) { return json({ error: e instanceof Error ? e.message : 'indexer unreachable' }, 502) }
+    }
+    const tr = url.pathname.match(/^\/trader\/(0x[0-9a-fA-F]{40})$/)
+    if (tr && req.method === 'GET') {
+      const days = Math.min(Math.max(Number(url.searchParams.get('days') ?? 7), 1), 30)
+      try { return json({ days, ...(await trader(INDEXER, tr[1], days)) }) } catch (e) { return json({ error: e instanceof Error ? e.message : 'indexer unreachable' }, 502) }
     }
     // any address, read from the chain and the indexer. a pehra account also shows its public proof
     const wa = url.pathname.match(/^\/watch\/(0x[0-9a-fA-F]{40})$/)

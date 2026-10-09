@@ -1,11 +1,12 @@
-// watching any address: its open positions read from the chain with how far each is from liquidation,
-// its recent trades, how it trades, and if it runs pehra its proof. a star keeps it on the watch list,
-// which pushes when it trades or gets close to liquidation. their stops live with perpl, off chain, so
-// they show as unknown, never as none
+// a trader's page: who they are on a violet card (face, how they trade, profit, win rate, closes), their
+// profit line, what they hold now with how far each is from liquidation, and every open and close by day.
+// watch pushes when they trade, copy opens their next trades on your account. their stops live with
+// perpl, off chain, so they show as unknown, never as none
 import { useCallback, useEffect, useState } from "react";
-import { View, ScrollView, Linking } from "react-native";
+import { View, ScrollView, Linking, useWindowDimensions } from "react-native";
 import { Stack, useFocusEffect, useLocalSearchParams } from "expo-router";
-import Animated, { FadeInDown, ReduceMotion } from "react-native-reanimated";
+import Animated, { FadeIn, FadeInDown, ReduceMotion } from "react-native-reanimated";
+import Svg, { Path, Line, Circle } from "react-native-svg";
 import * as Haptics from "expo-haptics";
 import { NETWORKS } from "@pehra/perpl";
 import { Screen, Tap, IconButton } from "../../src/ui/components";
@@ -13,8 +14,10 @@ import { Text } from "../../src/ui/Text";
 import { Coin } from "../../src/ui/Coin";
 import { Glyph } from "../../src/ui/Glyph";
 import { useApp } from "../../src/ui/store";
-import { readWatch, setWatch, myWatches, listRules, createRule, cancelRule, describeRule, type WatchRead, type RuleRow } from "../../src/rules";
-import { Tray } from "../../src/ui/Trade";
+import { readWatch, readTrader, setWatch, myWatches, listRules, createRule, cancelRule, describeRule, type WatchRead, type RuleRow, type Trader } from "../../src/rules";
+import { Tray, Segmented } from "../../src/ui/Trade";
+import { Face } from "../../src/ui/Face";
+import { useMarkets } from "../../src/live";
 import { signIn, type Session } from "../../src/account";
 import type { Rule } from "@pehra/perpl";
 import { log } from "../../src/log";
@@ -22,6 +25,40 @@ import { violet, ink, muted, green, red, faint, well } from "../../src/ui/Positi
 
 const line = "#EEEAF2", mist = "#EFE5FF";
 const cut = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+const RANGES = ["24h", "7 days", "30 days"] as const;
+const DAYS: Record<(typeof RANGES)[number], number> = { "24h": 1, "7 days": 7, "30 days": 30 };
+const amber = "#9A6B1C";
+const money = (n: number) => `${n >= 0 ? "+" : "−"}${Math.abs(n).toFixed(2)}`;
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+const dayOf = (t: number) => { const d = new Date(t * 1000), now = new Date(); const k = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() - new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()) / 86_400_000); return k === 0 ? "today" : k === 1 ? "yesterday" : `${MONTHS[d.getMonth()]} ${d.getDate()}`; };
+const clock = (t: number) => { const d = new Date(t * 1000); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`; };
+
+// the running total of closed trades as a line, with a faint zero line. flat colour, no glow
+function ProfitLine({ trader, width }: { trader: Trader; width: number }) {
+  const closes = trader.trades.filter((t) => t.kind !== "open");
+  const h = 120, padY = 10;
+  if (closes.length < 2) return <View style={{ height: h, alignItems: "center", justifyContent: "center" }}><Text style={{ fontSize: 13, fontWeight: "500", color: muted }}>{closes.length ? "one closed trade so far" : "no closed trades in this window"}</Text></View>;
+  let run = 0;
+  const pts = closes.map((t) => { run += t.pnl ?? 0; return { t: t.at, v: run }; });
+  const t0 = pts[0].t, t1 = Math.max(pts[pts.length - 1].t, t0 + 1);
+  const lo = Math.min(0, ...pts.map((p) => p.v)), hi = Math.max(0, ...pts.map((p) => p.v));
+  const span = hi - lo || 1;
+  const x = (t: number) => ((t - t0) / (t1 - t0)) * (width - 8) + 4;
+  const y = (v: number) => padY + (1 - (v - lo) / span) * (h - padY * 2);
+  const d = pts.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)} ${y(p.v).toFixed(1)}`).join(" ");
+  const end = pts[pts.length - 1], up = end.v >= 0;
+  const stroke = up ? violet : red;
+  return (
+    <Svg width={width} height={h}>
+      <Line x1={0} x2={width} y1={y(0)} y2={y(0)} stroke="#DDD8E6" strokeWidth={1} strokeDasharray="4 4" />
+      <Path d={`${d} L${x(end.t).toFixed(1)} ${y(0).toFixed(1)} L${x(t0).toFixed(1)} ${y(0).toFixed(1)} Z`} fill={up ? mist : "#FBE9EA"} />
+      <Path d={d} fill="none" stroke={stroke} strokeWidth={2.4} strokeLinejoin="round" strokeLinecap="round" />
+      <Circle cx={x(end.t)} cy={y(end.v)} r={4.5} fill={stroke} />
+      <Circle cx={x(end.t)} cy={y(end.v)} r={2} fill="white" />
+    </Svg>
+  );
+}
+
 const ago = (t: number) => { const m = Math.round((Date.now() / 1000 - t) / 60); return m < 60 ? `${Math.max(1, m)}m ago` : m < 2880 ? `${Math.round(m / 60)}h ago` : `${Math.round(m / 1440)}d ago`; };
 
 export default function Watch() {
@@ -34,7 +71,17 @@ export default function Watch() {
     [copies, setCopies] = useState<RuleRow[]>([]),
     [sheet, setSheet] = useState(false),
     [cm, setCm] = useState(10), [cl, setCl] = useState(3), [cClose, setCClose] = useState(true), [cStop, setCStop] = useState(true),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [range, setRange] = useState<(typeof RANGES)[number]>("7 days"),
+    [tr, setTr] = useState<Trader | null>(null),
+    markets = useMarkets(),
+    { width } = useWindowDimensions();
+  useEffect(() => {
+    if (!address) return;
+    let live = true;
+    readTrader(address, DAYS[range]).then((x) => live && setTr(x)).catch(() => live && setTr({ days: DAYS[range], pnl: 0, closed: 0, wins: 0, liquidations: 0, trades: [] }));
+    return () => { live = false; };
+  }, [address, range]);
 
   const load = useCallback(() => {
     if (!address) return;
@@ -83,85 +130,137 @@ export default function Watch() {
     try { await cancelRule(await session(), r.id); a.toast("stopped copying"); load(); } catch { a.toast("couldn’t stop it, nothing changed"); }
   };
 
-  const heading = { fontFamily: "Manrope_700Bold", fontSize: 26, lineHeight: 34, color: ink, letterSpacing: -0.5 };
   const open = w?.positions ?? [];
+  const mine = !!me && address?.toLowerCase() === me.toLowerCase();
+  const sym = (mkt: number) => markets.find((m) => m.id === mkt)?.symbol ?? "MON";
+  const winPct = tr && tr.closed ? Math.round((tr.wins / tr.closed) * 100) : null;
+  // newest first, grouped by day, at most 40 so a market maker does not scroll forever
+  const groups: { day: string; items: Trader["trades"] }[] = [];
+  for (const t of (tr?.trades ?? []).slice().reverse().slice(0, 40)) {
+    const day = dayOf(t.at), g = groups[groups.length - 1];
+    if (g && g.day === day) g.items.push(t); else groups.push({ day, items: [t] });
+  }
+  const what = (t: Trader["trades"][number]) => {
+    const s = sym(t.mkt).toLowerCase();
+    return t.kind === "open" ? `opened ${s} ${t.side ?? ""}${t.lev ? ` ${t.lev}x` : ""}` : t.kind === "close" ? `closed ${s} ${t.side ?? ""}` : `liquidated on ${s}`;
+  };
+  const tile = { flex: 1, backgroundColor: "#ffffff26", borderRadius: 16, paddingVertical: 10, paddingHorizontal: 12 } as const;
+  const section = { fontSize: 13, fontWeight: "700" as const, color: ink, paddingHorizontal: 6, marginTop: 4 };
   return (
     <Screen>
       <Stack.Screen options={{ animation: "slide_from_right" }} />
       <View style={{ height: 60, flexDirection: "row", alignItems: "center", paddingHorizontal: 12 }}>
         <IconButton name="back" label="Back" onPress={a.back} color={ink} />
-        <Text style={{ flex: 1, textAlign: "center", fontSize: 16, fontWeight: "700", color: ink }}>{address ? cut(address) : ""}</Text>
-        <Tap onPress={star} innerStyle={{ height: 36, paddingHorizontal: 14, borderRadius: 18, backgroundColor: starred ? violet : mist, justifyContent: "center" }}>
-          <Text style={{ fontSize: 13, fontWeight: "700", color: starred ? "white" : violet }}>{starred ? "watching" : "watch"}</Text>
-        </Tap>
-      </View>
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 28, gap: 12 }}>
-        <View style={{ paddingHorizontal: 8, marginTop: 4 }}>
-          {w === null ? (
-            err ? <Text style={heading}>couldn’t read that account.</Text> : <View style={{ gap: 10 }}><View style={{ width: 240, height: 24, borderRadius: 12, backgroundColor: well }} /><View style={{ width: 170, height: 24, borderRadius: 12, backgroundColor: well }} /></View>
-          ) : w.accountId === null ? (
-            <Text style={heading}>this address has no perpl account yet.</Text>
-          ) : (
-            <>
-              <Text style={heading}>{open.length ? `${open.length} position${open.length === 1 ? "" : "s"} open,` : "nothing open right now,"}</Text>
-              <Text style={heading}>{w.profile.labels.join(", ")}.</Text>
-              <Text style={{ marginTop: 8, fontSize: 14, fontWeight: "500", color: muted }}>{w.balance.toFixed(2)} ausd free on perpl · last {w.profile.trades} trades read from monad</Text>
-            </>
-          )}
-          {err && <Text style={{ marginTop: 6, fontSize: 12.5, fontWeight: "600", color: red }}>{err}</Text>}
-        </View>
-
-        {open.map((p, i) => (
-          <Animated.View key={p.mkt} entering={FadeInDown.delay(60 * i).duration(240).reduceMotion(ReduceMotion.System)} style={{ backgroundColor: "white", borderRadius: 24, borderWidth: 1, borderColor: line, padding: 16, gap: 10 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-              <Coin symbol={p.symbol} size={34} />
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 15, fontWeight: "700", color: ink }}>{p.symbol.toLowerCase()} {p.side}</Text>
-                <Text style={{ fontSize: 12, fontWeight: "500", color: muted }}>{p.size} {p.symbol.toLowerCase()} · entry {p.entry} · {p.collateral.toFixed(2)} margin</Text>
-              </View>
-              <Text style={{ fontSize: 14, fontWeight: "700", color: p.pnl >= 0 ? green : red }}>{p.pnl >= 0 ? "+" : "−"}{Math.abs(p.pnl).toFixed(2)}</Text>
-            </View>
-            <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-              <Text style={{ fontSize: 12.5, fontWeight: "600", color: p.distance < 0.1 ? red : muted }}>{(p.distance * 100).toFixed(1)}% from liquidation at {Number(p.liq.toPrecision(4)).toLocaleString("en-US", { maximumFractionDigits: 8 })}</Text>
-              <Text style={{ fontSize: 12, fontWeight: "500", color: faint }}>stops unknown</Text>
-            </View>
-          </Animated.View>
-        ))}
-
-        {w && w.accountId !== null && me && address?.toLowerCase() !== me.toLowerCase() && (
-          copies.length ? (
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#E4F3EC", borderRadius: 22, padding: 14 }}>
-              <Glyph name="gauge" size={24} />
-              <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: green }}>you copy them · {copies[0].rule.kind === "copy" ? `${copies[0].rule.margin} ausd a trade` : ""}</Text>
-              <Tap onPress={() => void stopCopy(copies[0])} innerStyle={{ height: 32, paddingHorizontal: 12, borderRadius: 16, backgroundColor: "white", justifyContent: "center" }}>
-                <Text style={{ fontSize: 12.5, fontWeight: "700", color: ink }}>stop</Text>
-              </Tap>
-            </View>
-          ) : (
-            <Tap onPress={() => setSheet(true)} innerStyle={{ height: 52, borderRadius: 26, backgroundColor: ink, alignItems: "center", justifyContent: "center" }}>
-              <Text style={{ fontSize: 15, fontWeight: "600", color: "white" }}>copy their next trades</Text>
-            </Tap>
-          )
-        )}
-        {w && w.onPehra && (
-          <Tap onPress={() => a.go(`/proof?address=${address}`)} innerStyle={{ flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: mist, borderRadius: 22, padding: 14 }}>
-            <Glyph name="shield" size={24} />
-            <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: violet }}>runs pehra · {w.receipts} rule{w.receipts === 1 ? "" : "s"} fired, see the proof</Text>
+        <View style={{ flex: 1 }} />
+        {w?.onPehra && (
+          <Tap onPress={() => a.go(`/proof?address=${address}`)} innerStyle={{ height: 36, paddingHorizontal: 12, borderRadius: 18, backgroundColor: mist, flexDirection: "row", alignItems: "center", gap: 6 }}>
+            <Glyph name="shield" size={18} />
+            <Text style={{ fontSize: 13, fontWeight: "700", color: violet }}>runs pehra</Text>
           </Tap>
         )}
+      </View>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 110, gap: 12 }}>
+        <View style={{ backgroundColor: violet, borderRadius: 28, padding: 16, gap: 14 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+            {address ? <Face address={address} size={52} ring="white" /> : null}
+            <View style={{ flex: 1, gap: 3 }}>
+              <Text style={{ fontFamily: "monospace", fontSize: 16, fontWeight: "700", color: "white" }}>{address ? cut(address) : ""}{mine ? "  (you)" : ""}</Text>
+              {w === null ? <View style={{ width: 150, height: 12, borderRadius: 6, backgroundColor: "#ffffff33" }} />
+                : <Text style={{ fontSize: 13, fontWeight: "600", color: "#ffffffd9" }}>{w.accountId === null ? "no perpl account yet" : w.profile.labels.join(", ") || "new to perpl"}</Text>}
+            </View>
+          </View>
+          <View style={{ flexDirection: "row", gap: 8 }}>
+            {[
+              [tr ? money(tr.pnl) : null, range === "24h" ? "today" : range],
+              [winPct === null ? (tr ? "—" : null) : `${winPct}%`, "won"],
+              [tr ? String(tr.closed) : null, tr?.liquidations ? `closed · ${tr.liquidations} liq` : "closed"],
+            ].map(([v, label], i) => (
+              <View key={i} style={tile}>
+                {v === null ? <View style={{ width: 54, height: 16, borderRadius: 8, backgroundColor: "#ffffff33", marginVertical: 2 }} /> : <Text style={{ fontSize: 18, fontWeight: "800", color: "white", fontVariant: ["tabular-nums"] }}>{v}</Text>}
+                <Text style={{ fontSize: 11.5, fontWeight: "600", color: "#ffffffcc", marginTop: 2 }}>{label}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
 
-        {w && w.recent.length > 0 && (
-          <View style={{ backgroundColor: "white", borderRadius: 24, borderWidth: 1, borderColor: line, paddingVertical: 6 }}>
-            <Text style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4, fontSize: 13, fontWeight: "700", color: muted }}>recent on chain</Text>
-            {w.recent.map((r, i) => (
-              <Tap key={i} onPress={r.tx ? () => Linking.openURL(`${NETWORKS.testnet.explorer}/tx/${r.tx}`) : undefined} innerStyle={{ flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 9 }}>
-                <Text style={{ fontSize: 13.5, fontWeight: "600", color: ink }}>{r.kind}{r.side ? ` ${r.side}` : ""}</Text>
-                <Text style={{ fontSize: 12, fontWeight: "500", color: faint }}>{ago(r.timestamp)}{r.tx ? " ↗" : ""}</Text>
+        <View style={{ backgroundColor: "white", borderRadius: 24, borderWidth: 1, borderColor: line, padding: 14, gap: 10 }}>
+          <View style={{ flexDirection: "row", alignItems: "baseline", justifyContent: "space-between" }}>
+            <Text style={{ fontSize: 13, fontWeight: "700", color: muted }}>profit on closed trades</Text>
+            {tr && <Text style={{ fontSize: 15, fontWeight: "800", color: tr.pnl >= 0 ? green : red, fontVariant: ["tabular-nums"] }}>{money(tr.pnl)} ausd</Text>}
+          </View>
+          {tr ? <Animated.View key={range} entering={FadeIn.duration(220).reduceMotion(ReduceMotion.System)}><ProfitLine trader={tr} width={width - 32 - 30} /></Animated.View>
+            : <View style={{ height: 120, borderRadius: 16, backgroundColor: well }} />}
+          <Segmented options={RANGES} value={range} onChange={(r) => { setTr(null); setRange(r); }} />
+        </View>
+
+        {err && <Text style={{ paddingHorizontal: 6, fontSize: 12.5, fontWeight: "600", color: red }}>couldn’t read that account: {err}</Text>}
+
+        {copies.length > 0 && (
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#E4F3EC", borderRadius: 22, padding: 14 }}>
+            <Glyph name="gauge" size={24} color={green} />
+            <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: green }}>you copy them · {copies[0].rule.kind === "copy" ? `${copies[0].rule.margin} ausd a trade` : ""}</Text>
+          </View>
+        )}
+
+        {open.length > 0 && <Text style={section}>open now</Text>}
+        {open.map((p, i) => {
+          const away = p.distance * 100;
+          const tone = away < 10 ? red : away < 20 ? amber : green;
+          return (
+            <Animated.View key={p.mkt} entering={FadeInDown.delay(60 * i).duration(240).reduceMotion(ReduceMotion.System)} style={{ backgroundColor: "white", borderRadius: 24, borderWidth: 1, borderColor: line, padding: 14, gap: 10 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                <Coin symbol={p.symbol} size={34} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 15, fontWeight: "700", color: ink }}>{p.symbol.toLowerCase()} {p.side}</Text>
+                  <Text style={{ fontSize: 12, fontWeight: "500", color: muted }}>entry {p.entry.toLocaleString("en-US", { maximumFractionDigits: 8 })} · {p.collateral.toFixed(2)} margin</Text>
+                </View>
+                <Text style={{ fontSize: 14, fontWeight: "700", color: p.pnl >= 0 ? green : red, fontVariant: ["tabular-nums"] }}>{money(p.pnl)}</Text>
+              </View>
+              <View style={{ height: 6, borderRadius: 3, backgroundColor: well, overflow: "hidden" }}>
+                <View style={{ width: `${Math.min(100, Math.max(4, away * 2.5))}%`, height: 6, borderRadius: 3, backgroundColor: tone }} />
+              </View>
+              <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                <Text style={{ fontSize: 12.5, fontWeight: "600", color: away < 10 ? red : muted }}>{away.toFixed(1)}% from liquidation at {Number(p.liq.toPrecision(4)).toLocaleString("en-US", { maximumFractionDigits: 8 })}</Text>
+                <Text style={{ fontSize: 12, fontWeight: "500", color: faint }}>stops unknown</Text>
+              </View>
+            </Animated.View>
+          );
+        })}
+
+        {groups.length > 0 && <Text style={section}>what they did</Text>}
+        {groups.map((g) => (
+          <View key={g.day} style={{ backgroundColor: "white", borderRadius: 24, borderWidth: 1, borderColor: line, paddingVertical: 4 }}>
+            <Text style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 2, fontSize: 12, fontWeight: "700", color: muted }}>{g.day}</Text>
+            {g.items.map((t, i) => (
+              <Tap key={t.tx + i} onPress={() => Linking.openURL(`${NETWORKS.testnet.explorer}/tx/${t.tx}`)} innerStyle={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 16, paddingVertical: 9 }}>
+                <Coin symbol={sym(t.mkt)} size={24} />
+                <Text style={{ flex: 1, fontSize: 13.5, fontWeight: "600", color: t.kind === "liquidated" ? red : ink }}>{what(t)}</Text>
+                {t.pnl !== null && <Text style={{ fontSize: 13, fontWeight: "700", color: Math.abs(t.pnl) < 0.005 ? faint : t.pnl >= 0 ? green : red, fontVariant: ["tabular-nums"] }}>{Math.abs(t.pnl) < 0.005 ? "0.00" : money(t.pnl)}</Text>}
+                <Text style={{ width: 40, textAlign: "right", fontSize: 11.5, fontWeight: "500", color: faint }}>{clock(t.at)}</Text>
               </Tap>
             ))}
           </View>
-        )}
+        ))}
+        {tr && groups.length === 0 && w?.accountId !== null && <Text style={{ paddingHorizontal: 6, fontSize: 13, fontWeight: "500", color: muted }}>no trades in this window</Text>}
       </ScrollView>
+
+      {w && w.accountId !== null && !mine && (
+        <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 18, backgroundColor: "#FAF8F2", flexDirection: "row", gap: 10 }}>
+          <Tap onPress={star} style={{ flex: 1 }} innerStyle={{ height: 54, borderRadius: 27, backgroundColor: starred ? violet : mist, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 }}>
+            <Glyph name="eye" size={20} color={starred ? "white" : violet} />
+            <Text style={{ fontSize: 15, fontWeight: "700", color: starred ? "white" : violet }}>{starred ? "watching" : "watch"}</Text>
+          </Tap>
+          {copies.length ? (
+            <Tap onPress={() => void stopCopy(copies[0])} style={{ flex: 1.6 }} innerStyle={{ height: 54, borderRadius: 27, backgroundColor: well, alignItems: "center", justifyContent: "center" }}>
+              <Text style={{ fontSize: 15, fontWeight: "600", color: ink }}>stop copying</Text>
+            </Tap>
+          ) : (
+            <Tap onPress={() => setSheet(true)} style={{ flex: 1.6 }} innerStyle={{ height: 54, borderRadius: 27, backgroundColor: ink, alignItems: "center", justifyContent: "center" }}>
+              <Text style={{ fontSize: 15, fontWeight: "600", color: "white" }}>copy their trades</Text>
+            </Tap>
+          )}
+        </View>
+      )}
       <Tray visible={sheet} onClose={() => setSheet(false)}>
         <View style={{ gap: 14, paddingHorizontal: 4 }}>
           <Text style={{ fontSize: 21, fontWeight: "700", color: ink }}>copy {address ? cut(address) : ""}</Text>

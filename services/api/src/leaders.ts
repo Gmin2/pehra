@@ -38,3 +38,42 @@ export async function leaders(indexer: string, days: number): Promise<Leader[]> 
   cache.set(days, { at: Date.now(), body })
   return body
 }
+
+// one trader's record over the last days: every open, close and liquidation, oldest first, for the profile
+// card, its profit line and an activity list without the partial fills
+export type TraderTrade = { kind: 'open' | 'close' | 'liquidated'; mkt: number; side: string | null; lev: number | null; pnl: number | null; at: number; tx: string }
+export type Trader = { pnl: number; closed: number; wins: number; liquidations: number; trades: TraderTrade[] }
+type TradeRow = { kind: string; perpId: string | null; side: string | null; leverageHdths: string | null; pnlCns: string | null; timestamp: number; tx: string }
+
+const traders = new Map<string, { at: number; body: Trader }>()
+
+export async function trader(indexer: string, address: string, days: number): Promise<Trader> {
+  const key = `${address.toLowerCase()}:${days}`
+  const hit = traders.get(key)
+  if (hit && Date.now() - hit.at < 20_000) return hit.body
+  const since = Math.floor(Date.now() / 1000) - days * 86_400
+  const ask = async <T,>(query: string, variables: object) => {
+    const r = await fetch(indexer, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ query, variables }) })
+    const j = await r.json() as { data?: T; errors?: unknown }
+    if (!j.data) throw new Error('indexer: ' + JSON.stringify(j.errors).slice(0, 200))
+    return j.data
+  }
+  const acct = await ask<{ Account: { id: string }[] }>(`query ($a: String!) { Account(where: { address: { _eq: $a } }) { id } }`, { a: address.toLowerCase() })
+  const id = acct.Account[0]?.id
+  const found = id ? await ask<{ Activity: TradeRow[] }>(`query ($id: numeric!, $since: Int!) { Activity(where: { accountId: { _eq: $id }, timestamp: { _gte: $since }, kind: { _in: ["open", "close", "liquidated"] } }, order_by: { block: desc }, limit: 2000) { kind perpId side leverageHdths pnlCns timestamp tx } }`, { id, since }) : { Activity: [] }
+  const rows = found.Activity.slice().reverse()
+  const trades: TraderTrade[] = rows.map(x => ({
+    kind: x.kind as TraderTrade['kind'], mkt: Number(x.perpId ?? 0), side: x.side, lev: x.leverageHdths ? Number(x.leverageHdths) / 100 : null,
+    pnl: x.kind === 'open' ? null : Number(x.pnlCns ?? 0) / 1e6, at: x.timestamp, tx: x.tx,
+  }))
+  const closes = trades.filter(t => t.kind !== 'open')
+  const body: Trader = {
+    pnl: Math.round(closes.reduce((s, t) => s + (t.pnl ?? 0), 0) * 100) / 100,
+    closed: closes.length,
+    wins: closes.filter(t => t.kind === 'close' && (t.pnl ?? 0) > 0).length,
+    liquidations: closes.filter(t => t.kind === 'liquidated').length,
+    trades,
+  }
+  traders.set(key, { at: Date.now(), body })
+  return body
+}

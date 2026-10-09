@@ -108,6 +108,16 @@ export async function myWatches(owner: string) {
   return ((await r.json()) as { watching: { target: string; created: number }[] }).watching
 }
 
+// one trader's opens, closes and liquidations over the last days, oldest first
+export type TraderTrade = { kind: 'open' | 'close' | 'liquidated'; mkt: number; side: string | null; lev: number | null; pnl: number | null; at: number; tx: string }
+export type Trader = { days: number; pnl: number; closed: number; wins: number; liquidations: number; trades: TraderTrade[] }
+export async function readTrader(address: string, days = 7): Promise<Trader> {
+  const r = await fetch(`${API}/trader/${address}?days=${days}`)
+  const j = (await r.json()) as Trader & { error?: string }
+  if (!r.ok) throw new Error(j.error ?? `trader ${r.status}`)
+  return j
+}
+
 // the leaderboard: realized pnl per perpl account over the last days, from the indexer
 export type Leader = { address: string; accountId: string; pnl: number; trades: number; closed: number; wins: number; liquidations: number; lastAt: number }
 export async function readLeaders(days = 7): Promise<Leader[]> {
