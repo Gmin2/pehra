@@ -1,0 +1,83 @@
+# pehra on one small server: the envio indexer with its postgres and hasura, the api, and caddy in front
+# for https. only caddy is reachable from outside. run from this folder: docker compose up -d --build
+services:
+  postgres:
+    image: postgres:18.3
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: envio
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d envio"]
+      interval: 5s
+      retries: 20
+
+  hasura:
+    image: hasura/graphql-engine:v2.43.0
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      HASURA_GRAPHQL_DATABASE_URL: postgres://postgres:${PG_PASSWORD}@postgres:5432/envio
+      HASURA_GRAPHQL_ADMIN_SECRET: ${HASURA_SECRET}
+      HASURA_GRAPHQL_UNAUTHORIZED_ROLE: public
+      HASURA_GRAPHQL_STRINGIFY_NUMERIC_TYPES: "true"
+      HASURA_GRAPHQL_ENABLE_CONSOLE: "false"
+      HASURA_GRAPHQL_NO_OF_RETRIES: "10"
+
+  indexer:
+    build:
+      context: ../indexer
+      dockerfile: ../deploy/indexer.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      hasura:
+        condition: service_started
+    environment:
+      ENVIO_API_TOKEN: ${ENVIO_API_TOKEN}
+      ENVIO_PG_HOST: postgres
+      ENVIO_PG_PORT: "5432"
+      ENVIO_PG_USER: postgres
+      ENVIO_PG_PASSWORD: ${PG_PASSWORD}
+      ENVIO_PG_DATABASE: envio
+      HASURA_GRAPHQL_ENDPOINT: http://hasura:8080/v1/metadata
+      HASURA_GRAPHQL_ADMIN_SECRET: ${HASURA_SECRET}
+
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/api.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - hasura
+    env_file: ../services/api/.env
+    environment:
+      PORT: "8787"
+      INDEXER_GRAPHQL: http://hasura:8080/v1/graphql
+    volumes:
+      # sqlite, the guard's keys, push tokens and the firebase file. copy the local data folder here once
+      - ../services/api/data:/app/services/api/data
+
+  caddy:
+    image: caddy:2.10
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      API_DOMAIN: ${API_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy:/data
+
+volumes:
+  pgdata:
+  caddy:
