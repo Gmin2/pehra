@@ -17,7 +17,7 @@ export default function SharedRecipe() {
     readShared(id)
       .then((s) => {
         log(`opened shared recipe ${id}: ${s.recipe} by ${s.author}`);
-        router.replace(`/recipes?only=${s.recipe}&symbol=${s.symbol}&margin=${s.margin}&lev=${s.leverage}&from=${s.id}&by=${encodeURIComponent(s.author)}`);
+        router.replace(`/recipes?only=${s.recipe}&symbol=${s.symbol}&margin=${s.margin}&lev=${s.leverage}&from=${s.id}&by=${encodeURIComponent(s.author)}&copies=${s.copies}`);
       })
       .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
   }, [id]);

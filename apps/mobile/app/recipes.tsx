@@ -11,6 +11,8 @@ import { Screen, Tap, IconButton } from "../src/ui/components";
 import { ReplayChart } from "../src/ui/ReplayChart";
 import { useCandles } from "../src/candles";
 import { Coin } from "../src/ui/Coin";
+import { Avatar } from "../src/ui/Avatar";
+import { AddressText } from "../src/ui/AddressText";
 import { Text } from "../src/ui/Text";
 import { Glyph } from "../src/ui/Glyph";
 import { useApp } from "../src/ui/store";
@@ -26,7 +28,7 @@ const GLYPH: Record<string, string> = { dip: "flame", breakout: "gauge", run: "c
 export default function Recipes() {
   const a = useApp(),
     // a shared link opens with only, from (the link), by (who shared it), margin and lev
-    { pid: pidParam, symbol: symParam, only, from, by, margin: marginParam, lev: levParam } = useLocalSearchParams<{ pid?: string; symbol?: string; only?: string; from?: string; by?: string; margin?: string; lev?: string }>(),
+    { pid: pidParam, symbol: symParam, only, from, by, copies, margin: marginParam, lev: levParam } = useLocalSearchParams<{ pid?: string; symbol?: string; only?: string; from?: string; by?: string; copies?: string; margin?: string; lev?: string }>(),
     address = a.stored?.address ?? a.session?.address ?? null,
     { account } = useAccount(address),
     markets = useMarkets();
@@ -124,10 +126,29 @@ export default function Recipes() {
       <Stack.Screen options={{ animation: "slide_from_right" }} />
       <View style={{ height: 60, flexDirection: "row", alignItems: "center", paddingHorizontal: 12 }}>
         <IconButton name="back" label="Back" onPress={a.back} color={ink} />
-        <Text style={{ flex: 1, textAlign: "center", fontSize: 16, fontWeight: "700", color: ink, marginRight: 44 }}>{pid ? `protect ${sym} ${h?.side ?? ""}` : "recipes"}</Text>
+        <Text style={{ flex: 1, textAlign: "center", fontSize: 16, fontWeight: "700", color: ink, marginRight: 44 }}>{pid ? `protect ${sym} ${h?.side ?? ""}` : by ? "recipe for you" : "recipes"}</Text>
       </View>
       <ScrollView contentContainerStyle={{ paddingBottom: 120, gap: 14 }}>
-        {by && <Text style={{ paddingHorizontal: 22, fontSize: 13, fontWeight: "700", color: violet }}>shared by {by}</Text>}
+        {by && (
+          <View style={{ marginHorizontal: 16, backgroundColor: mist, borderRadius: 24, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 14 }}>
+            {/^0x[0-9a-fA-F]{40}$/.test(by) ? <Avatar address={by} size={42} /> : null}
+            <View style={{ flex: 1, gap: 2 }}>
+              {/^0x[0-9a-fA-F]{40}$/.test(by) ? <AddressText address={by} size={15} /> : <Text style={{ fontSize: 15, fontWeight: "700", color: ink }}>{by}</Text>}
+              <Text style={{ fontSize: 12.5, fontWeight: "600", color: violet }}>sent you this{Number(copies) > 0 ? ` · ${copies} ${Number(copies) === 1 ? "person" : "people"} copied it` : ""}</Text>
+            </View>
+          </View>
+        )}
+        {onlyRecipe && (
+          <View style={{ marginHorizontal: 16, backgroundColor: "white", borderRadius: 22, borderWidth: 1, borderColor: line, flexDirection: "row", alignItems: "center", gap: 12, padding: 12 }}>
+            <View style={{ width: 42, height: 42, borderRadius: 14, backgroundColor: mist, alignItems: "center", justifyContent: "center" }}>
+              <Glyph name={GLYPH[onlyRecipe.id] ?? "shield"} size={26} />
+            </View>
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={{ fontSize: 15.5, fontWeight: "700", color: ink }}>{onlyRecipe.name}</Text>
+              <Text style={{ fontSize: 12.5, fontWeight: "500", color: muted }} numberOfLines={2}>{onlyRecipe.blurb}</Text>
+            </View>
+          </View>
+        )}
         {h && (
           <View style={{ marginHorizontal: 16, backgroundColor: "white", borderRadius: 22, borderWidth: 1, borderColor: line, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 12 }}>
             <Coin symbol={h.symbol} size={34} />
@@ -212,7 +233,7 @@ export default function Recipes() {
           )}
           <Tap onPress={busy || !make(cur) || blocked ? undefined : () => void arm(cur)} style={{ flex: 2.3 }} innerStyle={{ height: 56, borderRadius: 28, backgroundColor: ink, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, opacity: blocked ? 0.4 : 1 }}>
             <Glyph name="lock" size={18} color="white" />
-            <Text style={{ fontSize: 15.5, fontWeight: "600", color: "white" }}>{busy === cur.id ? "arming…" : "arm with fingerprint"}</Text>
+            <Text style={{ fontSize: 15.5, fontWeight: "600", color: "white" }}>{busy === cur.id ? "arming…" : from ? "arm it with your fingerprint" : "arm with fingerprint"}</Text>
           </Tap>
         </View>
       )}
