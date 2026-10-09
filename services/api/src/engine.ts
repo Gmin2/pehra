@@ -199,8 +199,9 @@ export class Engine {
       health: healthOf,
       positions: () => [...(ts?.positions.keys() ?? [])].map(healthOf).filter((h): h is NonNullable<typeof h> => !!h),
       mark: mkt => { const m = ctx?.markets.find(x => x.id === mkt); const st = this.deps.market.states.get(mkt); return m && st ? st.mrk / 10 ** m.config.price_decimals : undefined },
-      // a round trip of taker fees as a fraction of the price (taker_fee is per 100k, about 3.45 bps)
-      fees: 2 * taker / 100_000,
+      // a round trip of taker fees as a fraction of the price. taker_fee is in millionths: 345 is 3.45 bps,
+      // the same unit replay reads (taker_fee / 100 bps)
+      fees: 2 * taker / 1_000_000,
     }
   }
 
@@ -210,8 +211,16 @@ export class Engine {
     for (const r of [...this.rules.values()]) {
       if (r.owner !== owner || r.state !== 'armed') continue
       if (r.rule.kind === 'stop' && r.rule.breakeven) {
-        for (const i of onStopEvent(r.rule, r.mem, ev, ctx.health(r.rule.pid), ctx.fees))
+        const moves = onStopEvent(r.rule, r.mem, ev, ctx.health(r.rule.pid), ctx.fees)
+        for (const i of moves)
           if (i.kind === 'move') void this.lane(owner, () => this.moveStop(r, i, i.why)).catch(e => this.deps.log(`move ${r.id} failed: ${e instanceof Error ? e.message : e}`))
+        // its step filled but the stop stayed: say why, so a breakeven that did not happen is not silent
+        if (!moves.length && ev.kind === 'step' && ev.rule === r.rule.breakeven.ladder && ev.n >= r.rule.breakeven.afterStep) {
+          const h = ctx.health(r.rule.pid)
+          const why = !h ? 'the position is gone' : `the price ${h.mark} is not past entry plus fees, moving there would sell at once, or the stop is already tighter`
+          writeRun({ owner, rule: r.id, kind: 'note', body: { text: `breakeven skipped: ${why}` } })
+          this.deps.log(`rule ${r.id} breakeven skipped: ${why}`)
+        }
       }
       if (r.rule.kind === 'when' && chainMatches(r.rule, ev)) this.fireChain(r, ctx)
     }
