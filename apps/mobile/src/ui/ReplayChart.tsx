@@ -11,7 +11,7 @@ const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "
 const day = (ms: number) => { const d = new Date(ms); return `${MONTHS[d.getMonth()]} ${d.getDate()}`; };
 const px = (n: number) => Number(n.toPrecision(4)).toString();
 
-export function ReplayChart({ points, fires, from, width, height = 170 }: { points: { t: number; p: number }[]; fires: ManyFire[]; from?: number; width: number; height?: number }) {
+export function ReplayChart({ points, fires, from, width, height = 170, entry, liq }: { points: { t: number; p: number }[]; fires: ManyFire[]; from?: number; width: number; height?: number; entry?: number; liq?: number }) {
   // the candles stream in newest first, the chart waits until they reach back to where the replay starts
   const first = points.length ? (points[0].t < 1e12 ? points[0].t * 1000 : points[0].t) : Infinity;
   if (points.length < 2 || (from !== undefined && first > from + 86_400_000)) return <View style={{ width, height, borderRadius: 16, backgroundColor: "#F0EDF3" }} />;
@@ -19,7 +19,8 @@ export function ReplayChart({ points, fires, from, width, height = 170 }: { poin
   const pts = points.map((p) => ({ t: ms(p.t), p: p.p }));
   const t0 = pts[0].t, t1 = pts[pts.length - 1].t;
   const inWindow = fires.filter((f) => f.at >= t0 && f.at <= t1 + 4 * 3600_000);
-  const prices = [...pts.map((p) => p.p), ...inWindow.map((f) => f.px)];
+  // a position's chart also holds its entry and its liquidation price
+  const prices = [...pts.map((p) => p.p), ...inWindow.map((f) => f.px), ...(entry ? [entry] : []), ...(liq ? [liq * 0.98] : [])];
   const lo = Math.min(...prices), hi = Math.max(...prices), span = hi - lo || 1;
   const top = 30, bottom = 10;
   const X = (t: number) => ((Math.min(Math.max(t, t0), t1) - t0) / (t1 - t0 || 1)) * (width - 12) + 6;
@@ -38,13 +39,17 @@ export function ReplayChart({ points, fires, from, width, height = 170 }: { poin
   };
   const tags = [] as ReturnType<typeof label>[];
   if (open) tags.push(label(X(open.at), Y(open.px), `in ${px(open.px)}`, violet, true));
-  if (out) tags.push(label(X(out.at), Y(out.px), `${out.what === "liquidated" ? "liquidated" : "out"} ${px(out.px)}`, out.what === "liquidated" ? red : green, false));
+  const firstStep = exits.find((f) => f.what === "step");
+  if (entry !== undefined && firstStep && firstStep !== out) tags.push(label(X(firstStep.at), Y(firstStep.px), `sold some ${px(firstStep.px)}`, green, false));
+  if (out) tags.push(label(X(out.at), Y(out.px), `${out.what === "liquidated" ? "liquidated" : entry !== undefined ? "rest out" : "out"} ${px(out.px)}`, out.what === "liquidated" ? red : entry !== undefined ? violet : green, entry !== undefined));
   const waitFrom = out ? X(out.at) : null;
 
   return (
     <View style={{ width, height }}>
       <Svg width={width} height={height}>
         {waitFrom !== null && waitFrom < width - 30 && <Rect x={waitFrom} y={top - 8} width={width - waitFrom} height={height - top + 8 - bottom} rx={10} fill={mist} opacity={0.55} />}
+        {liq !== undefined && <Rect x={0} y={Y(liq)} width={width} height={Math.max(8, height - bottom - Y(liq))} fill="#FBE9EA" />}
+        {entry !== undefined && <Line x1={0} x2={width} y1={Y(entry)} y2={Y(entry)} stroke={faint} strokeWidth={1.2} strokeDasharray="4 4" />}
         <Path d={d} fill="none" stroke={ink} strokeWidth={2} strokeLinejoin="round" opacity={0.85} />
         {stopPath && <Path d={stopPath} fill="none" stroke={violet} strokeWidth={2} strokeDasharray="4 4" />}
         {exits.filter((f) => f.what === "step").map((f, i) => <Circle key={i} cx={X(f.at)} cy={Y(f.px)} r={4} fill={green} />)}
@@ -57,6 +62,8 @@ export function ReplayChart({ points, fires, from, width, height = 170 }: { poin
           <Text style={{ fontSize: 11, fontWeight: "700", color: "white" }}>{g.text}</Text>
         </View>
       ))}
+      {liq !== undefined && <Text style={{ position: "absolute", left: 6, top: Y(liq) + 3, fontSize: 10.5, fontWeight: "700", color: red }}>liquidation {px(liq)}</Text>}
+      {entry !== undefined && <Text style={{ position: "absolute", right: 2, top: Y(entry) - 16, fontSize: 10.5, fontWeight: "600", color: "#706A7D" }}>your position from here, {px(entry)}</Text>}
       {waitFrom !== null && waitFrom < width - 140 && (
         <View style={{ position: "absolute", left: waitFrom + 8, top: top - 2, paddingHorizontal: 8, height: 22, borderRadius: 11, backgroundColor: "white", justifyContent: "center" }}><Text style={{ fontSize: 11.5, fontWeight: "600", color: violet }}>out, waiting for the next one</Text></View>
       )}

@@ -124,10 +124,23 @@ export default function Recipes() {
       <Stack.Screen options={{ animation: "slide_from_right" }} />
       <View style={{ height: 60, flexDirection: "row", alignItems: "center", paddingHorizontal: 12 }}>
         <IconButton name="back" label="Back" onPress={a.back} color={ink} />
-        <Text style={{ flex: 1, textAlign: "center", fontSize: 16, fontWeight: "700", color: ink, marginRight: 44 }}>{pid ? `recipes for your ${sym} ${h?.side ?? ""}` : "recipes"}</Text>
+        <Text style={{ flex: 1, textAlign: "center", fontSize: 16, fontWeight: "700", color: ink, marginRight: 44 }}>{pid ? `protect ${sym} ${h?.side ?? ""}` : "recipes"}</Text>
       </View>
       <ScrollView contentContainerStyle={{ paddingBottom: 120, gap: 14 }}>
         {by && <Text style={{ paddingHorizontal: 22, fontSize: 13, fontWeight: "700", color: violet }}>shared by {by}</Text>}
+        {h && (
+          <View style={{ marginHorizontal: 16, backgroundColor: "white", borderRadius: 22, borderWidth: 1, borderColor: line, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 12 }}>
+            <Coin symbol={h.symbol} size={34} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 15, fontWeight: "700", color: ink }}>{sym} {h.side}{h.lv ? ` · ${Math.round(h.lv / 100)}x` : ""}</Text>
+              <Text style={{ fontSize: 12, fontWeight: "500", color: muted }}>{Number(h.size.toPrecision(5))} {sym} · entry {h.entry}</Text>
+            </View>
+            <View style={{ alignItems: "flex-end" }}>
+              <Text style={{ fontSize: 15, fontWeight: "700", color: (h.side === "short" ? h.entry - h.mark : h.mark - h.entry) >= 0 ? green : red, fontVariant: ["tabular-nums"] }}>{signed((h.side === "short" ? h.entry - h.mark : h.mark - h.entry) * h.size)}</Text>
+              <Text style={{ fontSize: 12, fontWeight: "600", color: muted }}>{(h.distance * 100).toFixed(1)}% from liq</Text>
+            </View>
+          </View>
+        )}
         {!onlyRecipe && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}>
             {shown.map((r) => {
@@ -151,7 +164,7 @@ export default function Recipes() {
                 <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: ink }}>{sym}, last 30 days</Text>
                 {points.length > 1 && <Text style={{ fontSize: 13.5, fontWeight: "700", color: points[points.length - 1].p >= points[0].p ? green : red }}>{signed(((points[points.length - 1].p / points[0].p) - 1) * 100)}%</Text>}
               </View>
-              <ReplayChart points={points} fires={rp && rp !== "none" ? rp.fires : []} from={rp && rp !== "none" ? rp.from : undefined} width={width - 32 - 34} />
+              <ReplayChart points={points} fires={rp && rp !== "none" ? rp.fires : []} from={rp && rp !== "none" ? rp.from : undefined} width={width - 32 - 34} entry={h && points.length ? points[0].p : undefined} liq={h && points.length ? points[0].p * (h.liq / h.entry) : undefined} />
             </View>
 
             <View style={{ flexDirection: "row", gap: 10 }}>
@@ -162,7 +175,7 @@ export default function Recipes() {
                 <Text style={{ fontSize: 11.5, fontWeight: "500", color: muted }}>{rp && rp !== "none" ? (rp.without.liquidated ? "liquidated on the way" : "rode it to the end") : " "}</Text>
               </View>
               <View style={{ width: half, backgroundColor: mist, borderRadius: 24, padding: 14, gap: 4 }}>
-                <Text style={{ fontSize: 12.5, fontWeight: "600", color: violet }}>with the recipe</Text>
+                <Text style={{ fontSize: 12.5, fontWeight: "600", color: violet }} numberOfLines={1}>{pid ? `with ${cur.name}` : "with the recipe"}</Text>
                 {rp === undefined ? <View style={{ width: 90, height: 28, borderRadius: 10, backgroundColor: "#E3D6FB", marginVertical: 4 }} />
                   : <Text style={{ fontFamily: "Manrope_700Bold", fontSize: 26, color: rp === "none" ? faint : ink, fontVariant: ["tabular-nums"] }}>{rp === "none" ? "—" : signed(rp.withRules.pnl)}</Text>}
                 <Text style={{ fontSize: 11.5, fontWeight: "500", color: muted }}>{rp && rp !== "none" ? story(rp) : rp === "none" ? "no replay for this one" : " "}</Text>
