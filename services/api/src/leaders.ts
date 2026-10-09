@@ -34,7 +34,7 @@ export async function leaders(indexer: string, days: number): Promise<Leader[]> 
     l.lastAt = Math.max(l.lastAt, a.timestamp)
     by.set(id, l)
   }
-  const body = [...by.values()].filter(l => l.address && l.closed > 0).sort((x, y) => y.pnl - x.pnl).slice(0, 25).map(l => ({ ...l, pnl: Math.round(l.pnl * 100) / 100 }))
+  const body = [...by.values()].filter(l => l.address && l.closed > 0).sort((x, y) => y.pnl - x.pnl).slice(0, 100).map(l => ({ ...l, pnl: Math.round(l.pnl * 100) / 100 }))
   cache.set(days, { at: Date.now(), body })
   return body
 }

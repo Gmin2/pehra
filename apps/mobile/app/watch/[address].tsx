@@ -2,7 +2,7 @@
 // its recent trades, how it trades, and if it runs pehra its proof. a star keeps it on the watch list,
 // which pushes when it trades or gets close to liquidation. their stops live with perpl, off chain, so
 // they show as unknown, never as none
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { View, ScrollView, Linking } from "react-native";
 import { Stack, useFocusEffect, useLocalSearchParams } from "expo-router";
 import Animated, { FadeInDown, ReduceMotion } from "react-native-reanimated";
@@ -26,7 +26,7 @@ const ago = (t: number) => { const m = Math.round((Date.now() / 1000 - t) / 60);
 
 export default function Watch() {
   const a = useApp(),
-    { address } = useLocalSearchParams<{ address: string }>(),
+    { address, copy: copyParam } = useLocalSearchParams<{ address: string; copy?: string }>(),
     me = a.stored?.address ?? a.session?.address ?? null,
     [w, setW] = useState<WatchRead | null>(null),
     [err, setErr] = useState<string | null>(null),
@@ -43,6 +43,12 @@ export default function Watch() {
     if (me) listRules(me).then((rs) => setCopies(rs.filter((r) => r.rule.kind === "copy" && r.rule.target.toLowerCase() === address.toLowerCase() && ["armed", "held", "firing", "working"].includes(r.state)))).catch(() => {});
   }, [address, me]);
   useFocusEffect(useCallback(() => { load(); const t = setInterval(load, 10_000); return () => clearInterval(t); }, [load]));
+
+  // the leaderboard's copy button lands here with the sheet already open
+  const [asked, setAsked] = useState(false);
+  useEffect(() => {
+    if (copyParam && !asked && w && w.accountId !== null) { setAsked(true); setSheet(true); }
+  }, [copyParam, asked, w]);
 
   const star = async () => {
     if (!me || !address) { a.toast("sign in to keep a watch list"); return; }
