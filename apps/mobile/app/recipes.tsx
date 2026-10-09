@@ -1,14 +1,16 @@
 // recipes: a few rules that work together, armed with one fingerprint. with ?pid= the ones that protect
-// that position, without it the ones that open something or watch the whole account. the one that did best
-// over the last 30 days leads, big and violet, the rest are rows that open their steps in a tray
+// that position, without it the ones that open something or watch the whole account. chips pick one, the
+// month of price shows where it got in and out, the two endings sit side by side, then what you arm
 import { useEffect, useMemo, useState } from "react";
-import { View, ScrollView, Share } from "react-native";
+import { View, ScrollView, Share, useWindowDimensions } from "react-native";
 import { Stack, router, useLocalSearchParams } from "expo-router";
-import Animated, { FadeInDown, ReduceMotion } from "react-native-reanimated";
+import Animated, { FadeIn, ReduceMotion } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import { RECIPES, instantiate, type Recipe, type Rule } from "@pehra/perpl";
 import { Screen, Tap, IconButton } from "../src/ui/components";
-import { Tray } from "../src/ui/Trade";
+import { ReplayChart } from "../src/ui/ReplayChart";
+import { useCandles } from "../src/candles";
+import { Coin } from "../src/ui/Coin";
 import { Text } from "../src/ui/Text";
 import { Glyph } from "../src/ui/Glyph";
 import { useApp } from "../src/ui/store";
@@ -19,7 +21,6 @@ import { log } from "../src/log";
 import { ink, muted, green, red, faint, well, violet } from "../src/ui/Position";
 
 const line = "#EEEAF2", mist = "#EFE5FF";
-const SHORT: Record<string, string> = { dip: "long 3% under the price, protected", breakout: "long on a 2% break, stop trails 4%", run: "stop trails 4%, a third off at +6%", lock: "half off at +5%, the rest at +10%", sleep: "funding, margin and a morning note", depeg: "closes everything if ausd slips", stack: "a small long every morning" };
 const GLYPH: Record<string, string> = { dip: "flame", breakout: "gauge", run: "crosshairs", lock: "shield", sleep: "lock", depeg: "circle-coin", stack: "magic-wand-sparkle" };
 
 export default function Recipes() {
@@ -36,7 +37,8 @@ export default function Recipes() {
   const m = markets.find((x) => (h ? x.id === h.mkt : x.symbol === (symParam ?? "MON")));
   const sym = (m?.symbol ?? "MON").toLowerCase();
   const [busy, setBusy] = useState<string | null>(null);
-  const [detail, setDetail] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);
+  const { width } = useWindowDimensions();
   const [replays, setReplays] = useState<Record<string, ManyResult | "none">>({});
   const tag = useMemo(() => Date.now().toString(36), []);
 
@@ -100,118 +102,107 @@ export default function Recipes() {
   };
 
   const gain = (id: string) => { const rp = replays[id]; return rp && rp !== "none" ? rp.withRules.pnl - rp.without.pnl : null; };
-  // the lead is the best replay so far, the first recipe until any replay lands
-  const lead = onlyRecipe ?? [...shown].sort((x, y) => (gain(y.id) ?? -1e9) - (gain(x.id) ?? -1e9))[0];
-  const rest = shown.filter((r) => r.id !== lead?.id);
-  const open = shown.find((r) => r.id === detail) ?? null;
+  // the best replay is picked until you pick one yourself
+  const best = [...shown].sort((x, y) => (gain(y.id) ?? -1e9) - (gain(x.id) ?? -1e9))[0];
+  const cur = onlyRecipe ?? shown.find((r) => r.id === picked) ?? best;
+  const rp = cur ? replays[cur.id] : undefined;
+  const points = useCandles(m?.market, "1m");
   const signed = (n: number) => `${n >= 0 ? "+" : "−"}${Math.abs(n).toFixed(2)}`;
   // one rule can carry its stop and take profits with it, so its sentence is cut where each part starts
-  const steps = (r: Recipe) => (make(r) ?? []).flatMap((x) => describeRule(x, m?.symbol ?? "MON").split(/, then |, (?=take profit|the stop moves|trailing)/).map((t) => t.trim()).filter(Boolean));
-  const leadGain = lead ? gain(lead.id) : null;
+  const steps = (r: Recipe) => (make(r) ?? []).flatMap((x) => describeRule(x, m?.symbol ?? "MON").split(/, then |, (?=take profit|the stop moves|trailing)/).map((t) => t.trim().replace(/^trailing (\S+)$/, "the stop trails $1 behind and never loosens")).filter(Boolean));
+  const story = (x: ManyResult) => {
+    const f = x.fires, moves = f.filter((y) => y.what === "move").length, steps = f.filter((y) => y.what === "step").length;
+    if (!x.withRules.opened) return "never got in";
+    if (x.withRules.liquidated) return "liquidated";
+    const bits = [moves ? `stop moved ${moves}x` : "", steps ? `took profit ${steps}x` : "", f.some((y) => ["stop", "backstop", "close"].includes(y.what)) ? "out early" : "still in"].filter(Boolean);
+    return bits.join(", ");
+  };
+  const half = (width - 32 - 10) / 2;
 
   return (
     <Screen>
       <Stack.Screen options={{ animation: "slide_from_right" }} />
       <View style={{ height: 60, flexDirection: "row", alignItems: "center", paddingHorizontal: 12 }}>
         <IconButton name="back" label="Back" onPress={a.back} color={ink} />
-        <Text style={{ flex: 1, textAlign: "center", fontSize: 16, fontWeight: "700", color: ink, marginRight: 44 }}>recipes</Text>
+        <Text style={{ flex: 1, textAlign: "center", fontSize: 16, fontWeight: "700", color: ink, marginRight: 44 }}>{pid ? `recipes for your ${sym} ${h?.side ?? ""}` : "recipes"}</Text>
       </View>
-      <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 28, gap: 12 }}>
-        <View style={{ paddingHorizontal: 6 }}>
-          <Text style={{ fontFamily: "Manrope_700Bold", fontSize: 24, lineHeight: 31, color: ink, letterSpacing: -0.5 }}>{pid ? `rules for your ${sym} ${h?.side ?? ""}, one fingerprint.` : `rules that trade ${sym}, one fingerprint.`}</Text>
-          <Text style={{ marginTop: 4, fontSize: 13.5, fontWeight: "500", color: muted }}>written from the price now, replayed on the last 30 days.</Text>
-        </View>
-        {blocked && <Text style={{ paddingHorizontal: 6, fontSize: 13.5, fontWeight: "600", color: red }}>{blocked}</Text>}
-
-        {lead && (
-          <Animated.View key={lead.id} entering={FadeInDown.duration(260).reduceMotion(ReduceMotion.System)} style={{ backgroundColor: violet, borderRadius: 28, padding: 18, gap: 10 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-              <View style={{ paddingHorizontal: 10, height: 26, borderRadius: 13, backgroundColor: "#ffffff33", justifyContent: "center" }}>
-                <Text style={{ fontSize: 12, fontWeight: "700", color: "white" }}>{by ? `shared by ${by}` : leadGain !== null && !onlyRecipe ? "best last 30 days" : "recipe"}</Text>
-              </View>
-              <Glyph name={GLYPH[lead.id] ?? "shield"} size={34} color="white" />
-            </View>
-            <Text style={{ fontFamily: "Manrope_700Bold", fontSize: 24, color: "white", letterSpacing: -0.5 }}>{lead.name}</Text>
-            <Text style={{ fontSize: 13.5, fontWeight: "500", color: "#ffffffd9", lineHeight: 19 }}>{lead.blurb}</Text>
-            {replays[lead.id] === undefined ? <View style={{ width: 170, height: 26, borderRadius: 10, backgroundColor: "#ffffff33" }} />
-              : leadGain === null ? <Text style={{ fontSize: 13, fontWeight: "600", color: "#ffffffb3" }}>no replay for this one</Text>
-              : <View style={{ flexDirection: "row", alignItems: "baseline", gap: 6 }}>
-                  <Text style={{ fontFamily: "Manrope_700Bold", fontSize: 28, color: "white", fontVariant: ["tabular-nums"] }}>{signed(leadGain)}</Text>
-                  <Text style={{ fontSize: 13, fontWeight: "600", color: "#ffffffcc" }}>ausd {leadGain >= 0 ? "better" : "worse"} than holding</Text>
-                </View>}
-            <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
-              <Tap onPress={() => setDetail(lead.id)} style={{ flex: 1 }} innerStyle={{ height: 46, borderRadius: 23, backgroundColor: "#ffffff33", alignItems: "center", justifyContent: "center" }}>
-                <Text style={{ fontSize: 14, fontWeight: "700", color: "white" }}>see the steps</Text>
-              </Tap>
-              <Tap onPress={busy || !make(lead) || blocked ? undefined : () => arm(lead)} style={{ flex: 1.4 }} innerStyle={{ height: 46, borderRadius: 23, backgroundColor: "white", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, opacity: busy && busy !== lead.id ? 0.5 : 1 }}>
-                <Glyph name="lock" size={18} color={ink} />
-                <Text style={{ fontSize: 14, fontWeight: "700", color: ink }}>{busy === lead.id ? "arming…" : "arm"}</Text>
-              </Tap>
-            </View>
-          </Animated.View>
-        )}
-
-        {rest.length > 0 && <Text style={{ fontSize: 13, fontWeight: "700", color: ink, paddingHorizontal: 6, marginTop: 4 }}>more</Text>}
-        {rest.length > 0 && (
-          <View style={{ backgroundColor: "white", borderRadius: 24, borderWidth: 1, borderColor: line, paddingHorizontal: 14 }}>
-            {rest.map((r, i) => {
-              const g = gain(r.id);
+      <ScrollView contentContainerStyle={{ paddingBottom: 120, gap: 14 }}>
+        {by && <Text style={{ paddingHorizontal: 22, fontSize: 13, fontWeight: "700", color: violet }}>shared by {by}</Text>}
+        {!onlyRecipe && (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}>
+            {shown.map((r) => {
+              const on = r.id === cur?.id;
               return (
-                <Tap key={r.id} onPress={() => setDetail(r.id)} innerStyle={{ flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 13, borderTopWidth: i ? 1 : 0, borderTopColor: line }}>
-                  <View style={{ width: 42, height: 42, borderRadius: 14, backgroundColor: mist, alignItems: "center", justifyContent: "center" }}>
-                    <Glyph name={GLYPH[r.id] ?? "shield"} size={26} />
-                  </View>
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <Text style={{ fontSize: 15, fontWeight: "700", color: ink }}>{r.name}</Text>
-                    <Text style={{ fontSize: 12.5, fontWeight: "500", color: muted }}>{SHORT[r.id] ?? r.blurb}</Text>
-                  </View>
-                  {replays[r.id] === undefined ? <View style={{ width: 44, height: 12, borderRadius: 6, backgroundColor: well }} />
-                    : <Text style={{ fontSize: 14, fontWeight: "700", color: g === null || Math.abs(g) < 0.005 ? faint : g >= 0 ? green : red, fontVariant: ["tabular-nums"] }}>{g === null ? "—" : Math.abs(g) < 0.005 ? "0.00" : signed(g)}</Text>}
-                  <Text style={{ fontSize: 16, fontWeight: "600", color: faint }}>›</Text>
+                <Tap key={r.id} onPress={() => { if (!on) Haptics.selectionAsync(); setPicked(r.id); }} innerStyle={{ height: 40, paddingLeft: 10, paddingRight: 14, borderRadius: 20, backgroundColor: on ? mist : well, flexDirection: "row", alignItems: "center", gap: 7 }}>
+                  <Glyph name={GLYPH[r.id] ?? "shield"} size={20} color={on ? violet : ink} />
+                  <Text style={{ fontSize: 13.5, fontWeight: "700", color: on ? violet : ink }}>{r.name.split(",")[0]}</Text>
                 </Tap>
               );
             })}
-          </View>
+          </ScrollView>
         )}
-      </ScrollView>
+        {blocked && <Text style={{ paddingHorizontal: 22, fontSize: 13.5, fontWeight: "600", color: red }}>{blocked}</Text>}
 
-      <Tray visible={!!open} onClose={() => setDetail(null)}>
-        {open && (
-          <View style={{ gap: 12, paddingHorizontal: 4 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-              <View style={{ width: 48, height: 48, borderRadius: 16, backgroundColor: mist, alignItems: "center", justifyContent: "center" }}>
-                <Glyph name={GLYPH[open.id] ?? "shield"} size={30} />
+        {cur && (
+          <Animated.View key={cur.id} entering={FadeIn.duration(220).reduceMotion(ReduceMotion.System)} style={{ paddingHorizontal: 16, gap: 14 }}>
+            <View style={{ backgroundColor: "white", borderRadius: 28, borderWidth: 1, borderColor: line, padding: 16, paddingBottom: 30, gap: 12 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                <Coin symbol={m?.symbol ?? "MON"} size={24} />
+                <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: ink }}>{sym}, last 30 days</Text>
+                {points.length > 1 && <Text style={{ fontSize: 13.5, fontWeight: "700", color: points[points.length - 1].p >= points[0].p ? green : red }}>{signed(((points[points.length - 1].p / points[0].p) - 1) * 100)}%</Text>}
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 20, fontWeight: "700", color: ink }}>{open.name}</Text>
-                {gain(open.id) !== null && <Text style={{ fontSize: 13, fontWeight: "700", color: (gain(open.id) ?? 0) >= 0 ? green : red }}>{signed(gain(open.id) ?? 0)} vs holding, last 30 days</Text>}
+              <ReplayChart points={points} fires={rp && rp !== "none" ? rp.fires : []} from={rp && rp !== "none" ? rp.from : undefined} width={width - 32 - 34} />
+            </View>
+
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <View style={{ width: half, backgroundColor: "white", borderRadius: 24, borderWidth: 1, borderColor: line, padding: 14, gap: 4 }}>
+                <Text style={{ fontSize: 12.5, fontWeight: "600", color: muted }}>just holding</Text>
+                {rp === undefined ? <View style={{ width: 90, height: 28, borderRadius: 10, backgroundColor: well, marginVertical: 4 }} />
+                  : <Text style={{ fontFamily: "Manrope_700Bold", fontSize: 26, color: rp === "none" ? faint : rp.without.pnl >= 0 ? green : red, fontVariant: ["tabular-nums"] }}>{rp === "none" ? "—" : signed(rp.without.pnl)}</Text>}
+                <Text style={{ fontSize: 11.5, fontWeight: "500", color: muted }}>{rp && rp !== "none" ? (rp.without.liquidated ? "liquidated on the way" : "rode it to the end") : " "}</Text>
+              </View>
+              <View style={{ width: half, backgroundColor: mist, borderRadius: 24, padding: 14, gap: 4 }}>
+                <Text style={{ fontSize: 12.5, fontWeight: "600", color: violet }}>with the recipe</Text>
+                {rp === undefined ? <View style={{ width: 90, height: 28, borderRadius: 10, backgroundColor: "#E3D6FB", marginVertical: 4 }} />
+                  : <Text style={{ fontFamily: "Manrope_700Bold", fontSize: 26, color: rp === "none" ? faint : ink, fontVariant: ["tabular-nums"] }}>{rp === "none" ? "—" : signed(rp.withRules.pnl)}</Text>}
+                <Text style={{ fontSize: 11.5, fontWeight: "500", color: muted }}>{rp && rp !== "none" ? story(rp) : rp === "none" ? "no replay for this one" : " "}</Text>
               </View>
             </View>
-            <View style={{ backgroundColor: "white", borderRadius: 20, borderWidth: 1, borderColor: line, paddingHorizontal: 12 }}>
-              {steps(open).map((t, k) => (
-                <View key={k} style={{ flexDirection: "row", gap: 10, paddingVertical: 10, borderTopWidth: k ? 1 : 0, borderTopColor: line }}>
-                  <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: mist, alignItems: "center", justifyContent: "center", marginTop: 1 }}>
-                    <Text style={{ fontSize: 11.5, fontWeight: "800", color: violet }}>{k + 1}</Text>
+
+            <View style={{ gap: 2, paddingHorizontal: 6 }}>
+              <Text style={{ fontSize: 14, fontWeight: "700", color: ink }}>what you arm</Text>
+              <View style={{ width: 96, height: 3, borderRadius: 2, backgroundColor: violet, opacity: 0.6 }} />
+            </View>
+            <View style={{ paddingHorizontal: 6 }}>
+              {steps(cur).map((t, k, all) => (
+                <View key={k} style={{ flexDirection: "row", gap: 12 }}>
+                  <View style={{ alignItems: "center", width: 26 }}>
+                    <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: mist, alignItems: "center", justifyContent: "center" }}>
+                      <Text style={{ fontSize: 12, fontWeight: "800", color: violet }}>{k + 1}</Text>
+                    </View>
+                    {k < all.length - 1 && <View style={{ width: 2, flex: 1, backgroundColor: mist, marginVertical: 3 }} />}
                   </View>
-                  <Text style={{ flex: 1, fontSize: 13, fontWeight: "500", color: ink, lineHeight: 18 }}>{t}</Text>
+                  <Text style={{ flex: 1, fontSize: 14, fontWeight: "500", color: ink, lineHeight: 20, paddingTop: 3, paddingBottom: 14 }}>{t}</Text>
                 </View>
               ))}
             </View>
-            <Text style={{ fontSize: 11.5, fontWeight: "500", color: faint, paddingHorizontal: 4 }}>you sign every step above with one fingerprint.</Text>
-            <View style={{ flexDirection: "row", gap: 8 }}>
-              {!from && (
-                <Tap onPress={() => void share(open)} style={{ flex: 1 }} innerStyle={{ height: 54, borderRadius: 27, backgroundColor: well, alignItems: "center", justifyContent: "center" }}>
-                  <Text style={{ fontSize: 15, fontWeight: "600", color: ink }}>share</Text>
-                </Tap>
-              )}
-              <Tap onPress={busy || !make(open) || blocked ? undefined : () => { setDetail(null); void arm(open); }} style={{ flex: 2 }} innerStyle={{ height: 54, borderRadius: 27, backgroundColor: ink, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 }}>
-                <Glyph name="lock" size={18} color="white" />
-                <Text style={{ fontSize: 15, fontWeight: "600", color: "white" }}>{busy === open.id ? "arming…" : "arm with fingerprint"}</Text>
-              </Tap>
-            </View>
-          </View>
+          </Animated.View>
         )}
-      </Tray>
+      </ScrollView>
+
+      {cur && (
+        <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 18, backgroundColor: "#FAF8F2", flexDirection: "row", gap: 10 }}>
+          {!from && (
+            <Tap onPress={() => void share(cur)} style={{ flex: 1 }} innerStyle={{ height: 56, borderRadius: 28, backgroundColor: well, alignItems: "center", justifyContent: "center" }}>
+              <Text style={{ fontSize: 15, fontWeight: "600", color: ink }}>share</Text>
+            </Tap>
+          )}
+          <Tap onPress={busy || !make(cur) || blocked ? undefined : () => void arm(cur)} style={{ flex: 2.3 }} innerStyle={{ height: 56, borderRadius: 28, backgroundColor: ink, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, opacity: blocked ? 0.4 : 1 }}>
+            <Glyph name="lock" size={18} color="white" />
+            <Text style={{ fontSize: 15.5, fontWeight: "600", color: "white" }}>{busy === cur.id ? "arming…" : "arm with fingerprint"}</Text>
+          </Tap>
+        </View>
+      )}
     </Screen>
   );
 }
