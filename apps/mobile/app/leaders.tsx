@@ -9,7 +9,8 @@ import * as Haptics from "expo-haptics";
 import { Screen, Tap, IconButton } from "../src/ui/components";
 import { Text } from "../src/ui/Text";
 import { Segmented } from "../src/ui/Trade";
-import { Face } from "../src/ui/Face";
+import { Avatar } from "../src/ui/Avatar";
+import { AddressText } from "../src/ui/AddressText";
 import { Glyph } from "../src/ui/Glyph";
 import { useApp } from "../src/ui/store";
 import { readLeaders, type Leader } from "../src/rules";
@@ -62,8 +63,8 @@ function Step({ rank, h, face, x, w, base, l, by, onPress }: { rank: number; h: 
       {l && (
         <Animated.View style={[{ position: "absolute", left: x - w / 2, top: 0, width: w, height: base - h - 2, alignItems: "center", justifyContent: "flex-end" }, onTop]}>
           <Tap onPress={onPress} innerStyle={{ alignItems: "center", width: w }}>
-            <Face address={l.address} size={face} ring="white" />
-            <Text style={{ marginTop: 4, fontFamily: "monospace", fontSize: 10.5, fontWeight: "600", color: "#ffffffd9" }}>{cut(l.address)}</Text>
+            <View style={{ padding: 3, borderRadius: 40, backgroundColor: "white" }}><Avatar address={l.address} size={face} /></View>
+            <Text style={{ marginTop: 4, fontFamily: "Manrope_700Bold", fontSize: 11, color: "#ffffffd9" }}>{cut(l.address)}</Text>
             <View style={{ marginTop: 4, minWidth: 64, paddingHorizontal: 8, height: 20, borderRadius: 10, backgroundColor: "white", alignItems: "center", justifyContent: "center" }}>
               <Text style={{ fontSize: 11.5, fontWeight: "700", color: by === "most profit" || by === "never liquidated" ? (l.pnl >= 0 ? green : red) : ink, fontVariant: ["tabular-nums"] }}>{label}</Text>
             </View>
@@ -157,9 +158,9 @@ export default function Leaders() {
                   <Animated.View key={`${by}-${shownRange}-${l.accountId}`} entering={FadeIn.delay(25 * i).duration(200).reduceMotion(ReduceMotion.System)} style={i ? { borderTopWidth: 1, borderTopColor: line } : undefined}>
                     <Tap onPress={() => go(l)} innerStyle={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, paddingVertical: 11 }}>
                       <Text style={{ width: 20, fontFamily: "Manrope_700Bold", fontSize: 13, color: faint }}>{i + 4}</Text>
-                      <Face address={l.address} size={34} />
+                      <Avatar address={l.address} size={36} />
                       <View style={{ flex: 1, gap: 5 }}>
-                        <Text style={{ fontFamily: "monospace", fontSize: 13, fontWeight: "600", color: ink }}>{cut(l.address)}{l.address.toLowerCase() === me ? "  (you)" : ""}</Text>
+                        <Text><AddressText address={l.address} size={14} />{l.address.toLowerCase() === me ? <Text style={{ fontSize: 12, fontWeight: "700", color: violet }}>  you</Text> : null}</Text>
                         <View style={{ height: 5, width: "88%", borderRadius: 3, backgroundColor: well, flexDirection: "row", overflow: "hidden" }}>
                           <View style={{ flex: won(l), backgroundColor: green }} />
                           <View style={{ flex: 1 - won(l), backgroundColor: redTint }} />

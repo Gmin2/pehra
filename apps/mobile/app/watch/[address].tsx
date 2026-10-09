@@ -17,7 +17,9 @@ import { useApp } from "../../src/ui/store";
 import { readWatch, readTrader, setWatch, myWatches, listRules, createRule, cancelRule, describeRule, type WatchRead, type RuleRow, type Trader } from "../../src/rules";
 import { Tray, Segmented } from "../../src/ui/Trade";
 import { useMarkets } from "../../src/live";
-import { Face } from "../../src/ui/Face";
+import { Avatar } from "../../src/ui/Avatar";
+import { AddressText } from "../../src/ui/AddressText";
+import { CopyMark } from "../../src/ui/CopyMark";
 import { ProfitChart, type Pt } from "../../src/ui/ProfitChart";
 import { TradeMark } from "../../src/ui/TradeMark";
 import { signIn, type Session } from "../../src/account";
@@ -53,6 +55,7 @@ export default function Watch() {
     [range, setRange] = useState<(typeof RANGES)[number]>("7d"),
     [tr, setTr] = useState<Trader | null>(null),
     [scrub, setScrub] = useState<Pt | null>(null),
+    [copied, setCopied] = useState(false),
     markets = useMarkets(),
     { width } = useWindowDimensions();
   useEffect(() => {
@@ -128,7 +131,7 @@ export default function Watch() {
   let run = 0;
   const points: Pt[] = (tr?.trades ?? []).filter((t) => t.kind !== "open").map((t) => { run += t.pnl ?? 0; return { t: t.at, v: run }; });
   const shownPnl = scrub ? scrub.v : tr?.pnl ?? 0;
-  const copyAddress = () => { if (!address) return; Clipboard.setStringAsync(address); Haptics.selectionAsync(); a.toast("address copied"); };
+  const copyAddress = () => { if (!address) return; Clipboard.setStringAsync(address); Haptics.selectionAsync(); setCopied(true); setTimeout(() => setCopied(false), 1400); };
   return (
     <Screen>
       <Stack.Screen options={{ animation: "slide_from_right" }} />
@@ -143,11 +146,11 @@ export default function Watch() {
       </View>
       <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 110, gap: 10 }}>
         <Tap onPress={copyAddress} innerStyle={{ flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 4 }}>
-          {address ? <Face address={address} size={48} /> : null}
+          {address ? <Avatar address={address} size={50} /> : null}
           <View style={{ flex: 1, gap: 2 }}>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-              <Text style={{ fontFamily: "monospace", fontSize: 19, fontWeight: "700", color: ink }}>{address ? cut(address) : ""}</Text>
-              <Glyph name="copies" size={18} color={ink} />
+              {address ? <AddressText address={address} /> : null}
+              <CopyMark done={copied} />
               {mine && <Text style={{ fontSize: 13, fontWeight: "700", color: violet }}>you</Text>}
             </View>
             {w === null ? <View style={{ width: 160, height: 12, borderRadius: 6, backgroundColor: well }} />
