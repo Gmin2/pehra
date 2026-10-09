@@ -49,3 +49,6 @@ let gone = false
 while (Date.now() - t1 < 360_000) { if (!(await health()).length) { gone = true; break } await sleep(1000) }
 console.log('copy closed', gone ? `after ${((Date.now() - t1) / 1000).toFixed(1)}s` : 'still open after 360s')
 ts.close()
+// the copy stays armed otherwise and follows whatever the dev account does next
+const off = await post(`/rules/${c.address}/${rule.id}/cancel`, await sign({ action: 'cancel', id: rule.id }))
+console.log('copy cancelled', off.status)

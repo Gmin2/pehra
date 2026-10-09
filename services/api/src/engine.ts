@@ -75,6 +75,9 @@ export class Engine {
   // intents on the wire right now. reconcile leaves them and their rules alone, the answer is coming
   private inflight = new Map<string, string>()
   private resizing = new Set<number>()
+  // steps missing from the socket and perpl's history, and since when. a reconnect drops fired triggers from
+  // the socket and the history can lag minutes, so they are looked for again before being called gone
+  private missing = new Map<number, number>()
   // stops whose backstop is being moved right now. reconcile leaves them alone so it never puts the old one back
   private moving = new Set<string>()
   evaluations = 0
@@ -329,7 +332,7 @@ export class Engine {
     for (let i = 0; i < tries; i++) {
       hist = await this.deps.history(r.owner)
       fired = hist.find(o => o.oid === row.oid && o.st === 10)
-      if (fired?.at) break
+      if (fired?.at) { this.missing.delete(row.oid); break }
       if (hist.some(o => o.oid === row.oid && o.st === 5)) break
       await new Promise(res => setTimeout(res, 3000))
     }
@@ -339,8 +342,15 @@ export class Engine {
       // close it made, which is enough to know it fired and at what price
       const ts = this.deps.session(r.owner)
       const sock = ts?.orders.get(row.oid)
-      if (!m || !ts || sock?.st !== 10) { q.orderState.run('gone', row.size, r.id, row.step); return }
+      if (!m || !ts || sock?.st !== 10) {
+        const since = this.missing.get(row.oid) ?? Date.now()
+        if (row.step !== 'backstop' && Date.now() - since < 600_000) { this.missing.set(row.oid, since); q.orderState.run('resting', row.size, r.id, row.step); return }
+        this.missing.delete(row.oid)
+        q.orderState.run('gone', row.size, r.id, row.step)
+        return
+      }
       const kid = [...ts.orders.values()].filter(o => o.oid > row.oid && o.lp === sock.lp && (o.t === 3 || o.t === 4) && (o.fs ?? 0) > 0 && o.st === 4).sort((x, y) => y.oid - x.oid)[0]
+      this.missing.delete(row.oid)
       q.orderState.run('fired', row.size, r.id, row.step)
       const price = kid?.fp ? fromPrice(m, kid.fp) : row.px, size = kid?.fs ? fromSize(m, kid.fs) : row.size
       writeRun({ owner: r.owner, rule: r.id, kind: 'fill', body: { kind: row.step === 'backstop' ? 'backstop' : 'step', step: row.step, by: 'perpl', trigger: row.px, size, price, tx: null, from: 'session, history lagged' } })
