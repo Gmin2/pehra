@@ -1,7 +1,7 @@
 // the rule routes. every write is signed by the account (signedRules.ts). a rule is checked twice before
 // it is stored: its shape by the schema, then its facts against the live position (stop under the mark,
 // trigger budget)
-import { Rule, validate, validateEntry, validateWhen, triggersOf, TRIGGER_BUDGET } from '@pehra/perpl'
+import { Rule, validate, validateEntry, validateWhen, validateCopy, triggersOf, TRIGGER_BUDGET } from '@pehra/perpl'
 import type { Guard } from './guard'
 import { checkSigned, type Signed } from './signedRules'
 import { proof } from './proof'
@@ -60,7 +60,8 @@ export async function rulesRoute(req: Request, url: URL, guard: Guard): Promise<
       const live = guard.live(address, r.pid, r.mkt)
       resting = Math.max(resting, live?.resting ?? 0)
       need += triggersOf(r)
-      const check = r.kind === 'entry' ? validateEntry(r, guard.entryLive(address, r.mkt))
+      const check = r.kind === 'copy' ? validateCopy(r, address, guard.entryLive(address, r.mkt))
+        : r.kind === 'entry' ? validateEntry(r, guard.entryLive(address, r.mkt))
         : r.kind === 'when' ? validateWhen(r, live, guard.entryLive(address, r.mkt)?.mark)
         : validate(r, live)
       if (!check.ok) return json({ error: check.why, rule: r.id }, 422)
@@ -97,7 +98,8 @@ export async function rulesRoute(req: Request, url: URL, guard: Guard): Promise<
   const mine = new Set(guard.engine.list(address).filter(r => ['armed', 'held', 'paused', 'firing', 'working'].includes(r.state)).map(r => r.id))
   const missing = refs.filter((x): x is string => !!x && !mine.has(x))
   if (missing.length) return json({ error: `no active rule ${missing[0]} on this account` }, 422)
-  const check = rule.kind === 'entry' ? validateEntry(rule, guard.entryLive(address, rule.mkt))
+  const check = rule.kind === 'copy' ? validateCopy(rule, address, guard.entryLive(address, rule.mkt))
+    : rule.kind === 'entry' ? validateEntry(rule, guard.entryLive(address, rule.mkt))
     : rule.kind === 'when' ? validateWhen(rule, guard.live(address, rule.pid, rule.mkt), guard.entryLive(address, rule.mkt)?.mark)
     : validate(rule, guard.live(address, rule.pid, rule.mkt))
   if (!check.ok) return json({ error: check.why }, 422)

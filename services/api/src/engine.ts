@@ -2,7 +2,7 @@
 // market, and what step() asks for is carried out through one send queue per account. every state change
 // and every result is a run row (runs.ts). a session that is reconnecting defers its rules, it never acts
 // on a position map it cannot trust.
-import { Rule, step, onFunding, levels, poll as pollChain, matches as chainMatches, fired as chainFired, onStopEvent, type ChainEvent, type ChainCtx, type PollNow, modeOf, nextSlice, Book, type HistoryOrder, positionHealth, toCns, fromCns, toSize, fromSize, fromPrice, OrderType, Flag, Reason, type Context, type GuardSettings, type Market, type MarketDataSocket, type Mem, type Order, type Position, type RuleState, type Tick, type TradingSocket, type Intent } from '@pehra/perpl'
+import { Rule, step, onFunding, onTrades, type TradeRow, levels, poll as pollChain, matches as chainMatches, fired as chainFired, onStopEvent, type ChainEvent, type ChainCtx, type PollNow, modeOf, nextSlice, Book, type HistoryOrder, positionHealth, toCns, fromCns, toSize, fromSize, fromPrice, OrderType, Flag, Reason, type Context, type GuardSettings, type Market, type MarketDataSocket, type Mem, type Order, type Position, type RuleState, type Tick, type TradingSocket, type Intent } from '@pehra/perpl'
 import { db } from './db'
 import { writeRun } from './runs'
 import { move } from './state'
@@ -235,6 +235,25 @@ export class Engine {
     writeRun({ owner: r.owner, rule: r.id, kind: 'note', body: { text: `chain fired`, intents: s.intents.map(i => i.kind) } })
     if (s.intents.length) this.fire(r, s.intents, { at: ctx.at, block: this.deps.market.head, mkt: r.rule.mkt, mark, last: mark }, s.done)
     else if (s.done) this.finish(r, s.done)
+  }
+
+  // the addresses active copies follow
+  copyTargets() {
+    return [...new Set([...this.rules.values()].filter(r => r.rule.kind === 'copy' && r.state === 'armed').map(r => (r.rule as Extract<Rule, { kind: 'copy' }>).target.toLowerCase()))]
+  }
+
+  // what a followed account did on chain, from the indexer. every copy of it decides, then acts
+  onCopy(target: string, rows: TradeRow[]) {
+    for (const r of [...this.rules.values()]) {
+      if (r.rule.kind !== 'copy' || r.state !== 'armed' || r.rule.target.toLowerCase() !== target.toLowerCase()) continue
+      const ctx = this.chainCtx(r.owner)
+      const out = onTrades(r.rule, r.mem, rows, { mark: ctx.mark, position: ctx.health, armedAt: r.created })
+      if (JSON.stringify(out.mem) !== JSON.stringify(r.mem)) { r.mem = out.mem; q.saveMem.run(JSON.stringify(out.mem), Date.now(), r.id) }
+      if (!out.intents.length) continue
+      writeRun({ owner: r.owner, rule: r.id, kind: 'note', body: { text: `copying ${target}`, intents: out.intents.map(i => i.kind) } })
+      const mark = ctx.mark(r.rule.mkt) ?? 0
+      this.fire(r, out.intents, { at: Date.now(), block: this.deps.market.head, mkt: r.rule.mkt, mark, last: mark })
+    }
   }
 
   // chains that wait on the market, the clock or agora
@@ -528,6 +547,8 @@ export class Engine {
       let held: string | undefined
       for (const i of intents) { const out = await this.carry(r, i, { t0: tick.at, b0: tick.block, t1 }); if (out) held = out }
       if (done && !held) this.finish(r, done)
+      // a copy that filled nothing waits for the next trade, it does not hold on this one
+      else if (held && r.rule.kind === 'copy') { this.deps.emit(r.owner, { kind: 'failed', text: `a copy did not fill: ${held}` }); move(r, 'armed', held) }
       else if (held) {
         // nothing sold: forget that it fired, so it can act again once the book allows it (build-plan day 4)
         r.mem = { ...r.mem, fired: undefined }
@@ -567,7 +588,7 @@ export class Engine {
     }
     const ts = this.deps.session(r.owner)
     const posFirst = i.kind === 'add' || i.kind === 'close' ? ts?.positions.get(i.pid) : undefined
-    const m = this.deps.ctx()?.markets.find(x => x.id === (posFirst?.mkt ?? r.rule.mkt))
+    const m = this.deps.ctx()?.markets.find(x => x.id === (posFirst?.mkt ?? (i.kind === 'open' ? i.mkt : undefined) ?? r.rule.mkt))
     if (i.kind === 'open') {
       if (!ts?.account || !m) throw new Error('the session went away before sending')
       return this.openEntry(r, `${r.id}:${r.fires}`, ts, m, i, { ...stamps, t2 })
@@ -722,6 +743,18 @@ export class Engine {
   // as distances from the fill. the ladder goes first so a breakeven stop can point at it. they ride the
   // entry's signature, the way every child here does
   private handOff(r: Stored, pid: number, fill?: number) {
+    if (r.rule.kind === 'copy') {
+      // remember which position this market's copy opened, so closing with them closes this one
+      const pos = this.deps.session(r.owner)?.positions.get(pid)
+      if (pos) { r.mem = { ...r.mem, copied: { ...(r.mem.copied ?? {}), [pos.mkt]: pid } }; q.saveMem.run(JSON.stringify(r.mem), Date.now(), r.id) }
+      if (r.rule.stopPct && fill && pos) {
+        const long = pos.sd === 1, k = r.rule.stopPct / 100
+        const at = (x: number) => Number((fill * (long ? 1 - x : 1 + x)).toPrecision(4))
+        const id = `stop-${pid}-copy-${r.id}`.slice(0, 64)
+        if (!this.exists(id)) this.add(r.owner, { v: 1, id, pid, mkt: pos.mkt, forMs: 0, kind: 'stop', px: at(k), floor: at(k + 0.01), backstopPx: at(k + 0.02), slices: 4 }, r.by)
+      }
+      return
+    }
     if (r.rule.kind !== 'entry') return
     const base = { v: 1 as const, pid, mkt: r.rule.mkt, forMs: 0 }
     const kids: Rule[] = []

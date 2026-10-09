@@ -49,6 +49,7 @@ function describe(r: Rule, live?: RuleRow["live"]): { glyph: string; title: stri
   if (r.kind === "funding") return { glyph: "magic-wand-sparkle", title: "close if funding turns", line: `never more than ${r.floorPct}% from the price` };
   if (r.kind === "entry") return { glyph: "flame", title: `open a ${r.side} at ${at(r.px, r.px)}`, line: `${r.margin} ausd at ${r.leverage}x, never ${r.side === "long" ? "above" : "below"} ${at(r.limit, r.px)}` };
   if (r.kind === "when") return { glyph: "magic-wand-sparkle", title: "when this happens", line: whenLine(r) };
+  if (r.kind === "copy") return { glyph: "gauge", title: `copying ${r.target.slice(0, 6)}…${r.target.slice(-4)}`, line: `${r.margin} ausd a trade, up to ${r.maxLeverage}x${r.stopPct ? `, stop ${r.stopPct}%` : ""}${r.closeWithThem ? ", closes with them" : ""}` };
   return { glyph: "bell", title: "price alert", line: `when it goes above ${r.above}` };
 }
 

@@ -110,3 +110,12 @@ export async function myWatches(owner: string) {
   if (!r.ok) return []
   return ((await r.json()) as { watching: { target: string; created: number }[] }).watching
 }
+
+// the leaderboard: realized pnl per perpl account over the last days, from the indexer
+export type Leader = { address: string; accountId: string; pnl: number; trades: number; wins: number; liquidations: number; lastAt: number }
+export async function readLeaders(days = 7): Promise<Leader[]> {
+  const r = await fetch(`${API}/leaderboard?days=${days}`)
+  const j = (await r.json()) as { leaders?: Leader[]; error?: string }
+  if (!r.ok || !j.leaders) throw new Error(j.error ?? `leaderboard ${r.status}`)
+  return j.leaders
+}

@@ -23,13 +23,15 @@ export type Mem = {
   best?: number; placed?: number
   // a daily chain remembers the day it last ran, a price chain whether it was on the other side first
   day?: number
+  // a copy: the newest trade of the target already seen (unix seconds), and the position each market's copy opened
+  seen?: number; copied?: Record<string, number>
 }
 
 export type Intent =
   | { kind: 'note'; text: string }
   | { kind: 'add'; pid: number; ausd: number; why: string }
   | { kind: 'close'; pid: number; size: number; floor: number; why: string }
-  | { kind: 'open'; side: 'long' | 'short'; ausd: number; leverage: number; limit: number; why: string }
+  | { kind: 'open'; side: 'long' | 'short'; ausd: number; leverage: number; limit: number; why: string; mkt?: number }
   // a stop's levels move. the hidden ones change in memory, the backstop is placed again on perpl
   | { kind: 'move'; rule: string; px: number; floor: number; backstopPx: number; why: string }
   | { kind: 'cancel'; rule: string; why: string }
@@ -74,7 +76,7 @@ export function step(rule: Rule, mem: Mem, tick: Tick, view: View): Step {
   }
 
   // chains are polled and fed events by the engine through chain.ts, a tick alone decides nothing for them
-  if (rule.kind === 'when') return { mem, intents: [] }
+  if (rule.kind === 'when' || rule.kind === 'copy') return { mem, intents: [] }
 
   const pos = view.health
   if (!pos) return { mem, intents: [], done: 'position closed' }

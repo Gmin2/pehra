@@ -52,6 +52,8 @@ export function summary(r: Rule, symbol = `market ${r.mkt}`): string {
   if (r.kind === 'stop') return `hidden stop on ${symbol} at ${r.px}, never ${r.floor < r.px ? 'below' : 'above'} ${r.floor}, backstop ${r.backstopPx} on perpl`
     + (r.trail ? `, trailing ${r.trail.pct}% behind the best price, only ever tighter` : '')
     + (r.breakeven ? `, moves to entry plus fees after take profit step ${r.breakeven.afterStep} of ${r.breakeven.ladder} fills` : '')
+  if (r.kind === 'copy') return `copy ${r.target.toLowerCase()}: when they open on perpl, open the same side with ${r.margin} ausd at up to ${r.maxLeverage}x, never more than ${r.limitPct}% from the price`
+    + (r.stopPct ? `, with a hidden stop ${r.stopPct}% away` : '') + (r.closeWithThem ? ', and close it when they close' : '')
   if (r.kind === 'when') return `when ${whenText(r.on, symbol)}, ${r.then.map(a => doText(a, symbol)).join(', then ')}${r.repeat ? ', every time' : ''}`
   if (r.kind === 'funding') return `close the ${symbol} position when funding turns against it, never more than ${r.floorPct}% from the price`
   if (r.kind === 'entry') {

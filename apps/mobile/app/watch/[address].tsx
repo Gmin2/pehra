@@ -13,7 +13,10 @@ import { Text } from "../../src/ui/Text";
 import { Coin } from "../../src/ui/Coin";
 import { Glyph } from "../../src/ui/Glyph";
 import { useApp } from "../../src/ui/store";
-import { readWatch, setWatch, myWatches, type WatchRead } from "../../src/rules";
+import { readWatch, setWatch, myWatches, listRules, createRule, cancelRule, describeRule, type WatchRead, type RuleRow } from "../../src/rules";
+import { Tray } from "../../src/ui/Trade";
+import { signIn, type Session } from "../../src/account";
+import type { Rule } from "@pehra/perpl";
 import { log } from "../../src/log";
 import { violet, ink, muted, green, red, faint, well } from "../../src/ui/Position";
 
@@ -27,12 +30,17 @@ export default function Watch() {
     me = a.stored?.address ?? a.session?.address ?? null,
     [w, setW] = useState<WatchRead | null>(null),
     [err, setErr] = useState<string | null>(null),
-    [starred, setStarred] = useState(false);
+    [starred, setStarred] = useState(false),
+    [copies, setCopies] = useState<RuleRow[]>([]),
+    [sheet, setSheet] = useState(false),
+    [cm, setCm] = useState(10), [cl, setCl] = useState(3), [cClose, setCClose] = useState(true), [cStop, setCStop] = useState(true),
+    [busy, setBusy] = useState(false);
 
   const load = useCallback(() => {
     if (!address) return;
     readWatch(address).then((x) => { setW(x); setErr(null); }).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
     if (me) myWatches(me).then((l) => setStarred(l.some((x) => x.target === address.toLowerCase()))).catch(() => {});
+    if (me) listRules(me).then((rs) => setCopies(rs.filter((r) => r.rule.kind === "copy" && r.rule.target.toLowerCase() === address.toLowerCase() && ["armed", "held", "firing", "working"].includes(r.state)))).catch(() => {});
   }, [address, me]);
   useFocusEffect(useCallback(() => { load(); const t = setInterval(load, 10_000); return () => clearInterval(t); }, [load]));
 
@@ -43,6 +51,30 @@ export default function Watch() {
     Haptics.selectionAsync();
     try { await setWatch(me, address, next); a.toast(next ? "watching. you’ll hear when they trade" : "not watching any more"); log(`watch ${address} ${next}`); }
     catch (e) { setStarred(!next); a.toast("couldn’t change the watch list"); }
+  };
+
+  const session = async (): Promise<Session> => {
+    if (a.session) return a.session;
+    const s = await signIn(a.stored ? { credentialId: a.stored.credentialId } : undefined);
+    a.setSession(s);
+    return s;
+  };
+  const copyRule: Rule | null = address && me ? { v: 1, id: `copy-${address.slice(2, 8)}-${Date.now().toString(36)}`, pid: 0, mkt: 64, forMs: 0, kind: "copy", target: address.toLowerCase(), margin: cm, maxLeverage: cl, limitPct: 1, ...(cClose ? { closeWithThem: true } : {}), ...(cStop ? { stopPct: 5 } : {}) } : null;
+  const startCopy = async () => {
+    if (!copyRule) return;
+    setBusy(true);
+    try {
+      await createRule(await session(), copyRule, "MON");
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      log(`copying ${address}`);
+      a.toast("copying. their next trade opens on your account");
+      setSheet(false);
+      load();
+    } catch (e) { a.toast(e instanceof Error ? e.message : "couldn’t start the copy"); log(`copy failed: ${e instanceof Error ? e.message : e}`); }
+    setBusy(false);
+  };
+  const stopCopy = async (r: RuleRow) => {
+    try { await cancelRule(await session(), r.id); a.toast("stopped copying"); load(); } catch { a.toast("couldn’t stop it, nothing changed"); }
   };
 
   const heading = { fontFamily: "Manrope_700Bold", fontSize: 26, lineHeight: 34, color: ink, letterSpacing: -0.5 };
@@ -90,6 +122,21 @@ export default function Watch() {
           </Animated.View>
         ))}
 
+        {w && w.accountId !== null && me && address?.toLowerCase() !== me.toLowerCase() && (
+          copies.length ? (
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#E4F3EC", borderRadius: 22, padding: 14 }}>
+              <Glyph name="gauge" size={24} />
+              <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: green }}>you copy them · {copies[0].rule.kind === "copy" ? `${copies[0].rule.margin} ausd a trade` : ""}</Text>
+              <Tap onPress={() => void stopCopy(copies[0])} innerStyle={{ height: 32, paddingHorizontal: 12, borderRadius: 16, backgroundColor: "white", justifyContent: "center" }}>
+                <Text style={{ fontSize: 12.5, fontWeight: "700", color: ink }}>stop</Text>
+              </Tap>
+            </View>
+          ) : (
+            <Tap onPress={() => setSheet(true)} innerStyle={{ height: 52, borderRadius: 26, backgroundColor: ink, alignItems: "center", justifyContent: "center" }}>
+              <Text style={{ fontSize: 15, fontWeight: "600", color: "white" }}>copy their next trades</Text>
+            </Tap>
+          )
+        )}
         {w && w.onPehra && (
           <Tap onPress={() => a.go(`/proof?address=${address}`)} innerStyle={{ flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: mist, borderRadius: 22, padding: 14 }}>
             <Glyph name="shield" size={24} />
@@ -109,6 +156,37 @@ export default function Watch() {
           </View>
         )}
       </ScrollView>
+      <Tray visible={sheet} onClose={() => setSheet(false)}>
+        <View style={{ gap: 14, paddingHorizontal: 4 }}>
+          <Text style={{ fontSize: 21, fontWeight: "700", color: ink }}>copy {address ? cut(address) : ""}</Text>
+          <Text style={{ fontSize: 13.5, fontWeight: "500", color: muted }}>when they open a position on perpl, pehra opens the same side on your account, at your size. it runs on your own account with your own key, their money and yours never mix.</Text>
+          {([["each trade", [5, 10, 25], cm, setCm, " ausd"], ["leverage up to", [1, 2, 3], cl, setCl, "x"]] as const).map(([label, opts, v, set, unit]) => (
+            <View key={label} style={{ gap: 8 }}>
+              <Text style={{ fontSize: 12.5, fontWeight: "600", color: muted }}>{label}</Text>
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                {opts.map((o) => (
+                  <Tap key={o} onPress={() => set(o)} style={{ flex: 1 }} innerStyle={{ height: 42, borderRadius: 21, backgroundColor: v === o ? ink : "#F0EDF3", alignItems: "center", justifyContent: "center" }}>
+                    <Text style={{ fontSize: 14, fontWeight: "700", color: v === o ? "white" : ink }}>{o}{unit}</Text>
+                  </Tap>
+                ))}
+              </View>
+            </View>
+          ))}
+          {([["close when they close", cClose, setCClose], ["a hidden stop 5% away on each copy", cStop, setCStop]] as const).map(([label, on, set]) => (
+            <Tap key={label} onPress={() => set(!on)} innerStyle={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 6 }}>
+              <Text style={{ fontSize: 14.5, fontWeight: "700", color: ink }}>{label}</Text>
+              <View style={{ width: 44, height: 26, borderRadius: 13, backgroundColor: on ? violet : line, justifyContent: "center", paddingHorizontal: 3 }}>
+                <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: "white", alignSelf: on ? "flex-end" : "flex-start" }} />
+              </View>
+            </Tap>
+          ))}
+          <Text style={{ fontSize: 11, fontWeight: "500", color: faint }}>you sign: {copyRule ? describeRule(copyRule, "MON") : ""}</Text>
+          <Tap onPress={busy ? undefined : startCopy} innerStyle={{ height: 56, borderRadius: 28, backgroundColor: ink, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, opacity: busy ? 0.5 : 1 }}>
+            <Glyph name="lock" size={20} color="white" />
+            <Text style={{ fontSize: 16, fontWeight: "600", color: "white" }}>{busy ? "starting…" : "copy with fingerprint"}</Text>
+          </Tap>
+        </View>
+      </Tray>
     </Screen>
   );
 }

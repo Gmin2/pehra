@@ -9,6 +9,7 @@ import { rulesRoute } from './rules'
 import { replayRoute } from './replayRoute'
 import { openSession, owns } from './sessions'
 import { share, shared, copied } from './shares'
+import { leaders } from './leaders'
 import { watchRead, watch, unwatch, watchesOf, watchTick } from './watches'
 import { proof } from './proof'
 import { prefsOf, setPrefs, recentAlerts, KINDS } from './alerts'
@@ -181,6 +182,10 @@ const server = serve({
       const fromBody = fromPath ? null : ((await req.clone().json().catch(() => ({}))) as { address?: string }).address
       const address = fromPath ?? fromBody
       if (!address || !owns(req, address)) return json({ error: 'sign in again', code: 'session' }, 401)
+    }
+    if (url.pathname === '/leaderboard' && req.method === 'GET') {
+      const days = Math.min(Math.max(Number(url.searchParams.get('days') ?? 7), 1), 30)
+      try { return json({ days, leaders: await leaders(INDEXER, days) }) } catch (e) { return json({ error: e instanceof Error ? e.message : 'indexer unreachable' }, 502) }
     }
     // any address, read from the chain and the indexer. a pehra account also shows its public proof
     const wa = url.pathname.match(/^\/watch\/(0x[0-9a-fA-F]{40})$/)
@@ -434,6 +439,18 @@ setTimeout(() => void funding(), 15_000)
 setInterval(() => void depeg(), 5 * 60_000)
 setTimeout(() => void depeg(), 25_000)
 setInterval(() => guard.alerts.quietTick(), 60_000)
+// traders people copy: every 5s their newest activity from the indexer goes to the engine
+let copying = false
+setInterval(async () => {
+  if (copying) return
+  copying = true
+  try {
+    for (const t of guard.engine.copyTargets()) {
+      const { rows } = await chainHistory(t).catch(() => ({ rows: [] as unknown[] }))
+      guard.engine.onCopy(t, rows as Parameters<typeof guard.engine.onCopy>[1])
+    }
+  } finally { copying = false }
+}, 5000)
 // accounts people watch: what they did since the last look, and positions near liquidation
 setInterval(() => void watchTick(pub, guard.openMarkets(), chainHistory, (owner, key, title, body) => void guard.alerts.push(owner, 'watched', key, title, body)).catch(e => log(`watch tick: ${e instanceof Error ? e.message : e}`)), 30_000)
 // chains on the clock (a set time, every day) are checked twice a minute

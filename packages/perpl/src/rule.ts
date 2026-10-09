@@ -63,6 +63,14 @@ export const Rule = z.discriminatedUnion('kind', [
   // funding: close the position when funding turns against it (a long pays when the rate goes positive, a
   // short when it goes negative), never more than floorPct from the mark. acts on the flip, not on arming
   z.object({ ...base, kind: z.literal('funding'), floorPct: z.number().gt(0).lte(5).default(1) }),
+  // copy a trader: when the target account opens a position on perpl, open the same side on the same market
+  // with this margin, its leverage capped, never more than limitPct from the price. optionally a hidden
+  // stop on the copy, and closing when they close. account wide, pid 0, mkt is where it was set up
+  z.object({
+    ...base, kind: z.literal('copy'), target: z.string().regex(/^0x[0-9a-fA-F]{40}$/),
+    margin: z.number().positive().max(10_000), maxLeverage: z.number().gt(0).lte(100), limitPct: z.number().gt(0).lte(5),
+    closeWithThem: z.boolean().optional(), stopPct: z.number().gt(0).lte(50).optional(),
+  }),
   // a chain on one position (pid) or the account (pid 0). once by default, repeat keeps it armed
   z.object({ ...base, kind: z.literal('when'), on: WhenTrigger, then: z.array(WhenAction).min(1).max(4), repeat: z.boolean().optional() }),
   // entry: when the mark falls to (below) or rises to (above) px, open side with margin ausd at leverage, an
@@ -163,8 +171,20 @@ export function validateWhen(r: Extract<Rule, { kind: 'when' }>, live: Live | nu
   return { ok: true }
 }
 
+// a copy is checked against the account: someone else, margin it has, leverage the market allows
+export function validateCopy(r: Extract<Rule, { kind: 'copy' }>, owner: string, live: EntryLive | null): Check {
+  if (r.pid !== 0) return no('a copy watches the whole account, pid has to be 0')
+  if (r.target.toLowerCase() === owner.toLowerCase()) return no('that is your own address')
+  if (!live) return no('the market is not live right now, try again in a moment')
+  if (r.margin > live.balance) return no(`each copy uses ${r.margin} ausd, ${live.balance.toFixed(2)} is free`)
+  if (r.maxLeverage > live.maxLeverage) return no(`this market allows up to ${live.maxLeverage}x`)
+  if (r.stopPct && r.stopPct / 100 >= 1 / r.maxLeverage - marginFraction(live.maintenance)) return no(`at ${r.maxLeverage}x the copy would be liquidated before a ${r.stopPct}% stop`)
+  return { ok: true }
+}
+
 export function validate(r: Rule, live: Live | null): Check {
   if (r.kind === 'ping') return { ok: true }
+  if (r.kind === 'copy') return no('a copy is checked with validateCopy')
   if (r.kind === 'when') return validateWhen(r, live)
   if (r.kind === 'entry') return no('an entry is checked with validateEntry')
   if (!live) return no('there is no open position for this rule')
