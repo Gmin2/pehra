@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { View, ScrollView, Linking, useWindowDimensions } from "react-native";
 import { Stack, useFocusEffect, useLocalSearchParams } from "expo-router";
 import Animated, { FadeIn, FadeInDown, ReduceMotion } from "react-native-reanimated";
-import Svg, { Path, Line, Circle } from "react-native-svg";
+import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { NETWORKS } from "@pehra/perpl";
 import { Screen, Tap, IconButton } from "../../src/ui/components";
@@ -17,6 +17,9 @@ import { useApp } from "../../src/ui/store";
 import { readWatch, readTrader, setWatch, myWatches, listRules, createRule, cancelRule, describeRule, type WatchRead, type RuleRow, type Trader } from "../../src/rules";
 import { Tray, Segmented } from "../../src/ui/Trade";
 import { useMarkets } from "../../src/live";
+import { Face } from "../../src/ui/Face";
+import { ProfitChart, type Pt } from "../../src/ui/ProfitChart";
+import { TradeMark } from "../../src/ui/TradeMark";
 import { signIn, type Session } from "../../src/account";
 import type { Rule } from "@pehra/perpl";
 import { log } from "../../src/log";
@@ -34,37 +37,6 @@ const dayOf = (t: number) => { const d = new Date(t * 1000), now = new Date(); c
 const dateOf = (t: number) => { const d = new Date(t * 1000); return `${MONTHS[d.getMonth()]} ${d.getDate()}`; };
 const clock = (t: number) => { const d = new Date(t * 1000); return `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`; };
 
-// the running total of closed trades as a line, with a faint zero line. flat colour, no glow
-function ProfitLine({ trader, width }: { trader: Trader; width: number }) {
-  const closes = trader.trades.filter((t) => t.kind !== "open");
-  const h = 128, padY = 10;
-  if (closes.length < 2) return <View style={{ height: h, alignItems: "center", justifyContent: "center" }}><Text style={{ fontSize: 13, fontWeight: "500", color: muted }}>{closes.length ? "one closed trade so far" : "no closed trades in this window"}</Text></View>;
-  let run = 0;
-  const pts = closes.map((t) => { run += t.pnl ?? 0; return { t: t.at, v: run }; });
-  const t0 = pts[0].t, t1 = Math.max(pts[pts.length - 1].t, t0 + 1);
-  const lo = Math.min(0, ...pts.map((p) => p.v)), hi = Math.max(0, ...pts.map((p) => p.v));
-  const span = hi - lo || 1;
-  const x = (t: number) => ((t - t0) / (t1 - t0)) * (width - 8) + 4;
-  const y = (v: number) => padY + (1 - (v - lo) / span) * (h - padY * 2);
-  const d = pts.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)} ${y(p.v).toFixed(1)}`).join(" ");
-  const end = pts[pts.length - 1], up = end.v >= 0;
-  const stroke = up ? violet : red;
-  return (
-    <View>
-    <Svg width={width} height={h}>
-      <Line x1={0} x2={width} y1={y(0)} y2={y(0)} stroke="#DDD8E6" strokeWidth={1} strokeDasharray="4 4" />
-      <Path d={`${d} L${x(end.t).toFixed(1)} ${y(0).toFixed(1)} L${x(t0).toFixed(1)} ${y(0).toFixed(1)} Z`} fill={up ? mist : "#FBE9EA"} />
-      <Path d={d} fill="none" stroke={stroke} strokeWidth={2.4} strokeLinejoin="round" strokeLinecap="round" />
-      <Circle cx={x(end.t)} cy={y(end.v)} r={4.5} fill={stroke} />
-    </Svg>
-    <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 4 }}>
-      <Text style={{ fontSize: 11, fontWeight: "600", color: faint }}>{dateOf(t0)}</Text>
-      <Text style={{ fontSize: 11, fontWeight: "600", color: faint }}>{dayOf(t1) === "today" ? "today" : dateOf(t1)}</Text>
-    </View>
-    </View>
-  );
-}
-
 const ago = (t: number) => { const m = Math.round((Date.now() / 1000 - t) / 60); return m < 60 ? `${Math.max(1, m)}m ago` : m < 2880 ? `${Math.round(m / 60)}h ago` : `${Math.round(m / 1440)}d ago`; };
 
 export default function Watch() {
@@ -80,6 +52,7 @@ export default function Watch() {
     [busy, setBusy] = useState(false),
     [range, setRange] = useState<(typeof RANGES)[number]>("7d"),
     [tr, setTr] = useState<Trader | null>(null),
+    [scrub, setScrub] = useState<Pt | null>(null),
     markets = useMarkets(),
     { width } = useWindowDimensions();
   useEffect(() => {
@@ -152,17 +125,16 @@ export default function Watch() {
   };
   const section = { fontSize: 13, fontWeight: "700" as const, color: ink, paddingHorizontal: 6, marginTop: 6 };
   const card = { backgroundColor: "white", borderRadius: 24, borderWidth: 1, borderColor: line } as const;
-  const mark = (t: Trader["trades"][number]) => {
-    const up = t.side !== "short";
-    if (t.kind === "liquidated") return <Glyph name="triangle-warning" size={22} color={red} />;
-    return <Glyph name={up ? "circle-arrow-up" : "circle-arrow-down"} size={22} color={t.kind === "open" ? violet : (t.pnl ?? 0) >= 0 ? green : red} />;
-  };
+  let run = 0;
+  const points: Pt[] = (tr?.trades ?? []).filter((t) => t.kind !== "open").map((t) => { run += t.pnl ?? 0; return { t: t.at, v: run }; });
+  const shownPnl = scrub ? scrub.v : tr?.pnl ?? 0;
+  const copyAddress = () => { if (!address) return; Clipboard.setStringAsync(address); Haptics.selectionAsync(); a.toast("address copied"); };
   return (
     <Screen>
       <Stack.Screen options={{ animation: "slide_from_right" }} />
       <View style={{ height: 60, flexDirection: "row", alignItems: "center", paddingHorizontal: 12 }}>
         <IconButton name="back" label="Back" onPress={a.back} color={ink} />
-        <Text style={{ flex: 1, textAlign: "center", fontFamily: "monospace", fontSize: 15, fontWeight: "700", color: ink }}>{address ? cut(address) : ""}{mine ? " (you)" : ""}</Text>
+        <View style={{ flex: 1 }} />
         {!mine && w && w.accountId !== null ? (
           <Tap onPress={star} innerStyle={{ height: 36, paddingHorizontal: 14, borderRadius: 18, backgroundColor: starred ? violet : mist, justifyContent: "center" }}>
             <Text style={{ fontSize: 13, fontWeight: "700", color: starred ? "white" : violet }}>{starred ? "watching" : "watch"}</Text>
@@ -170,20 +142,32 @@ export default function Watch() {
         ) : <View style={{ width: 44 }} />}
       </View>
       <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 110, gap: 10 }}>
-        <View style={{ paddingHorizontal: 6, marginTop: 2 }}>
-          <Text style={{ fontSize: 14, fontWeight: "500", color: muted }}>{w?.accountId === null ? "this address has no perpl account yet" : `closed trades, ${RANGE_WORDS[range]}`}</Text>
+        <Tap onPress={copyAddress} innerStyle={{ flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 4 }}>
+          {address ? <Face address={address} size={48} /> : null}
+          <View style={{ flex: 1, gap: 2 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Text style={{ fontFamily: "monospace", fontSize: 19, fontWeight: "700", color: ink }}>{address ? cut(address) : ""}</Text>
+              <Glyph name="copies" size={18} color={ink} />
+              {mine && <Text style={{ fontSize: 13, fontWeight: "700", color: violet }}>you</Text>}
+            </View>
+            {w === null ? <View style={{ width: 160, height: 12, borderRadius: 6, backgroundColor: well }} />
+              : <Text style={{ fontSize: 13, fontWeight: "500", color: muted }}>{w.accountId === null ? "no perpl account yet" : w.profile.labels.join(", ") || "new to perpl"}</Text>}
+          </View>
+        </Tap>
+        <View style={{ paddingHorizontal: 6, marginTop: 6 }}>
+          <Text style={{ fontSize: 14, fontWeight: "500", color: muted }}>{scrub ? `closed trades, up to ${new Date(scrub.t * 1000).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).toLowerCase()}` : `closed trades, ${RANGE_WORDS[range]}`}</Text>
           {tr ? (
             <View style={{ flexDirection: "row", alignItems: "baseline", gap: 8, marginTop: 2 }}>
-              <Text style={{ fontFamily: "Manrope_700Bold", fontSize: 40, letterSpacing: -1, color: tr.pnl >= 0 ? green : red, fontVariant: ["tabular-nums"] }}>{money(tr.pnl)}</Text>
+              <Text style={{ fontFamily: "Manrope_700Bold", fontSize: 40, letterSpacing: -1, color: shownPnl >= 0 ? green : red, fontVariant: ["tabular-nums"] }}>{money(shownPnl)}</Text>
               <Text style={{ fontSize: 14, fontWeight: "500", color: muted }}>ausd{winPct !== null ? ` · ${winPct}% won` : ""}{tr.liquidations ? ` · ${tr.liquidations} liquidated` : ""}</Text>
             </View>
           ) : <View style={{ width: 200, height: 36, borderRadius: 12, backgroundColor: well, marginVertical: 8 }} />}
-          {w && w.accountId !== null && <Text style={{ fontSize: 13, fontWeight: "600", color: muted }}>{w.profile.labels.join(", ")}</Text>}
         </View>
 
         <View style={{ ...card, padding: 14, gap: 12 }}>
-          {tr ? <Animated.View key={range} entering={FadeIn.duration(220).reduceMotion(ReduceMotion.System)}><ProfitLine trader={tr} width={width - 32 - 30} /></Animated.View>
-            : <View style={{ height: 148, borderRadius: 16, backgroundColor: well }} />}
+          {!tr ? <View style={{ height: 172, borderRadius: 16, backgroundColor: well }} />
+            : points.length < 2 ? <View style={{ height: 120, alignItems: "center", justifyContent: "center" }}><Text style={{ fontSize: 13, fontWeight: "500", color: muted }}>{points.length ? "one closed trade so far" : "no closed trades in this window"}</Text></View>
+            : <Animated.View key={range} entering={FadeIn.duration(220).reduceMotion(ReduceMotion.System)}><ProfitChart points={points} width={width - 32 - 30} onScrub={setScrub} /></Animated.View>}
           <Segmented options={RANGES} value={range} onChange={(r) => { setTr(null); setRange(r); }} />
         </View>
 
@@ -226,7 +210,7 @@ export default function Watch() {
             <View style={{ ...card, paddingHorizontal: 14 }}>
               {g.items.map((t, i) => (
                 <Tap key={t.tx + i} onPress={() => Linking.openURL(`${NETWORKS.testnet.explorer}/tx/${t.tx}`)} innerStyle={{ flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 11, borderTopWidth: i ? 1 : 0, borderTopColor: line }}>
-                  {mark(t)}
+                  <TradeMark kind={t.kind} side={t.side} pnl={t.pnl} />
                   <Text style={{ flex: 1, fontSize: 14, fontWeight: "500", color: t.kind === "liquidated" ? red : ink }}>{what(t)}</Text>
                   {t.pnl !== null
                     ? <Text style={{ fontSize: 14, fontWeight: "700", color: Math.abs(t.pnl) < 0.005 ? faint : t.pnl >= 0 ? green : red, fontVariant: ["tabular-nums"] }}>{Math.abs(t.pnl) < 0.005 ? "0.00" : money(t.pnl)}</Text>
