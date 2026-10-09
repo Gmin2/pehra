@@ -1,5 +1,5 @@
 // market coins with their real logos: btc, eth, sol and zec from cryptocurrency-icons, mon, ausd
-// and usdc from monad's token list, pump from trust wallet's assets, lit from lighter's own app icon
+// and usdc from monad's token list, pump and near from trust wallet's assets, lit from lighter's own app icon
 import { Image, type ImageSourcePropType } from "react-native";
 
 export const coinImages: Record<string, ImageSourcePropType> = {
@@ -12,6 +12,7 @@ export const coinImages: Record<string, ImageSourcePropType> = {
   USDC: require("./assets/coins/usdc.png"),
   LIT: require("./assets/coins/lit.png"),
   PUMP: require("./assets/coins/pump.png"),
+  NEAR: require("./assets/coins/near.png"),
 };
 
 export function Coin({ symbol, size = 40 }: { symbol: string; size?: number }) {

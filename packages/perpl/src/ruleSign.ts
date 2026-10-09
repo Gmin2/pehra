@@ -3,7 +3,7 @@
 // one rule and send another. a nonce and an expiry make every signature good once, for five minutes
 import { sha256 } from '@noble/hashes/sha2.js'
 import { bytesToHex } from 'viem'
-import type { Rule } from './rule'
+import type { Rule, WhenTrigger, WhenAction } from './rule'
 
 export const SIGN_TTL_MS = 5 * 60_000
 
@@ -17,17 +17,66 @@ export function canonicalJson(v: unknown): string {
 export const ruleHash = (r: Rule) => bytesToHex(sha256(new TextEncoder().encode(canonicalJson(r)))).slice(2)
 
 // one plain line a person can check before signing
+const clock = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
+
+export function whenText(t: WhenTrigger, symbol: string): string {
+  switch (t.on) {
+    case 'step': return `take profit step ${t.n} of ${t.rule} fills`
+    case 'opened': return `${t.rule} opens its position`
+    case 'stopSold': return `the stop ${t.rule} sells`
+    case 'backstop': return `the backstop of ${t.rule} fires on perpl`
+    case 'price': return `${symbol} goes ${t.dir} ${t.px}`
+    case 'distance': return `the position is within ${t.belowPct}% of liquidation`
+    case 'fundingFlip': return `funding on ${symbol} flips`
+    case 'time': return `it is ${new Date(t.at).toISOString()}`
+    case 'daily': return `it is ${clock(t.minute)} (utc${t.tz >= 0 ? '+' : '-'}${clock(Math.abs(t.tz))}) each day`
+    case 'depeg': return `ausd is ${(t.bps / 100).toFixed(2)}% off the dollar`
+  }
+}
+
+export function doText(a: WhenAction, symbol: string): string {
+  switch (a.do) {
+    case 'moveStop': return `move the stop ${a.rule} to ${a.to === 'entry' ? 'entry' : 'entry plus fees'}`
+    case 'tightenStop': return `tighten the stop ${a.rule} by ${a.byPct}%`
+    case 'close': return `close ${a.sharePct}% of the position, never more than ${a.floorPct}% from the price`
+    case 'closeAll': return `close every position, never more than ${a.floorPct}% from the price`
+    case 'addMargin': return `add ${a.ausd} ausd of margin`
+    case 'open': return `open a ${a.side} on ${symbol}, ${a.margin} ausd at ${a.leverage}x, never more than ${a.limitPct}% from the price`
+    case 'cancel': return `cancel ${a.rule}`
+    case 'notify': return `tell me "${a.text}"`
+  }
+}
+
 export function summary(r: Rule, symbol = `market ${r.mkt}`): string {
   // a stop's floor sits past its price on the side the position loses: under it for a long, over it for a short
   if (r.kind === 'stop') return `hidden stop on ${symbol} at ${r.px}, never ${r.floor < r.px ? 'below' : 'above'} ${r.floor}, backstop ${r.backstopPx} on perpl`
+    + (r.trail ? `, trailing ${r.trail.pct}% behind the best price, only ever tighter` : '')
+    + (r.breakeven ? `, moves to entry plus fees after take profit step ${r.breakeven.afterStep} of ${r.breakeven.ladder} fills` : '')
+  if (r.kind === 'copy') return `copy ${r.target.toLowerCase()}: when they open on perpl, open the same side with ${r.margin} ausd at up to ${r.maxLeverage}x, never more than ${r.limitPct}% from the price`
+    + (r.stopPct ? `, with a hidden stop ${r.stopPct}% away` : '') + (r.closeWithThem ? ', and close it when they close' : '')
+  if (r.kind === 'when') return `when ${whenText(r.on, symbol)}, ${r.then.map(a => doText(a, symbol)).join(', then ')}${r.repeat ? ', every time' : ''}`
   if (r.kind === 'funding') return `close the ${symbol} position when funding turns against it, never more than ${r.floorPct}% from the price`
-  if (r.kind === 'entry') return `open a ${r.side} on ${symbol} when it ${r.when === 'below' ? 'falls' : 'rises'} to ${r.px}, ${r.margin} ausd at ${r.leverage}x, never ${r.side === 'long' ? 'above' : 'below'} ${r.limit}${r.stop ? `, then a hidden stop at ${r.stop.px}, never ${r.side === 'long' ? 'below' : 'above'} ${r.stop.floor}, backstop ${r.stop.backstopPx} on perpl` : ''}`
+  if (r.kind === 'entry') {
+    const up = r.side === 'long' ? 'above' : 'below', down = r.side === 'long' ? 'below' : 'above'
+    const t = r.then
+    return `open a ${r.side} on ${symbol} when it ${r.when === 'below' ? 'falls' : 'rises'} to ${r.px}, ${r.margin} ausd at ${r.leverage}x, never ${up} ${r.limit}`
+      + (r.stop ? `, then a hidden stop at ${r.stop.px}, never ${down} ${r.stop.floor}, backstop ${r.stop.backstopPx} on perpl` : '')
+      + (t?.stop ? `, then a hidden stop ${t.stop.pct}% ${down} the fill, never past ${t.stop.floorPct}%, backstop ${t.stop.backstopPct}% on perpl${t.stop.trailPct ? `, trailing ${t.stop.trailPct}%` : ''}` : '')
+      + (t?.ladder ? `, take profit ${t.ladder.map(x => `${x.share}% at ${x.pct}% ${up}`).join(', ')}` : '')
+      + (t?.breakeven ? ', the stop moves to entry plus fees after the first take profit' : '')
+  }
   if (r.kind === 'ladder') return `take profit on ${symbol}: ${r.steps.map(s => `${s.share}% at ${s.px}`).join(', ')}`
   if (r.kind === 'guard') return `guard on ${symbol}: add margin under ${r.threshold}% from liquidation, back to ${r.target}%, at most ${r.maxAddDay} ausd a day`
   return `ping when ${symbol} goes above ${r.above}`
 }
 
 export type SignedAction = { action: 'create'; rule: Rule; symbol?: string } | { action: 'cancel'; id: string } | { action: 'pause' } | { action: 'hold'; id: string } | { action: 'resume'; id: string }
+  // a device session: one fingerprint, then trades and settings ride a token for SESSION_DAYS
+  | { action: 'session'; device: string }
+  // a recipe: several rules on one fingerprint, every one of them listed in what is signed
+  | { action: 'createMany'; name: string; rules: Rule[]; symbol?: string }
+
+export const SESSION_DAYS = 7
 
 export function ruleMessage(address: string, a: SignedAction, nonce: string, exp: number): string {
   const head = `pehra rules for ${address.toLowerCase()}`
@@ -36,6 +85,8 @@ export function ruleMessage(address: string, a: SignedAction, nonce: string, exp
     : a.action === 'cancel' ? [`cancel rule ${a.id}`]
     : a.action === 'hold' ? [`pause rule ${a.id}`]
     : a.action === 'resume' ? [`resume rule ${a.id}`]
+    : a.action === 'session' ? [`open a session on ${a.device}, good for ${SESSION_DAYS} days`]
+    : a.action === 'createMany' ? [`recipe ${a.name}, ${a.rules.length} rules`, ...a.rules.map((r, i) => `${i + 1}. ${summary(r, a.symbol)}`), `ids ${a.rules.map(r => r.id).join(',')}`, `sha256 ${bytesToHex(sha256(new TextEncoder().encode(canonicalJson(a.rules)))).slice(2)}`]
     : ['pause every rule']
   return [head, ...what, `nonce ${nonce}`, `expires ${new Date(exp).toISOString()}`].join('\n')
 }

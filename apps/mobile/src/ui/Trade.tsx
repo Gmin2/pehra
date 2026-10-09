@@ -53,9 +53,13 @@ export function Segmented<T extends string>({
   const i = Math.max(0, options.indexOf(value));
   const x = useSharedValue(0);
   const each = options.length ? (w - 8) / options.length : 0;
+  const placed = useSharedValue(false);
   useEffect(() => {
-    x.set(withSpring(i * each, spring));
-  }, [i, each, x]);
+    if (!each) return;
+    // the first layout puts the pill in place, later picks glide to it
+    if (!placed.get()) { x.set(i * each); placed.set(true); return; }
+    x.set(withTiming(i * each, { duration: 260, easing: Easing.out(Easing.cubic), reduceMotion: ReduceMotion.System }));
+  }, [i, each, x, placed]);
   const pill = useAnimatedStyle(() => ({ transform: [{ translateX: x.get() }] }));
   const h = dark ? 32 : 46;
   return (
@@ -63,7 +67,7 @@ export function Segmented<T extends string>({
       onLayout={(e: LayoutChangeEvent) => setW(e.nativeEvent.layout.width)}
       style={{ height: h, borderRadius: h / 2, backgroundColor: dark ? "#ffffff1f" : well, flexDirection: "row", padding: 4 }}
     >
-      {w > 0 && <Animated.View style={[{ position: "absolute", top: 4, left: 4, width: each, height: h - 8, borderRadius: (h - 8) / 2, backgroundColor: "white" }, pill]} />}
+      {w > 0 && <Animated.View style={[{ position: "absolute", top: 4, left: 4, width: each, height: h - 8, borderRadius: (h - 8) / 2, backgroundColor: "white", shadowColor: "#28243E", shadowOpacity: dark ? 0 : 0.08, shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: dark ? 0 : 2 }, pill]} />}
       {options.map((o) => (
         <Pressable
           key={o}

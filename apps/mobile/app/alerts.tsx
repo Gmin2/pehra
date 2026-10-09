@@ -28,6 +28,7 @@ const POSITIONS: { kind: AlertKind; icon: ReactNode; title: string; example: str
 const MARKET: { kind: AlertKind; icon: ReactNode; title: string; example: string }[] = [
   { kind: "funding", icon: <Glyph name="magic-wand-sparkle" size={24} />, title: "funding flipped", example: "“you now pay to hold your mon long”" },
   { kind: "depeg", icon: <Glyph name="lock" size={24} />, title: "ausd off the dollar", example: "“ausd is 0.6% off the dollar”" },
+  { kind: "watched", icon: <Glyph name="gauge" size={24} />, title: "accounts i watch", example: "“0x12…ab opened a mon long 3x”" },
 ];
 
 export default function Alerts() {

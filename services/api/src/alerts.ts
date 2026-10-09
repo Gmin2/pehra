@@ -11,12 +11,12 @@ db.exec(`create table if not exists alert_prefs (owner text primary key, body te
 db.exec(`create table if not exists alert_sent (key text primary key, owner text not null, at integer not null)`)
 db.exec(`create table if not exists alert_log (id integer primary key autoincrement, owner text not null, kind text not null, title text not null, body text not null, at integer not null, held integer not null default 0)`)
 
-export const KINDS = ['near_liq', 'acted', 'filled', 'liquidated', 'funding', 'depeg'] as const
+export const KINDS = ['near_liq', 'acted', 'filled', 'liquidated', 'funding', 'depeg', 'watched'] as const
 export type AlertKind = (typeof KINDS)[number]
 // quiet hours are minutes of the phone's local day, tz is the phone's offset from utc in minutes
 export type Prefs = { on: Record<AlertKind, boolean>; quiet: { from: number; to: number } | null; tz: number }
 
-const DEFAULTS: Prefs = { on: { near_liq: true, acted: true, filled: true, liquidated: true, funding: false, depeg: true }, quiet: null, tz: 0 }
+const DEFAULTS: Prefs = { on: { near_liq: true, acted: true, filled: true, liquidated: true, funding: false, depeg: true, watched: true }, quiet: null, tz: 0 }
 const REPEAT_MS = 4 * 3600_000
 const SLICE_MS = 8000
 const URGENT: AlertKind[] = ['near_liq', 'liquidated']
@@ -132,9 +132,13 @@ export class Alerts {
       this.slices.set(k, { size: e.amount, cost: e.amount * e.price, n: 1, symbol: sym, side: e.side ?? '', timer })
       return
     }
+    if (e.rule === 'move') return void this.push(addr, 'acted', e.text.startsWith('trailing') ? `trail:${addr}:${e.pid}` : null, `i moved your ${sym} stop to ${px(e.price ?? 0)}`, `${e.text.split(':')[0]}.`, { pid: String(e.pid ?? '') })
+    if (e.rule === 'notify') return void this.push(addr, 'acted', null, 'your rule says', e.text, {})
     if (e.rule === 'sl') return void this.push(addr, 'acted', null, `your ${sym} stop fired on perpl`, `sold ${e.amount ?? ''} ${sym} at ${px(e.price ?? 0)}. the position is closed.`.replace('  ', ' '), { pid: String(e.pid ?? '') })
     if (e.rule === 'tp') return void this.push(addr, 'filled', null, `your ${sym} take profit filled`, `sold ${e.amount ?? ''} ${sym} at ${px(e.price ?? 0)} on perpl.`.replace('  ', ' '), { pid: String(e.pid ?? '') })
     if (e.rule === 'funding') return void this.push(addr, 'acted', null, `funding turned against your ${sym} ${e.side ?? ''}, i closed it`.replace(/\s+,/, ','), `sold ${e.amount} ${sym} at ${px(e.price ?? 0)}, before it started costing you.`, { pid: String(e.pid ?? '') })
+    if (e.rule === 'copy' && e.kind === 'closed') return void this.push(addr, 'acted', null, `i closed your ${sym} copy`, `${e.text}, so i sold ${e.amount} ${sym} at ${px(e.price ?? 0)}.`, { pid: String(e.pid ?? '') })
+    if (e.rule === 'copy') return void this.push(addr, 'acted', null, `i copied a ${sym} ${e.side ?? ''}`.trim(), `${e.text}, you're in with ${e.amount} ${sym} at ${px(e.price ?? 0)}. its stop is watching now.`, { pid: String(e.pid ?? '') })
     if (e.rule === 'entry') return void this.push(addr, 'acted', null, `i opened your ${sym} ${e.side ?? ''}`.trim(), `${e.amount} ${sym} at ${px(e.price ?? 0)}, your price was reached. its stop is watching now.`, { pid: String(e.pid ?? '') })
     if (e.rule === 'backstop') return void this.push(addr, 'acted', null, `your ${sym} backstop fired on perpl`, `sold ${e.amount} ${sym} at ${px(e.price ?? 0)}, the last line held.`, { pid: String(e.pid ?? '') })
     if (e.rule === 'step') return void this.push(addr, 'filled', null, 'took some of your profit', `sold ${e.amount} ${sym} at ${px(e.price ?? 0)} on perpl.`, { pid: String(e.pid ?? '') })

@@ -2,7 +2,7 @@
 // market, and what step() asks for is carried out through one send queue per account. every state change
 // and every result is a run row (runs.ts). a session that is reconnecting defers its rules, it never acts
 // on a position map it cannot trust.
-import { Rule, step, onFunding, modeOf, nextSlice, Book, type HistoryOrder, positionHealth, toCns, fromCns, toSize, fromSize, fromPrice, OrderType, Flag, Reason, type Context, type GuardSettings, type Market, type MarketDataSocket, type Mem, type Order, type Position, type RuleState, type Tick, type TradingSocket, type Intent } from '@pehra/perpl'
+import { Rule, step, onFunding, onTrades, type TradeRow, levels, poll as pollChain, matches as chainMatches, fired as chainFired, onStopEvent, type ChainEvent, type ChainCtx, type PollNow, modeOf, nextSlice, Book, type HistoryOrder, positionHealth, toCns, fromCns, toSize, fromSize, fromPrice, OrderType, Flag, Reason, type Context, type GuardSettings, type Market, type MarketDataSocket, type Mem, type Order, type Position, type RuleState, type Tick, type TradingSocket, type Intent } from '@pehra/perpl'
 import { db } from './db'
 import { writeRun } from './runs'
 import { move } from './state'
@@ -75,6 +75,11 @@ export class Engine {
   // intents on the wire right now. reconcile leaves them and their rules alone, the answer is coming
   private inflight = new Map<string, string>()
   private resizing = new Set<number>()
+  // steps missing from the socket and perpl's history, and since when. a reconnect drops fired triggers from
+  // the socket and the history can lag minutes, so they are looked for again before being called gone
+  private missing = new Map<number, number>()
+  // stops whose backstop is being moved right now. reconcile leaves them alone so it never puts the old one back
+  private moving = new Set<string>()
   evaluations = 0
   lastTickAt = 0
 
@@ -101,26 +106,176 @@ export class Engine {
 
   // the stop's last line, held by perpl: a trigger close at backstopPx for the live size. perpl fires it even
   // when pehra is down, and drops it when the position closes (spike g9, sr 28)
-  private async placeBackstop(r: Stored) {
-    if (r.rule.kind !== 'stop') return
+  private async placeBackstop(r: Stored, at?: number): Promise<number | null> {
+    if (r.rule.kind !== 'stop') return null
+    const backstopPx = at ?? levels(r.rule, r.mem).backstopPx
     const ts = this.deps.session(r.owner)
     const m = this.deps.ctx()?.markets.find(x => x.id === r.rule.mkt)
     const pos = ts?.positions.get(r.rule.pid)
     if (!ts?.account || !m || !pos) throw new Error('no session or position for the backstop')
     const k = 10 ** m.config.price_decimals
-    const tp = Math.round(r.rule.backstopPx * k)
+    const tp = Math.round(backstopPx * k)
     const res = await ts.stopLoss(pos, tp, { slippageBps: BACKSTOP_SLIPPAGE_BPS, size: pos.s })
     const o = res.order
     if (!o || o.st !== 8) {
       const reason = o ? Reason[o.sr] ?? `sr ${o.sr}` : res.status?.status.msg ?? 'no answer'
-      writeRun({ owner: r.owner, rule: r.id, kind: 'reject', body: { step: 'backstop', backstopPx: r.rule.backstopPx, reason } })
-      this.deps.emit(r.owner, { kind: 'failed', pid: pos.pid, symbol: m.symbol, text: `the backstop at ${r.rule.backstopPx} could not be placed (${reason}), the stop still runs on pehra` })
-      return
+      writeRun({ owner: r.owner, rule: r.id, kind: 'reject', body: { step: 'backstop', backstopPx, reason } })
+      if (at === undefined) this.deps.emit(r.owner, { kind: 'failed', pid: pos.pid, symbol: m.symbol, text: `the backstop at ${backstopPx} could not be placed (${reason}), the stop still runs on pehra` })
+      if (o?.sr === 24) throw new Error('MaximumAccountOrders')
+      return null
     }
-    q.putOrder.run(r.id, 'backstop', r.owner, o.oid, pos.pid, fromSize(m, pos.s), r.rule.backstopPx, tp, o.tpc ?? 0, 'resting')
-    writeRun({ owner: r.owner, rule: r.id, kind: 'note', body: { text: `backstop resting on perpl at ${r.rule.backstopPx}`, oid: o.oid, size: fromSize(m, pos.s) } })
-    this.deps.emit(r.owner, { kind: 'bracket', pid: pos.pid, symbol: m.symbol, text: `${m.symbol}: hidden stop at ${r.rule.px}, backstop on perpl at ${r.rule.backstopPx}` })
-    this.deps.log(`rule ${r.id} backstop resting, oid ${o.oid}`)
+    q.putOrder.run(r.id, 'backstop', r.owner, o.oid, pos.pid, fromSize(m, pos.s), backstopPx, tp, o.tpc ?? 0, 'resting')
+    r.mem = { ...r.mem, placed: backstopPx }
+    q.saveMem.run(JSON.stringify(r.mem), Date.now(), r.id)
+    writeRun({ owner: r.owner, rule: r.id, kind: 'note', body: { text: `backstop resting on perpl at ${backstopPx}`, oid: o.oid, size: fromSize(m, pos.s) } })
+    if (at === undefined) this.deps.emit(r.owner, { kind: 'bracket', pid: pos.pid, symbol: m.symbol, text: `${m.symbol}: hidden stop at ${levels(r.rule, r.mem).px}, backstop on perpl at ${backstopPx}` })
+    this.deps.log(`rule ${r.id} backstop resting at ${backstopPx}, oid ${o.oid}`)
+    return o.oid
+  }
+
+  // a stop's levels move (trailing, breakeven, a chain). the hidden ones change in memory at once. the
+  // backstop on perpl is placed at its new price before the old one is cancelled, so the position is never
+  // left without one; with no slot free for a second order it is cancelled first. never while it is selling
+  private async moveStop(r: Stored, next: { px: number; floor: number; backstopPx: number }, why: string) {
+    if (r.rule.kind !== 'stop' || r.state === 'firing' || r.state === 'working' || r.state === 'held') return
+    const from = levels(r.rule, r.mem)
+    r.mem = { ...r.mem, px: next.px, floor: next.floor, backstopPx: next.backstopPx }
+    q.saveMem.run(JSON.stringify(r.mem), Date.now(), r.id)
+    const old = q.orderOf.get(r.id, 'backstop') as OrderRow | undefined
+    const m = this.deps.ctx()?.markets.find(x => x.id === r.rule.mkt)
+    const ts = this.deps.session(r.owner)
+    this.moving.add(r.id)
+    try {
+      if (old && old.state === 'resting' && old.px !== next.backstopPx && ts?.account) {
+        // the old row steps aside under its own oid, so it is still known as ours if it fires mid swap
+        db.prepare(`update orders set step = ?, state = 'replacing' where rule = ? and step = 'backstop'`).run(`backstop#${old.oid}`, r.id)
+        const order = ts.orders.get(old.oid)
+        let placed: number | null = null
+        try { placed = await this.placeBackstop(r, next.backstopPx) } catch (e) {
+          if (!(e instanceof Error && e.message === 'MaximumAccountOrders') || !order) throw e
+          await this.cancelOld(r, ts, old)
+          placed = await this.placeBackstop(r, next.backstopPx)
+        }
+        if (placed === null) {
+          // the new one did not land, the old one stays the backstop
+          db.prepare(`update orders set step = 'backstop', state = 'resting' where rule = ? and step = ?`).run(r.id, `backstop#${old.oid}`)
+        } else await this.cancelOld(r, ts, old)
+      }
+      // a trailing stop moved its hidden levels already, the backstop it rested at is the real before
+      const before = { ...from, backstopPx: old?.px ?? from.backstopPx }
+      writeRun({ owner: r.owner, rule: r.id, kind: 'note', body: { text: why, move: { from: before, to: next } } })
+      this.deps.emit(r.owner, { kind: 'bracket', rule: 'move', pid: r.rule.pid, symbol: m?.symbol, price: next.px, text: `${why}: stop ${before.px} to ${next.px}, backstop ${before.backstopPx} to ${next.backstopPx}` })
+      this.deps.log(`rule ${r.id} moved ${before.px} -> ${next.px}, backstop ${before.backstopPx} -> ${next.backstopPx}`)
+    } finally { this.moving.delete(r.id) }
+  }
+
+  // the backstop a move replaced comes off perpl. it is only called cancelled when perpl says so (st 5),
+  // tried twice, else left as an orphan that reconcile keeps cancelling until it is gone
+  private async cancelOld(r: Stored, ts: TradingSocket, old: OrderRow) {
+    const step = `backstop#${old.oid}`
+    for (let k = 0; k < 2; k++) {
+      const order = ts.orders.get(old.oid)
+      if (!order || order.st !== 8) { q.orderState.run(order?.st === 10 ? 'fired' : 'gone', old.size, r.id, step); return }
+      const res = await ts.cancel(order).catch(() => null)
+      if (res?.order?.st === 5) { q.orderState.run('cancelled', old.size, r.id, step); return }
+      this.deps.log(`rule ${r.id} cancel of the old backstop ${old.oid} refused: ${res?.order ? Reason[res.order.sr] ?? res.order.sr : 'no answer'}`)
+      await new Promise(res => setTimeout(res, 800))
+    }
+    q.orderState.run('orphan', old.size, r.id, step)
+    writeRun({ owner: r.owner, rule: r.id, kind: 'reject', body: { text: 'the old backstop did not cancel, reconcile keeps trying', oid: old.oid } })
+  }
+
+  // what a chain may look at for this account right now
+  private chainCtx(owner: string, at = Date.now()): ChainCtx {
+    const ts = this.deps.session(owner)
+    const ctx = this.deps.ctx()
+    const healthOf = (pid: number) => {
+      const pos = ts?.positions.get(pid)
+      const m = pos && ctx?.markets.find(x => x.id === pos.mkt)
+      const st = m && this.deps.market.states.get(m.id)
+      return pos && m && st ? positionHealth(pos, m, st.mrk) : null
+    }
+    const taker = ctx?.markets[0]?.config.taker_fee ?? 345
+    return {
+      at,
+      stop: id => { const r = this.rules.get(id); return r && r.owner === owner && r.rule.kind === 'stop' ? { rule: r.rule, mem: r.mem } : undefined },
+      health: healthOf,
+      positions: () => [...(ts?.positions.keys() ?? [])].map(healthOf).filter((h): h is NonNullable<typeof h> => !!h),
+      mark: mkt => { const m = ctx?.markets.find(x => x.id === mkt); const st = this.deps.market.states.get(mkt); return m && st ? st.mrk / 10 ** m.config.price_decimals : undefined },
+      // a round trip of taker fees as a fraction of the price. taker_fee is in millionths: 345 is 3.45 bps,
+      // the same unit replay reads (taker_fee / 100 bps)
+      fees: 2 * taker / 1_000_000,
+    }
+  }
+
+  // something a rule did: stops with a breakeven and chains waiting on it react
+  private event(owner: string, ev: ChainEvent) {
+    const ctx = this.chainCtx(owner)
+    for (const r of [...this.rules.values()]) {
+      if (r.owner !== owner || r.state !== 'armed') continue
+      if (r.rule.kind === 'stop' && r.rule.breakeven) {
+        const moves = onStopEvent(r.rule, r.mem, ev, ctx.health(r.rule.pid), ctx.fees)
+        for (const i of moves)
+          if (i.kind === 'move') void this.lane(owner, () => this.moveStop(r, i, i.why)).catch(e => this.deps.log(`move ${r.id} failed: ${e instanceof Error ? e.message : e}`))
+        // its step filled but the stop stayed: say why, so a breakeven that did not happen is not silent
+        if (!moves.length && ev.kind === 'step' && ev.rule === r.rule.breakeven.ladder && ev.n >= r.rule.breakeven.afterStep) {
+          const h = ctx.health(r.rule.pid)
+          const why = !h ? 'the position is gone' : `the price ${h.mark} is not past entry plus fees, moving there would sell at once, or the stop is already tighter`
+          writeRun({ owner, rule: r.id, kind: 'note', body: { text: `breakeven skipped: ${why}` } })
+          this.deps.log(`rule ${r.id} breakeven skipped: ${why}`)
+        }
+      }
+      if (r.rule.kind === 'when' && chainMatches(r.rule, ev)) this.fireChain(r, ctx)
+    }
+  }
+
+  private fireChain(r: Stored, ctx: ChainCtx) {
+    if (r.rule.kind !== 'when') return
+    const s = chainFired(r.rule, r.mem, ctx)
+    r.mem = s.mem
+    q.saveMem.run(JSON.stringify(s.mem), Date.now(), r.id)
+    const mark = ctx.mark(r.rule.mkt) ?? 0
+    writeRun({ owner: r.owner, rule: r.id, kind: 'note', body: { text: `chain fired`, intents: s.intents.map(i => i.kind) } })
+    if (s.intents.length) this.fire(r, s.intents, { at: ctx.at, block: this.deps.market.head, mkt: r.rule.mkt, mark, last: mark }, s.done)
+    else if (s.done) this.finish(r, s.done)
+  }
+
+  // the addresses active copies follow
+  copyTargets() {
+    return [...new Set([...this.rules.values()].filter(r => r.rule.kind === 'copy' && r.state === 'armed').map(r => (r.rule as Extract<Rule, { kind: 'copy' }>).target.toLowerCase()))]
+  }
+
+  // what a followed account did on chain, from the indexer. every copy of it decides, then acts
+  onCopy(target: string, rows: TradeRow[]) {
+    for (const r of [...this.rules.values()]) {
+      if (r.rule.kind !== 'copy' || r.state !== 'armed' || r.rule.target.toLowerCase() !== target.toLowerCase()) continue
+      const ctx = this.chainCtx(r.owner)
+      const out = onTrades(r.rule, r.mem, rows, { mark: ctx.mark, position: ctx.health, armedAt: r.created })
+      if (JSON.stringify(out.mem) !== JSON.stringify(r.mem)) { r.mem = out.mem; q.saveMem.run(JSON.stringify(out.mem), Date.now(), r.id) }
+      if (!out.intents.length) continue
+      writeRun({ owner: r.owner, rule: r.id, kind: 'note', body: { text: `copying ${target}`, intents: out.intents.map(i => i.kind) } })
+      const mark = ctx.mark(r.rule.mkt) ?? 0
+      this.fire(r, out.intents, { at: Date.now(), block: this.deps.market.head, mkt: r.rule.mkt, mark, last: mark })
+    }
+  }
+
+  // chains that wait on the market, the clock or agora
+  pollChains(now: Omit<PollNow, 'mark' | 'distance'> & { mkt?: number }) {
+    for (const r of [...this.rules.values()]) {
+      if (r.rule.kind !== 'when' || r.state !== 'armed') continue
+      const t = r.rule.on.on
+      const clockCall = now.mkt === undefined && now.fundingRate === undefined && now.ausdPrice === undefined
+      const byClock = (t === 'time' || t === 'daily') && clockCall
+      const byFunding = t === 'fundingFlip' && now.fundingRate !== undefined && now.mkt === r.rule.mkt
+      const byDepeg = t === 'depeg' && now.ausdPrice !== undefined
+      const byMarket = (t === 'price' || t === 'distance') && now.mkt === r.rule.mkt && now.fundingRate === undefined
+      if (!byClock && !byFunding && !byDepeg && !byMarket) continue
+      const ctx = this.chainCtx(r.owner, now.at)
+      const h = r.rule.pid ? ctx.health(r.rule.pid) : null
+      const p = pollChain(r.rule, r.mem, { ...now, mark: ctx.mark(r.rule.mkt), distance: h?.distance })
+      if (JSON.stringify(p.mem) !== JSON.stringify(r.mem)) { r.mem = p.mem; q.saveMem.run(JSON.stringify(p.mem), Date.now(), r.id) }
+      if (p.hit) this.fireChain(r, ctx)
+    }
   }
 
   // a take profit ladder lives on perpl: one partial trigger close per step, each with its floor. sizes come
@@ -177,19 +332,43 @@ export class Engine {
     for (let i = 0; i < tries; i++) {
       hist = await this.deps.history(r.owner)
       fired = hist.find(o => o.oid === row.oid && o.st === 10)
-      if (fired?.at) break
+      if (fired?.at) { this.missing.delete(row.oid); break }
       if (hist.some(o => o.oid === row.oid && o.st === 5)) break
       await new Promise(res => setTimeout(res, 3000))
     }
-    if (!fired?.at) { q.orderState.run('gone', row.size, r.id, row.step); return }
-    const child = hist.find(o => o.at?.b === fired.at?.b && o.st === 4 && (o.t === 3 || o.t === 4) && o.oid !== row.oid)
     const m = this.deps.ctx()?.markets.find(x => x.id === r.rule.mkt)
+    if (!fired?.at) {
+      // the history can lag for longer than that. the live session saw the trigger execute (st 10) and the
+      // close it made, which is enough to know it fired and at what price
+      const ts = this.deps.session(r.owner)
+      const sock = ts?.orders.get(row.oid)
+      if (!m || !ts || sock?.st !== 10) {
+        const since = this.missing.get(row.oid) ?? Date.now()
+        if (row.step !== 'backstop' && Date.now() - since < 600_000) { this.missing.set(row.oid, since); q.orderState.run('resting', row.size, r.id, row.step); return }
+        this.missing.delete(row.oid)
+        q.orderState.run('gone', row.size, r.id, row.step)
+        return
+      }
+      const kid = [...ts.orders.values()].filter(o => o.oid > row.oid && o.lp === sock.lp && (o.t === 3 || o.t === 4) && (o.fs ?? 0) > 0 && o.st === 4).sort((x, y) => y.oid - x.oid)[0]
+      this.missing.delete(row.oid)
+      q.orderState.run('fired', row.size, r.id, row.step)
+      const price = kid?.fp ? fromPrice(m, kid.fp) : row.px, size = kid?.fs ? fromSize(m, kid.fs) : row.size
+      writeRun({ owner: r.owner, rule: r.id, kind: 'fill', body: { kind: row.step === 'backstop' ? 'backstop' : 'step', step: row.step, by: 'perpl', trigger: row.px, size, price, tx: null, from: 'session, history lagged' } })
+      this.event(r.owner, row.step === 'backstop' ? { kind: 'backstop', rule: r.id, pid: r.rule.pid, price } : { kind: 'step', rule: r.id, pid: r.rule.pid, n: Number(row.step.slice(1)) + 1, price })
+      this.deps.emit(r.owner, { kind: 'closed', rule: row.step === 'backstop' ? 'backstop' : 'step', pid: r.rule.pid, symbol: m.symbol, amount: size, price, text: `${row.step === 'backstop' ? 'the backstop' : `take profit ${row.step}`} on perpl sold ${size} ${m.symbol} at ${price}` })
+      this.deps.log(`rule ${r.id} ${row.step} fired on perpl (seen on the session, history lagged), ${size} at ${price}`)
+      return
+    }
+    const child = hist.find(o => o.at?.b === fired.at?.b && o.st === 4 && (o.t === 3 || o.t === 4) && o.oid !== row.oid)
     q.orderState.run('fired', row.size, r.id, row.step)
     if (!m || !child) return
     const price = fromPrice(m, child.fp ?? 0), size = fromSize(m, child.fs ?? 0)
     const tx = child.at?.txid ? `0x${child.at.txid}` : null
     const what = row.step === 'backstop' ? 'the backstop' : `take profit ${row.step}`
     writeRun({ owner: r.owner, rule: r.id, kind: 'fill', body: { kind: row.step === 'backstop' ? 'backstop' : 'step', step: row.step, by: 'perpl', trigger: row.px, size, price, tx, block: fired.at.b } })
+    this.event(r.owner, row.step === 'backstop'
+      ? { kind: 'backstop', rule: r.id, pid: r.rule.pid, price }
+      : { kind: 'step', rule: r.id, pid: r.rule.pid, n: Number(row.step.slice(1)) + 1, price })
     this.deps.emit(r.owner, { kind: 'closed', rule: row.step === 'backstop' ? 'backstop' : 'step', pid: r.rule.pid, symbol: m.symbol, tx: tx ?? undefined, amount: size, price, text: `${what} on perpl sold ${size} ${m.symbol} at ${price}, it fired at ${row.px}` })
     this.deps.log(`rule ${r.id} ${what} fired on perpl, ${size} at ${price} ${tx ?? ''}`)
   }
@@ -276,7 +455,7 @@ export class Engine {
     return (q.byOwner.all(owner.toLowerCase()) as Row[]).map(r => {
       const s = this.rules.get(r.id) ?? fromRow(r)
       const last = q.lastRun.get(r.id, 'state') as { at: number } | undefined
-      return { id: s.id, kind: s.rule.kind, state: s.state, mode: s.mode, by: s.by, fires: s.fires, rule: s.rule, lastRun: last?.at ?? null, created: s.created }
+      return { id: s.id, kind: s.rule.kind, state: s.state, mode: s.mode, by: s.by, fires: s.fires, rule: s.rule, live: s.rule.kind === 'stop' ? levels(s.rule, s.mem) : undefined, lastRun: last?.at ?? null, created: s.created }
     })
   }
 
@@ -319,9 +498,14 @@ export class Engine {
       // a held stop resumes only when the book can take a slice past its floor, it never sends to be refused
       if (r.state === 'held' && s.intents.some(i => i.kind === 'close') && !this.canSell(r, m, health)) continue
       if (JSON.stringify(s.mem) !== JSON.stringify(r.mem)) { r.mem = s.mem; q.saveMem.run(JSON.stringify(s.mem), Date.now(), r.id) }
-      if (s.intents.length) this.fire(r, s.intents, tick, s.done)
+      // a trailing stop moving is not the stop acting, its own state stays armed
+      const moves = s.intents.filter((i): i is Extract<Intent, { kind: 'move' }> => i.kind === 'move')
+      const acts = s.intents.filter(i => i.kind !== 'move')
+      for (const mv of moves) if (!this.moving.has(r.id)) void this.lane(r.owner, () => this.moveStop(r, mv, mv.why)).catch(e => this.deps.log(`move ${r.id} failed: ${e instanceof Error ? e.message : e}`))
+      if (acts.length) this.fire(r, acts, tick, s.done)
       else if (s.done) this.finish(r, s.done)
     }
+    this.pollChains({ at: tick.at, mkt })
   }
 
   // funding from perpl's market context, about once a minute. a funding rule closes its position on the flip
@@ -373,6 +557,8 @@ export class Engine {
       let held: string | undefined
       for (const i of intents) { const out = await this.carry(r, i, { t0: tick.at, b0: tick.block, t1 }); if (out) held = out }
       if (done && !held) this.finish(r, done)
+      // a copy that filled nothing waits for the next trade, it does not hold on this one
+      else if (held && r.rule.kind === 'copy') { this.deps.emit(r.owner, { kind: 'failed', text: `a copy did not fill: ${held}` }); move(r, 'armed', held) }
       else if (held) {
         // nothing sold: forget that it fired, so it can act again once the book allows it (build-plan day 4)
         r.mem = { ...r.mem, fired: undefined }
@@ -395,8 +581,24 @@ export class Engine {
       this.deps.log(`rule ${r.id} note ${i.text}`)
       return
     }
+    if (i.kind === 'notify') {
+      writeRun({ owner: r.owner, rule: r.id, kind: 'note', body: { text: i.text } })
+      this.deps.emit(r.owner, { kind: 'bracket', rule: 'notify', text: i.text })
+      return
+    }
+    if (i.kind === 'cancel') {
+      const c = this.cancel(r.owner, i.rule, i.why)
+      writeRun({ owner: r.owner, rule: r.id, kind: 'note', body: { text: i.why, cancelled: c.ok } })
+      return
+    }
+    if (i.kind === 'move') {
+      const target = this.rules.get(i.rule)
+      if (target && target.owner === r.owner) await this.moveStop(target, i, i.why)
+      return
+    }
     const ts = this.deps.session(r.owner)
-    const m = this.deps.ctx()?.markets.find(x => x.id === r.rule.mkt)
+    const posFirst = i.kind === 'add' || i.kind === 'close' ? ts?.positions.get(i.pid) : undefined
+    const m = this.deps.ctx()?.markets.find(x => x.id === (posFirst?.mkt ?? (i.kind === 'open' ? i.mkt : undefined) ?? r.rule.mkt))
     if (i.kind === 'open') {
       if (!ts?.account || !m) throw new Error('the session went away before sending')
       return this.openEntry(r, `${r.id}:${r.fires}`, ts, m, i, { ...stamps, t2 })
@@ -482,7 +684,8 @@ export class Engine {
       settle(id, 'filled', { fill: filled, tx: landed?.tx, oid: o.oid, stamps: st })
       writeRun({ owner: r.owner, rule: r.id, kind: 'fill', body: { intent: id, kind: 'close', size: filled, price, floor, tx: landed?.tx ?? null, stamps: st } })
       const side = pos.sd === 1 ? 'long' : 'short'
-      this.deps.emit(r.owner, { kind: 'closed', rule: r.rule.kind === 'funding' ? 'funding' : 'stop', pid: pos.pid, symbol: m.symbol, side, lv: pos.lv, tx: landed?.tx, amount: filled, price, text: `${r.rule.kind === 'funding' ? 'funding turned, sold' : 'stop sold'} ${filled} ${m.symbol} at ${price}, never below ${floor}` })
+      if (r.rule.kind === 'stop') this.event(r.owner, { kind: 'stopSold', rule: r.id, pid: pos.pid, price })
+      this.deps.emit(r.owner, { kind: 'closed', rule: r.rule.kind === 'funding' ? 'funding' : r.rule.kind === 'copy' ? 'copy' : 'stop', pid: pos.pid, symbol: m.symbol, side, lv: pos.lv, tx: landed?.tx, amount: filled, price, text: r.rule.kind === 'copy' ? why : `${r.rule.kind === 'funding' ? 'funding turned, sold' : 'stop sold'} ${filled} ${m.symbol} at ${price}, never below ${floor}` })
       this.deps.log(`rule ${r.id} close ${filled} at ${price}, floor ${floor}`)
       return filled
     } finally { this.inflight.delete(id) }
@@ -538,21 +741,61 @@ export class Engine {
       const st = { ...stamps, t3, t4: t5, t5, ...(landed?.block ? { b6: landed.block } : {}) }
       settle(id, 'filled', { fill: filled / z, tx: landed?.tx, oid: o.oid, stamps: st })
       writeRun({ owner: r.owner, rule: r.id, kind: 'fill', body: { intent: id, kind: 'open', side: i.side, size: filled / z, price, limit: i.limit, pid: pos?.pid ?? null, tx: landed?.tx ?? null, stamps: st } })
-      this.deps.emit(r.owner, { kind: 'opened', rule: 'entry', pid: pos?.pid, symbol: m.symbol, side: i.side, lv: Math.round(i.leverage * 100), tx: landed?.tx, amount: filled / z, price, text: `entry opened ${i.side} ${filled / z} ${m.symbol} at ${price}, limit ${i.limit}` })
+      this.deps.emit(r.owner, { kind: 'opened', rule: r.rule.kind === 'copy' ? 'copy' : 'entry', pid: pos?.pid, symbol: m.symbol, side: i.side, lv: Math.round(i.leverage * 100), tx: landed?.tx, amount: filled / z, price, text: r.rule.kind === 'copy' ? i.why : `entry opened ${i.side} ${filled / z} ${m.symbol} at ${price}, limit ${i.limit}` })
       this.deps.log(`rule ${r.id} opened ${i.side} ${filled / z} at ${price}, pid ${pos?.pid ?? '?'}`)
-      if (pos) this.handOff(r, pos.pid)
+      if (pos) { this.handOff(r, pos.pid, price); this.event(r.owner, { kind: 'opened', rule: r.id, pid: pos.pid, price }) }
       else this.deps.log(`rule ${r.id} filled but the position did not show, reconcile attaches the stop`)
     } finally { this.inflight.delete(id) }
   }
 
   // the entry's stop becomes its own rule on the position it opened, signed by the same signature
-  private handOff(r: Stored, pid: number) {
-    if (r.rule.kind !== 'entry' || !r.rule.stop) return
-    const id = `stop-${pid}-from-${r.id}`.slice(0, 64)
-    if (this.exists(id)) return
-    const st = r.rule.stop
-    this.add(r.owner, { v: 1, id, pid, mkt: r.rule.mkt, forMs: 0, kind: 'stop', px: st.px, floor: st.floor, backstopPx: st.backstopPx, slices: st.slices }, r.by)
-    writeRun({ owner: r.owner, rule: r.id, kind: 'note', body: { text: `stop handed to ${id} on position ${pid}` } })
+  // an entry hands its children to the position it opened: the old absolute stop, or the newer ones written
+  // as distances from the fill. the ladder goes first so a breakeven stop can point at it. they ride the
+  // entry's signature, the way every child here does
+  private handOff(r: Stored, pid: number, fill?: number) {
+    if (r.rule.kind === 'copy') {
+      // remember which position this market's copy opened, so closing with them closes this one
+      const pos = this.deps.session(r.owner)?.positions.get(pid)
+      if (pos) { r.mem = { ...r.mem, copied: { ...(r.mem.copied ?? {}), [pos.mkt]: pid } }; q.saveMem.run(JSON.stringify(r.mem), Date.now(), r.id) }
+      if (r.rule.stopPct && fill && pos) {
+        const long = pos.sd === 1, k = r.rule.stopPct / 100
+        const at = (x: number) => Number((fill * (long ? 1 - x : 1 + x)).toPrecision(4))
+        const id = `stop-${pid}-copy-${r.id}`.slice(0, 64)
+        if (!this.exists(id)) this.add(r.owner, { v: 1, id, pid, mkt: pos.mkt, forMs: 0, kind: 'stop', px: at(k), floor: at(k + 0.01), backstopPx: at(k + 0.02), slices: 4 }, r.by)
+      }
+      return
+    }
+    if (r.rule.kind !== 'entry') return
+    const base = { v: 1 as const, pid, mkt: r.rule.mkt, forMs: 0 }
+    const kids: Rule[] = []
+    if (r.rule.stop) {
+      const st = r.rule.stop
+      kids.push({ ...base, id: `stop-${pid}-from-${r.id}`.slice(0, 64), kind: 'stop', px: st.px, floor: st.floor, backstopPx: st.backstopPx, slices: st.slices })
+    }
+    const t = r.rule.then
+    if (t && fill) {
+      const up = r.rule.side === 'long' ? 1 : -1
+      const at = (pct: number) => Number((fill * (1 + up * pct / 100)).toPrecision(4))
+      const ladderId = `ladder-${pid}-from-${r.id}`.slice(0, 64)
+      if (t.ladder) kids.push({ ...base, id: ladderId, kind: 'ladder', steps: t.ladder.map(x => ({ px: at(x.pct), share: x.share, floor: at(x.floorPct) })) })
+      if (t.stop) kids.push({
+        ...base, id: `stop-${pid}-then-${r.id}`.slice(0, 64), kind: 'stop', px: at(-t.stop.pct), floor: at(-t.stop.floorPct), backstopPx: at(-t.stop.backstopPct), slices: t.stop.slices ?? 4,
+        ...(t.stop.trailPct ? { trail: { pct: t.stop.trailPct, minMovePct: 0.5 } } : {}),
+        ...(t.breakeven && t.ladder ? { breakeven: { ladder: ladderId, afterStep: 1 } } : {}),
+      })
+    }
+    for (const k of kids) {
+      if (this.exists(k.id)) continue
+      this.add(r.owner, k, r.by)
+      writeRun({ owner: r.owner, rule: r.id, kind: 'note', body: { text: `${k.kind} handed to ${k.id} on position ${pid}` } })
+    }
+  }
+
+  // a recipe: every rule stored in one transaction, perpl orders placed after, in order
+  addMany(owner: string, rules: Rule[], by: Stored['by'], sig: string | null) {
+    db.exec('begin')
+    try { for (const r of rules) this.add(owner, r, by, 'armed', sig) ; db.exec('commit') } catch (e) { db.exec('rollback'); throw e }
+    return rules.map(r => this.rules.get(r.id)).filter((x): x is Stored => !!x)
   }
 
   private async addMargin(r: Stored, id: string, ts: TradingSocket, pos: Position, m: Market, before: ReturnType<typeof positionHealth>, ausd: number, why: string, stamps: Record<string, number>) {
@@ -619,7 +862,7 @@ export class Engine {
         writeRun({ owner, rule: it.rule, kind: 'reconcile', body: { intent: it.id, was: it.state, now: state, why } })
         this.deps.log(`reconcile ${it.id}: ${it.state} -> ${state}, ${why}`)
         const r = this.rules.get(it.rule)
-        if (r && made) { this.handOff(r, made.pid); this.finish(r, 'opened, found by reconcile') }
+        if (r && made) { this.handOff(r, made.pid, made.ep / 10 ** (this.deps.ctx()?.markets.find(x => x.id === made.mkt)?.config.price_decimals ?? 5)); this.finish(r, 'opened, found by reconcile') }
         continue
       }
       if (!pos) { state = it.kind === 'close' ? 'filled' : 'void'; why = it.kind === 'close' ? 'the position is gone, the close or another took it' : 'the position is gone' }
@@ -639,11 +882,20 @@ export class Engine {
       writeRun({ owner, rule: it.rule, kind: 'reconcile', body: { intent: it.id, was: it.state, now: state, why } })
       this.deps.log(`reconcile ${it.id}: ${it.state} -> ${state}, ${why}`)
     }
+    // old backstops a move could not cancel come off now, whatever rule they belonged to
+    for (const row of db.prepare(`select * from orders where owner = ? and state = 'orphan'`).all(owner) as OrderRow[]) {
+      const order = ts.orders.get(row.oid)
+      if (!order || order.st !== 8) { q.orderState.run('gone', row.size, row.rule, row.step); continue }
+      void this.lane(owner, async () => {
+        const res = await ts.cancel(order).catch(() => null)
+        if (res?.order?.st === 5) { q.orderState.run('cancelled', row.size, row.rule, row.step); writeRun({ owner, rule: row.rule, kind: 'reconcile', body: { orphan: row.oid, why: 'old backstop cancelled' } }) }
+      }).catch(() => {})
+    }
     // a rule caught mid fire by a crash goes back to watching once its intents are settled
     for (const r of this.rules.values()) {
       if (r.owner !== owner || [...this.inflight.values()].includes(r.id)) continue
       if (r.state === 'firing' || r.state === 'working') move(r, 'armed', 'reconciled after a restart or a drop')
-      const pos = r.rule.kind === 'ping' || r.rule.kind === 'entry' ? true : ts.positions.get(r.rule.pid)
+      const pos = r.rule.kind === 'ping' || r.rule.kind === 'entry' || r.rule.kind === 'copy' || r.rule.pid === 0 ? true : ts.positions.get(r.rule.pid)
       const back = r.rule.kind === 'stop' ? q.orderOf.get(r.id, 'backstop') as OrderRow | undefined : undefined
       if (!pos && (r.state === 'armed' || r.state === 'held' || r.state === 'paused')) {
         // the position went while this rule watched it. if pehra never sold it and a backstop rested, the
@@ -657,7 +909,7 @@ export class Engine {
         continue
       }
       if (r.rule.kind === 'ladder' && pos) { this.reconcileSteps(r, ts); continue }
-      if (back && back.state === 'resting' && pos !== true && pos) {
+      if (back && back.state === 'resting' && pos !== true && pos && !this.moving.has(r.id)) {
         const o = ts.orders.get(back.oid)
         const m = this.deps.ctx()?.markets.find(x => x.id === r.rule.mkt)
         if (o && m && (o.os ?? o.s) > pos.s) {

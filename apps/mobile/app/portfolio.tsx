@@ -161,7 +161,7 @@ export default function Portfolio() {
           <MorphText text={a.stealth ? "✱✱✱✱✱" : total === null ? "$—" : "$" + money(total)} size={44} />
           <View style={[space.row, { gap: 8, marginTop: 8 }]}>
             <Text style={{ color: muted, fontWeight: "500", fontVariant: ["tabular-nums"] }}>
-              {balance === null ? "loading your account" : health.length ? `${money(balance)} free · ${money(inPositions)} in positions` : `${money(balance)} free · nothing open`}
+              {balance === null ? (account && !account.enrolled ? "the guard is off. turn it on in settings to trade" : "loading your account") : health.length ? `${money(balance)} free · ${money(inPositions)} in positions` : `${money(balance)} free · nothing open`}
             </Text>
             {!!health.length && (
               <Text style={{ color: pnl >= 0 ? green : red, fontWeight: "600", fontVariant: ["tabular-nums"] }}>
@@ -220,6 +220,11 @@ export default function Portfolio() {
         </View>
         {tab === "markets" ? (
           <Animated.View key="markets" entering={FadeIn.duration(160).reduceMotion(ReduceMotion.System)}>
+            <Tap onPress={() => a.go("/leaders")} innerStyle={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "white", borderRadius: 20, borderWidth: 1, borderColor: "#EEEAF2", paddingHorizontal: 14, paddingVertical: 11, marginBottom: 10 }}>
+              <Glyph name="gauge" size={22} />
+              <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: ink }}>top traders · watch or copy one</Text>
+              <Chevron />
+            </Tap>
             <View style={{ marginBottom: 6 }}>
               <Segmented options={SORTS} value={sort} onChange={setSort} dark={false} />
             </View>

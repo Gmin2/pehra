@@ -1,6 +1,7 @@
 // the proof screen's data (services/api/src/proof.ts): uptime from the minute beats, how fast actions went,
 // this account's receipts and the hash chain with its last onchain anchor
 import { API } from './trade'
+import { authedGet } from './session'
 
 export type Spread = { n: number; p50: number | null; p95: number | null; p99: number | null }
 export type Receipt = { seq: number; at: number; rule: string | null; ruleKind: string | null; mkt: number | null; what: string; side?: string; limit?: number; size?: number; price?: number; ausd?: number; before?: number; after?: number; tx: string | null; hash: string }
@@ -14,7 +15,7 @@ export type Proof = {
 }
 
 export async function readProof(address: string): Promise<Proof> {
-  const r = await fetch(`${API}/proof/${address}`)
+  const r = await authedGet(`/proof/${address}`, address)
   if (!r.ok) throw new Error(`proof ${r.status}`)
   return r.json() as Promise<Proof>
 }

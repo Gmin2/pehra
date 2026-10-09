@@ -28,6 +28,7 @@ import { prepareAccount } from "../src/trade";
 import { money } from "../src/live";
 import { enrollGuard, guardState } from "../src/guard";
 import { registerPush } from "../src/push";
+import { openSession as openDeviceSession } from "../src/session";
 import { log } from "../src/log";
 import { setOnboarded } from "../src/keys";
 
@@ -36,7 +37,7 @@ import { setOnboarded } from "../src/keys";
 const TERMS = [
   "i understand that perps are leveraged. a small move in price can close my position.",
   "i understand that the guard adds margin within limits i set, and that i can turn it off.",
-  "i understand that my passkey is my account and pehra never holds my keys.",
+  "i understand that my passkey is my account. pehra never holds it, and if i lose every device that has it, the account is gone.",
   "i understand that this is monad testnet, with test dollars on perpl testnet.",
 ]
 const LESSONS: Lesson[] = [
@@ -55,8 +56,9 @@ const LESSONS: Lesson[] = [
     title: ["one signature, and every trade fills in about a", { u: "second.", mark: "underline" }],
     body: (
       <>
-        your passkey lets the guard keep a trading session for you. it adds margin and places your orders, no wallet
-        popup, no gas. you can turn it off any time.
+        your passkey makes a key for the guard. it places your orders and adds margin, no wallet popup, no gas. it steps
+        in at <Em>5% from liquidation</Em>, brings it back to 10%, and spends at most 20 ausd a day. change any of it in
+        settings, or turn it off.
       </>
     ),
   },
@@ -65,8 +67,8 @@ const LESSONS: Lesson[] = [
     title: ["your money stays", { u: "yours.", mark: "highlight" }],
     body: (
       <>
-        the guard can add margin, but it can never withdraw. only your passkey moves money out of your account, and it
-        <Em> asks you every time</Em>.
+        the guard can add margin, but it can never withdraw. that is perpl’s rule for every key like it, not ours.
+        only your passkey moves money out, and it <Em>asks you every time</Em>.
       </>
     ),
   },
@@ -97,7 +99,12 @@ export default function Onboarding() {
   const fail = (e: unknown) => {
     const msg = e instanceof Error ? e.message : String(e);
     log(`onboarding ${step} failed: ${msg.slice(0, 200)}`);
-    setError(/cancel/i.test(msg) ? "cancelled. try again when you’re ready." : msg.slice(0, 160));
+    // plain words for what goes wrong most, the raw message stays in the log
+    setError(/cancel|abort|NotAllowed/i.test(msg) ? "cancelled. try again when you’re ready."
+      : /prf|not supported/i.test(msg) ? "this phone’s password manager can’t make a pehra passkey. google password manager can."
+      : /network|fetch|timed out|timeout/i.test(msg) ? "couldn’t reach pehra. check your connection and try again."
+      : /drip|faucet|cooldown/i.test(msg) ? "the test dollars are busy. try again in a minute."
+      : "something went wrong. try again, nothing was spent.");
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
   };
   const create = async (existing: boolean) => {
@@ -144,6 +151,8 @@ export default function Onboarding() {
     try {
       const t2 = Date.now();
       const r = await enrollGuard(sess);
+      // the same passkey session opens the device session, so pushes and the first trade need no other prompt
+      await openDeviceSession(sess).catch((e) => log(`session open failed: ${e instanceof Error ? e.message : e}`));
       setPhase(2);
       log(`onboarding: guard holds account ${r.account}, ${Date.now() - t2}ms`);
       registerPush(sess.address, log).catch(() => {});
@@ -215,8 +224,11 @@ export default function Onboarding() {
                 </Text>
               </View>
               <View style={{ paddingHorizontal: 24, paddingTop: 26, gap: 12 }}>
-                <ChoiceCard icon="plus" color={accent} title="create account" subtitle="make a passkey and open a funded testnet account." onPress={() => next("terms")} />
+                <ChoiceCard icon="plus" color={accent} title="create account" subtitle={a.stored ? "this phone already has a pehra account. sign in instead, or this makes a second one." : "make a passkey and open a funded testnet account."} onPress={() => next("terms")} />
                 <ChoiceCard icon="key" color={ink} title="sign in" subtitle="use the passkey you already made on this or another phone." onPress={() => create(true)} />
+                <Tap onPress={() => a.go("/watch")} innerStyle={{ alignItems: "center", paddingVertical: 10 }}>
+                  <Text style={{ fontSize: 14, fontWeight: "600", color: accent }}>just looking? watch any trader, no account needed</Text>
+                </Tap>
               </View>
             </View>
           )}
@@ -252,7 +264,12 @@ export default function Onboarding() {
           )}
           {step === "ready" && (
             <View style={{ flex: 1, justifyContent: "center", paddingTop: 70, gap: 22 }}>
-              <HighlightTitle before="your account is " word="funded" after="." />
+              <HighlightTitle before="your account is " word={balance > 0 ? "funded" : "ready"} after="." />
+              {balance > 0 && (
+                <Text style={[space.copy, { textAlign: "center", fontSize: 14, paddingHorizontal: 36, marginTop: -8 }]}>
+                  {money(balance)} test ausd is in perpl, ready to trade. any extra sits in your wallet, move it in from fund.
+                </Text>
+              )}
               <View>
                 <AccountCard width={width} address={address} balance={money(balance) + " AUSD"} pill="turn on guard" onPill={() => setTray(true)} />
                 <Tooltip width={width} title="turn on the guard" body="most liquidations happen while you’re away. the guard steps in first." />

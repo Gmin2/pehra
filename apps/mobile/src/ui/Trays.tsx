@@ -268,9 +268,9 @@ export default function TrayContent({
     <View style={{ gap: 20 }}>
       <Text style={text}>
         {id === "education"
-          ? "Your Family is a home for your wallets, preferences, and everything you need to explore Ethereum."
+          ? "pehra is your account on perpl, the onchain orderbook on monad. a passkey is the key, rules you set trade and protect your positions while you are away, and every step is on the record."
           : id === "help"
-            ? "We’re here to help make Family better."
+            ? "tell us what went wrong or what you want next."
             : id === "connections"
               ? "You haven’t connected this wallet to any apps yet."
               : id === "chat"

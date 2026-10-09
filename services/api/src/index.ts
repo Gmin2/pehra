@@ -2,11 +2,16 @@
 // can do the perpl setup itself. the dev key pays. later: enrollment proxy, the guard, push.
 import { encodeFunctionData, formatEther, formatUnits, isAddress, parseEther, verifyMessage, type Address } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
-import { getContext, publicClient, erc20Abi, faucetAbi, AUSD_FAUCET, NETWORKS, GAS, AGORA, AGORA_GAS, whitelisterAbi, isSwapper, pairState, sendBatch, nextNonce, feeCaps, enrollPayload, enrollFinish, fromCns, fromPrice, fromSize, Reason, profile, type Activity, type Call, type EnrollPayload, type GuardSettings } from '@pehra/perpl'
+import { getContext, recipe, publicClient, erc20Abi, faucetAbi, AUSD_FAUCET, NETWORKS, GAS, AGORA, AGORA_GAS, whitelisterAbi, isSwapper, pairState, sendBatch, nextNonce, feeCaps, enrollPayload, enrollFinish, fromCns, fromPrice, fromSize, Reason, profile, type Activity, type Call, type EnrollPayload, type GuardSettings } from '@pehra/perpl'
 import { Guard } from './guard'
 import { serve } from './serve'
 import { rulesRoute } from './rules'
 import { replayRoute } from './replayRoute'
+import { openSession, owns } from './sessions'
+import { share, shared, copied } from './shares'
+import { leaders, trader } from './leaders'
+import { watchRead, watch, unwatch, watchesOf, watchTick } from './watches'
+import { proof } from './proof'
 import { prefsOf, setPrefs, recentAlerts, KINDS } from './alerts'
 import { startBeats } from './proof'
 import { verify, writeRun } from './runs'
@@ -141,6 +146,7 @@ async function anchor() {
 
 const guard = new Guard()
 const pendingEnroll = new Map<string, EnrollPayload>()
+const GATED = new Set(['/recipes', '/watch', '/unwatch', '/order', '/close', '/close-all', '/brackets', '/guard/add', '/activity', '/push/register', '/push/test'])
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
 
@@ -162,11 +168,70 @@ const server = serve({
       guard.engine.funding([{ id: b.mkt, rate: b.rate }])
       return json({ ok: true })
     }
+    if (url.pathname === '/session' && req.method === 'POST') {
+      const b = await req.json().catch(() => ({})) as { address?: string } & Record<string, unknown>
+      if (!b.address || !isAddress(b.address)) return json({ error: 'bad address' }, 400)
+      const r = await openSession(b.address, b as Parameters<typeof openSession>[1])
+      return r.ok ? json({ token: r.token, exp: r.exp }) : json({ error: r.why }, r.status)
+    }
+    // writes that are not signed one by one need the account's session token. the address comes from the
+    // path or the body, and has to be the token's owner
+    const gated = req.method === 'POST' && (GATED.has(url.pathname) || /^\/(guard|alerts)\/0x[0-9a-fA-F]{40}$/.test(url.pathname))
+    if (gated) {
+      const fromPath = url.pathname.match(/0x[0-9a-fA-F]{40}$/)?.[0]
+      const fromBody = fromPath ? null : ((await req.clone().json().catch(() => ({}))) as { address?: string }).address
+      const address = fromPath ?? fromBody
+      if (!address || !owns(req, address)) return json({ error: 'sign in again', code: 'session' }, 401)
+    }
+    if (url.pathname === '/leaderboard' && req.method === 'GET') {
+      const days = Math.min(Math.max(Number(url.searchParams.get('days') ?? 7), 1), 30)
+      try { return json({ days, leaders: await leaders(INDEXER, days) }) } catch (e) { return json({ error: e instanceof Error ? e.message : 'indexer unreachable' }, 502) }
+    }
+    const tr = url.pathname.match(/^\/trader\/(0x[0-9a-fA-F]{40})$/)
+    if (tr && req.method === 'GET') {
+      const days = Math.min(Math.max(Number(url.searchParams.get('days') ?? 7), 1), 30)
+      try { return json({ days, ...(await trader(INDEXER, tr[1], days)) }) } catch (e) { return json({ error: e instanceof Error ? e.message : 'indexer unreachable' }, 502) }
+    }
+    // any address, read from the chain and the indexer. a pehra account also shows its public proof
+    const wa = url.pathname.match(/^\/watch\/(0x[0-9a-fA-F]{40})$/)
+    if (wa && req.method === 'GET') {
+      try {
+        return json(await watchRead(pub, wa[1], guard.openMarkets(), chainHistory, a => ({ onPehra: guard.has(a), receipts: guard.has(a) ? proof(a).receipts.length : 0 })))
+      } catch (e) { return json({ error: e instanceof Error ? e.message : 'could not read that account' }, 502) }
+    }
+    if ((url.pathname === '/watch' || url.pathname === '/unwatch') && req.method === 'POST') {
+      const b = await req.json().catch(() => ({})) as { address?: string; target?: string }
+      if (!b.address || !b.target || !isAddress(b.target)) return json({ error: 'say which address' }, 400)
+      if (url.pathname === '/watch') watch(b.address, b.target); else unwatch(b.address, b.target)
+      return json({ watching: watchesOf(b.address) })
+    }
+    const wl = url.pathname.match(/^\/watches\/(0x[0-9a-fA-F]{40})$/)
+    if (wl && req.method === 'GET') {
+      if (!owns(req, wl[1])) return json({ error: 'sign in again', code: 'session' }, 401)
+      return json({ watching: watchesOf(wl[1]) })
+    }
+    // shared recipes: a short id for a link, public to read, copies counted
+    if (url.pathname === '/recipes' && req.method === 'POST') {
+      const b = await req.json().catch(() => ({})) as { address?: string; recipe?: string; symbol?: string; margin?: number; leverage?: number }
+      if (!b.address || !b.recipe || !recipe(b.recipe) || !b.symbol || !(Number(b.margin) > 0) || !(Number(b.leverage) > 0)) return json({ error: 'say which recipe' }, 400)
+      return json({ id: share(b.address, { recipe: b.recipe, symbol: b.symbol.slice(0, 12), margin: Math.min(Number(b.margin), 1000), leverage: Math.min(Number(b.leverage), 20) }) }, 201)
+    }
+    const sh = url.pathname.match(/^\/recipes\/([0-9a-f]{10})(\/copied)?$/)
+    if (sh && req.method === 'GET') {
+      const s = shared(sh[1])
+      if (!s) return json({ error: 'no such recipe link' }, 404)
+      const r = recipe(s.recipe)!
+      return json({ ...s, author: `${s.author.slice(0, 6)}…${s.author.slice(-4)}`, name: r.name, blurb: r.blurb, needs: r.needs })
+    }
+    if (sh && sh[2] && req.method === 'POST') { copied(sh[1]); return json({ ok: true }) }
     const rules = await rulesRoute(req, url, guard)
     if (rules) return rules
     // which alerts reach the phone and when not (src/alerts.ts), and what was sent lately
     const al = url.pathname.match(/^\/alerts\/(0x[0-9a-fA-F]{40})$/)
-    if (al && req.method === 'GET') return json({ prefs: prefsOf(al[1]), recent: recentAlerts(al[1]) })
+    if (al && req.method === 'GET') {
+      if (!owns(req, al[1])) return json({ error: 'sign in again', code: 'session' }, 401)
+      return json({ prefs: prefsOf(al[1]), recent: recentAlerts(al[1]) })
+    }
     if (al && req.method === 'POST') {
       const b = await req.json().catch(() => null) as { on?: Record<string, boolean>; quiet?: { from: number; to: number } | null; tz?: number } | null
       if (!b) return json({ error: 'send the changes' }, 400)
@@ -260,7 +325,9 @@ const server = serve({
       if (!guard.has(address)) return json({ enrolled: false })
       const ts = guard.session(address)
       if (url.searchParams.has('fresh')) guard.forgetForwarding(address)
-      return json({ enrolled: true, live: !!ts, forwarding: await guard.forwarding(address), enrolledAt: guard.enrolledAt(address), settings: guard.settings(address), balance: guard.balance(address), health: guard.health(address), events: guard.recent(address, 200) })
+      // balance and positions are on chain anyway, settings and the event history are the owner's
+      const mine = owns(req, address)
+      return json({ enrolled: true, live: !!ts, forwarding: await guard.forwarding(address), enrolledAt: guard.enrolledAt(address), settings: mine ? guard.settings(address) : undefined, balance: guard.balance(address), health: guard.health(address), events: mine ? guard.recent(address, 200) : [] })
     }
     if (m && req.method === 'POST') {
       const body = await req.json().catch(() => ({})) as Partial<GuardSettings>
@@ -359,10 +426,15 @@ async function funding() {
     const rates = (await getContext('testnet')).markets.map(m => ({ id: m.id, symbol: m.symbol, rate: m.funding.rate }))
     guard.alerts.fundingTick(rates)
     guard.engine.funding(rates)
+    for (const r of rates) guard.engine.pollChains({ at: Date.now(), fundingRate: r.rate, mkt: r.id })
   } catch (e) { log(`alerts funding: ${e instanceof Error ? e.message : e}`) }
 }
 async function depeg() {
-  try { guard.alerts.depegTick((await pairState(pub)).price, Number(process.env.ALERT_DEPEG_BPS ?? 50)) }
+  try {
+    const price = (await pairState(pub)).price
+    guard.alerts.depegTick(price, Number(process.env.ALERT_DEPEG_BPS ?? 50))
+    guard.engine.pollChains({ at: Date.now(), ausdPrice: price })
+  }
   catch (e) { log(`alerts depeg: ${e instanceof Error ? e.message : e}`) }
 }
 setInterval(() => void liquidations(), 30_000)
@@ -372,6 +444,22 @@ setTimeout(() => void funding(), 15_000)
 setInterval(() => void depeg(), 5 * 60_000)
 setTimeout(() => void depeg(), 25_000)
 setInterval(() => guard.alerts.quietTick(), 60_000)
+// traders people copy: every 5s their newest activity from the indexer goes to the engine
+let copying = false
+setInterval(async () => {
+  if (copying) return
+  copying = true
+  try {
+    for (const t of guard.engine.copyTargets()) {
+      const { rows } = await chainHistory(t).catch(() => ({ rows: [] as unknown[] }))
+      guard.engine.onCopy(t, rows as Parameters<typeof guard.engine.onCopy>[1])
+    }
+  } finally { copying = false }
+}, 5000)
+// accounts people watch: what they did since the last look, and positions near liquidation
+setInterval(() => void watchTick(pub, guard.openMarkets(), chainHistory, (owner, key, title, body) => void guard.alerts.push(owner, 'watched', key, title, body)).catch(e => log(`watch tick: ${e instanceof Error ? e.message : e}`)), 30_000)
+// chains on the clock (a set time, every day) are checked twice a minute
+setInterval(() => guard.engine.pollChains({ at: Date.now() }), 30_000)
 
 setTimeout(() => void anchor(), 30_000)
 setInterval(() => void anchor(), ANCHOR_MS)

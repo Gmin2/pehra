@@ -64,7 +64,13 @@ type Stamps = { t0?: number; b0?: number; t1?: number; t2?: number; t3?: number;
 // a public view never shows a whole address
 export const cut = (a: string | null) => (a ? `${a.slice(0, 6)}…${a.slice(-4)}` : null)
 
-export function proof(owner: string | null, now = Date.now()) {
+// a rule's own levels (a hidden stop's price) are the owner's. anyone else sees the run, its kind and hash
+const hide = (body: Record<string, unknown>) => {
+  const { rule, ...rest } = body
+  return rule ? { ...rest, rule: { kind: (rule as { kind?: string }).kind, withheld: true } } : rest
+}
+
+export function proof(owner: string | null, opts: { full?: boolean } = {}, now = Date.now()) {
   const beats = (q.beats.all() as { at: number }[]).map(b => b.at)
   const since = (q.first.get() as { at: number } | undefined)?.at ?? now
   const gaps: { from: number; to: number; ms: number }[] = []
@@ -89,7 +95,7 @@ export function proof(owner: string | null, now = Date.now()) {
       fillMs: spread(seg('t3', 't5')),     // written to filled
       blocks: spread(seg('b0', 'b6')),     // trigger block to the block it settled in
     },
-    runs: rows.map(r => ({ seq: r.seq, at: r.at, owner: owner ? r.owner : cut(r.owner), rule: r.rule, kind: r.kind, body: JSON.parse(r.body) as object, hash: r.hash })),
+    runs: rows.map(r => ({ seq: r.seq, at: r.at, owner: owner ? r.owner : cut(r.owner), rule: r.rule, kind: r.kind, body: opts.full ? JSON.parse(r.body) as object : hide(JSON.parse(r.body) as Record<string, unknown>), hash: r.hash })),
     chain: verify(),
     receipts: owner ? receipts(owner) : [],
     anchor: (() => { const a = q.lastAnchor.get() as { at: number; body: string } | undefined; return a ? { at: a.at, ...(JSON.parse(a.body) as { head: string; rows: number; tx: string; block: number }) } : null })(),

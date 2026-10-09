@@ -21,6 +21,7 @@ import { useAccount } from "../src/live";
 import { updateGuard, type GuardPatch } from "../src/guard";
 import { forgetStored } from "../src/account";
 import { log } from "../src/log";
+import { forget as forgetSession } from "../src/session";
 
 const ink = "#28243E",
   muted = "#706A7D",
@@ -69,9 +70,12 @@ export default function Settings() {
   };
 
   const signOut = async () => {
+    if (address) await forgetSession(address);
     await forgetStored();
     a.setSession(null);
     a.setStored?.(null);
+    // the onboarding step lives in the store, a sign out starts it from the first screen
+    a.setOnboarding("choose");
     log("signed out of this phone");
     router.replace("/onboarding");
   };
