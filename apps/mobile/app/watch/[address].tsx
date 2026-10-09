@@ -167,6 +167,12 @@ export default function Watch() {
             </View>
             {w === null ? <View style={{ width: 160, height: 12, borderRadius: 6, backgroundColor: well }} />
               : <Text style={{ fontSize: 13, fontWeight: "500", color: muted }}>{w.accountId === null ? "no perpl account yet" : w.profile.labels.join(", ") || "new to perpl"}</Text>}
+            {w?.copiers && w.copiers.ever > 0 && (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 }}>
+                <Glyph name="users" size={16} />
+                <Text style={{ fontSize: 12.5, fontWeight: "700", color: violet }}>{w.copiers.now > 0 ? `${w.copiers.now} copy them on pehra now` : `${w.copiers.ever} copied them on pehra`}<Text style={{ fontWeight: "500", color: muted }}>{w.copiers.copied ? ` · ${w.copiers.copied} trade${w.copiers.copied === 1 ? "" : "s"} copied` : ""}</Text></Text>
+              </View>
+            )}
           </View>
         </Tap>
         <View style={{ paddingHorizontal: 6, marginTop: 6 }}>

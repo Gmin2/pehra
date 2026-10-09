@@ -13,7 +13,8 @@ import { Avatar } from "../src/ui/Avatar";
 import { AddressText } from "../src/ui/AddressText";
 import { Glyph } from "../src/ui/Glyph";
 import { useApp } from "../src/ui/store";
-import { readLeaders, type Leader } from "../src/rules";
+import { readLeaders, readTopRecipes, type Leader } from "../src/rules";
+import { RECIPES } from "@pehra/perpl";
 import { ink, muted, green, red, faint, well, violet } from "../src/ui/Position";
 
 const RANGES = ["24h", "7 days", "30 days"] as const;
@@ -105,7 +106,9 @@ export default function Leaders() {
     [by, setBy] = useState<Sort>("most profit"),
     [list, setList] = useState<Leader[] | null>(null),
     [shownRange, setShownRange] = useState(range),
-    [err, setErr] = useState<string | null>(null);
+    [err, setErr] = useState<string | null>(null),
+    [top, setTop] = useState<{ recipe: string; copies: number; links: number }[]>([]);
+  useEffect(() => { readTopRecipes().then(setTop).catch(() => {}); }, []);
   // a new range keeps the old board up, dimmed, until the new one lands
   const load = useCallback(() => {
     readLeaders(DAYS[range]).then((l) => { setList(l); setShownRange(range); setErr(null); }).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
@@ -160,7 +163,12 @@ export default function Leaders() {
                       <Text style={{ width: 20, fontFamily: "Manrope_700Bold", fontSize: 13, color: faint }}>{i + 4}</Text>
                       <Avatar address={l.address} size={36} />
                       <View style={{ flex: 1, gap: 5 }}>
-                        <Text><AddressText address={l.address} size={14} />{l.address.toLowerCase() === me ? <Text style={{ fontSize: 12, fontWeight: "700", color: violet }}>  you</Text> : null}</Text>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                          <AddressText address={l.address} size={14} />
+                          {l.address.toLowerCase() === me && <Text style={{ fontSize: 12, fontWeight: "700", color: violet }}>you</Text>}
+                          {l.onPehra && <View style={{ flexDirection: "row", alignItems: "center", gap: 3, paddingHorizontal: 6, height: 18, borderRadius: 9, backgroundColor: mist }}><Glyph name="shield" size={11} /><Text style={{ fontSize: 10, fontWeight: "800", color: violet }}>pehra</Text></View>}
+                          {!!l.copiers && <Text style={{ fontSize: 11, fontWeight: "700", color: violet }}>{l.copiers} copying</Text>}
+                        </View>
                         <View style={{ height: 5, width: "88%", borderRadius: 3, backgroundColor: well, flexDirection: "row", overflow: "hidden" }}>
                           <View style={{ flex: won(l), backgroundColor: green }} />
                           <View style={{ flex: 1 - won(l), backgroundColor: redTint }} />
@@ -179,6 +187,24 @@ export default function Leaders() {
                   </Animated.View>
                 ))}
         </View>
+        {top.length > 0 && (
+          <>
+            <Text style={{ fontSize: 13, fontWeight: "700", color: ink, paddingHorizontal: 6, marginTop: 6 }}>most copied recipes</Text>
+            <View style={{ backgroundColor: "white", borderRadius: 24, borderWidth: 1, borderColor: line, paddingHorizontal: 14 }}>
+              {top.map((t, i) => {
+                const r = RECIPES.find((x) => x.id === t.recipe);
+                if (!r) return null;
+                return (
+                  <Tap key={t.recipe} onPress={() => a.go(`/recipes?only=${t.recipe}`)} innerStyle={{ flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, borderTopWidth: i ? 1 : 0, borderTopColor: line }}>
+                    <View style={{ width: 36, height: 36, borderRadius: 12, backgroundColor: mist, alignItems: "center", justifyContent: "center" }}><Glyph name={{ dip: "flame", breakout: "gauge", run: "crosshairs", lock: "shield", sleep: "lock", depeg: "circle-coin", stack: "magic-wand-sparkle" }[t.recipe] ?? "shield"} size={22} /></View>
+                    <Text style={{ flex: 1, fontSize: 14.5, fontWeight: "700", color: ink }}>{r.name}</Text>
+                    <Text style={{ fontSize: 12.5, fontWeight: "600", color: muted }}>{t.copies ? `armed ${t.copies}x` : `shared ${t.links}x`}</Text>
+                  </Tap>
+                );
+              })}
+            </View>
+          </>
+        )}
       </ScrollView>
     </Screen>
   );
