@@ -16,7 +16,7 @@ import { Glyph } from "../../src/ui/Glyph";
 import { useApp } from "../../src/ui/store";
 import { readWatch, readTrader, setWatch, myWatches, listRules, createRule, cancelRule, describeRule, type WatchRead, type RuleRow, type Trader } from "../../src/rules";
 import { Tray, Segmented } from "../../src/ui/Trade";
-import { useMarkets } from "../../src/live";
+import { useMarkets, useAccount } from "../../src/live";
 import { Avatar } from "../../src/ui/Avatar";
 import { AddressText } from "../../src/ui/AddressText";
 import { CopyMark } from "../../src/ui/CopyMark";
@@ -33,6 +33,13 @@ const RANGES = ["24h", "7d", "30d"] as const;
 const DAYS: Record<(typeof RANGES)[number], number> = { "24h": 1, "7d": 7, "30d": 30 };
 const RANGE_WORDS: Record<(typeof RANGES)[number], string> = { "24h": "today", "7d": "7 days", "30d": "30 days" };
 const amber = "#9A6B1C";
+// how closely to copy: one tap sets the amount, the leverage cap and the stop together
+type Preset = "careful" | "steady" | "bold";
+const PRESETS: Record<Preset, { margin: number; lev: number; stop: number; glyph: string; line: string }> = {
+  careful: { margin: 5, lev: 1, stop: 3, glyph: "shield", line: "5 ausd · 1x · 3% stop" },
+  steady: { margin: 10, lev: 2, stop: 5, glyph: "gauge", line: "10 ausd · up to 2x · 5% stop" },
+  bold: { margin: 25, lev: 3, stop: 8, glyph: "flame", line: "25 ausd · up to 3x · 8% stop" },
+};
 const money = (n: number) => `${n >= 0 ? "+" : "−"}${Math.abs(n).toFixed(2)}`;
 const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 const dayOf = (t: number) => { const d = new Date(t * 1000), now = new Date(); const k = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() - new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()) / 86_400_000); return k === 0 ? "today" : k === 1 ? "yesterday" : k < 7 ? `${k} days ago` : `${MONTHS[d.getMonth()]} ${d.getDate()}`; };
@@ -50,13 +57,16 @@ export default function Watch() {
     [starred, setStarred] = useState(false),
     [copies, setCopies] = useState<RuleRow[]>([]),
     [sheet, setSheet] = useState(false),
-    [cm, setCm] = useState(10), [cl, setCl] = useState(3), [cClose, setCClose] = useState(true), [cStop, setCStop] = useState(true),
+    [preset, setPreset] = useState<Preset | null>("steady"),
+    [cm, setCm] = useState(10), [cl, setCl] = useState(2), [cClose, setCClose] = useState(true), [cStop, setCStop] = useState(5),
+    [tune, setTune] = useState(false), [readSign, setReadSign] = useState(false),
     [busy, setBusy] = useState(false),
     [range, setRange] = useState<(typeof RANGES)[number]>("7d"),
     [tr, setTr] = useState<Trader | null>(null),
     [scrub, setScrub] = useState<Pt | null>(null),
     [copied, setCopied] = useState(false),
     markets = useMarkets(),
+    { account } = useAccount(me),
     { width } = useWindowDimensions();
   useEffect(() => {
     if (!address) return;
@@ -94,7 +104,9 @@ export default function Watch() {
     a.setSession(s);
     return s;
   };
-  const copyRule: Rule | null = address && me ? { v: 1, id: `copy-${address.slice(2, 8)}-${Date.now().toString(36)}`, pid: 0, mkt: 64, forMs: 0, kind: "copy", target: address.toLowerCase(), margin: cm, maxLeverage: cl, limitPct: 1, ...(cClose ? { closeWithThem: true } : {}), ...(cStop ? { stopPct: 5 } : {}) } : null;
+  const copyRule: Rule | null = address && me ? { v: 1, id: `copy-${address.slice(2, 8)}-${Date.now().toString(36)}`, pid: 0, mkt: 64, forMs: 0, kind: "copy", target: address.toLowerCase(), margin: cm, maxLeverage: cl, limitPct: 1, ...(cClose ? { closeWithThem: true } : {}), ...(cStop ? { stopPct: cStop } : {}) } : null;
+  const choose = (p: Preset) => { Haptics.selectionAsync(); setPreset(p); setCm(PRESETS[p].margin); setCl(PRESETS[p].lev); setCStop(PRESETS[p].stop); };
+  const free = account?.balance ?? null;
   const startCopy = async () => {
     if (!copyRule) return;
     setBusy(true);
@@ -240,33 +252,68 @@ export default function Watch() {
         </View>
       )}
       <Tray visible={sheet} onClose={() => setSheet(false)}>
-        <View style={{ gap: 14, paddingHorizontal: 4 }}>
-          <Text style={{ fontSize: 21, fontWeight: "700", color: ink }}>copy {address ? cut(address) : ""}</Text>
-          <Text style={{ fontSize: 13.5, fontWeight: "500", color: muted }}>when they open a position on perpl, pehra opens the same side on your account, at your size. it runs on your account through a key that can trade but never withdraw. their money and yours never mix.</Text>
-          {([["each trade", [5, 10, 25], cm, setCm, " ausd"], ["leverage up to", [1, 2, 3], cl, setCl, "x"]] as const).map(([label, opts, v, set, unit]) => (
-            <View key={label} style={{ gap: 8 }}>
-              <Text style={{ fontSize: 12.5, fontWeight: "600", color: muted }}>{label}</Text>
-              <View style={{ flexDirection: "row", gap: 8 }}>
-                {opts.map((o) => (
-                  <Tap key={o} onPress={() => set(o)} style={{ flex: 1 }} innerStyle={{ height: 42, borderRadius: 21, backgroundColor: v === o ? ink : "#F0EDF3", alignItems: "center", justifyContent: "center" }}>
-                    <Text style={{ fontSize: 14, fontWeight: "700", color: v === o ? "white" : ink }}>{o}{unit}</Text>
-                  </Tap>
-                ))}
-              </View>
+        <View style={{ gap: 12, paddingHorizontal: 4 }}>
+          <Text style={{ fontSize: 22, fontWeight: "700", color: ink }}>how closely?</Text>
+          <View style={{ gap: 2, marginTop: -4 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Text style={{ fontSize: 13.5, fontWeight: "500", color: muted }}>copying</Text>
+              {address ? <AddressText address={address} size={13.5} /> : null}
+              <Text style={{ fontSize: 13.5, fontWeight: "500", color: muted }}>at your size.</Text>
             </View>
-          ))}
-          {([["close when they close", cClose, setCClose], ["a hidden stop 5% away on each copy", cStop, setCStop]] as const).map(([label, on, set]) => (
-            <Tap key={label} onPress={() => set(!on)} innerStyle={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 6 }}>
-              <Text style={{ fontSize: 14.5, fontWeight: "700", color: ink }}>{label}</Text>
-              <View style={{ width: 44, height: 26, borderRadius: 13, backgroundColor: on ? violet : line, justifyContent: "center", paddingHorizontal: 3 }}>
-                <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: "white", alignSelf: on ? "flex-end" : "flex-start" }} />
-              </View>
-            </Tap>
-          ))}
-          <Text style={{ fontSize: 11, fontWeight: "500", color: faint }}>you sign: {copyRule ? describeRule(copyRule, "MON") : ""}</Text>
+            <Text style={{ fontSize: 13.5, fontWeight: "500", color: muted }}>their money and yours never mix.</Text>
+          </View>
+          {(Object.keys(PRESETS) as Preset[]).map((k) => {
+            const on = preset === k;
+            return (
+              <Tap key={k} onPress={() => choose(k)} innerStyle={{ flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "white", borderRadius: 22, borderWidth: on ? 2 : 1, borderColor: on ? violet : line, paddingHorizontal: 14, paddingVertical: on ? 13 : 14 }}>
+                <View style={{ width: 42, height: 42, borderRadius: 14, backgroundColor: on ? mist : well, alignItems: "center", justifyContent: "center" }}>
+                  <Glyph name={PRESETS[k].glyph} size={26} color={on ? violet : ink} />
+                </View>
+                <View style={{ flex: 1, gap: 2 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <Text style={{ fontSize: 16, fontWeight: "700", color: ink }}>{k}</Text>
+                    {k === "steady" && <View style={{ paddingHorizontal: 8, height: 20, borderRadius: 10, backgroundColor: mist, justifyContent: "center" }}><Text style={{ fontSize: 11, fontWeight: "700", color: violet }}>most pick this</Text></View>}
+                  </View>
+                  <Text style={{ fontSize: 12.5, fontWeight: "500", color: muted }}>{PRESETS[k].line}</Text>
+                </View>
+                <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: on ? violet : line, alignItems: "center", justifyContent: "center" }}>
+                  {on && <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: violet }} />}
+                </View>
+              </Tap>
+            );
+          })}
+          <Tap onPress={() => { Haptics.selectionAsync(); setCClose(!cClose); }} innerStyle={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 4, paddingHorizontal: 4 }}>
+            <Text style={{ fontSize: 14.5, fontWeight: "700", color: ink }}>close when they close</Text>
+            <View style={{ width: 44, height: 26, borderRadius: 13, backgroundColor: cClose ? violet : line, justifyContent: "center", paddingHorizontal: 3 }}>
+              <View style={{ width: 20, height: 20, borderRadius: 10, backgroundColor: "white", alignSelf: cClose ? "flex-end" : "flex-start" }} />
+            </View>
+          </Tap>
+          <Tap onPress={() => setTune(!tune)} innerStyle={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 4 }}>
+            <Text style={{ fontSize: 13.5, fontWeight: "700", color: violet }}>{tune ? "hide fine tune" : preset ? "fine tune" : "fine tune · your own setting"}</Text>
+            <Text style={{ fontSize: 13, fontWeight: "600", color: muted }}>{free !== null ? `${free.toFixed(2)} free, enough for ${Math.floor(free / cm)}` : ""}</Text>
+          </Tap>
+          {tune && (
+            <Animated.View entering={FadeIn.duration(200).reduceMotion(ReduceMotion.System)} style={{ gap: 10, backgroundColor: "white", borderRadius: 20, borderWidth: 1, borderColor: line, padding: 12 }}>
+              {([["each trade", [5, 10, 25], cm, setCm, " ausd"], ["leverage up to", [1, 2, 3], cl, setCl, "x"], ["hidden stop", [0, 3, 5, 8], cStop, setCStop, "%"]] as const).map(([label, opts, v, set, unit]) => (
+                <View key={label} style={{ gap: 6 }}>
+                  <Text style={{ fontSize: 12, fontWeight: "600", color: muted }}>{label}</Text>
+                  <View style={{ flexDirection: "row", gap: 6 }}>
+                    {opts.map((o) => (
+                      <Tap key={o} onPress={() => { Haptics.selectionAsync(); set(o); setPreset(null); }} style={{ flex: 1 }} innerStyle={{ height: 38, borderRadius: 19, backgroundColor: v === o ? ink : well, alignItems: "center", justifyContent: "center" }}>
+                        <Text style={{ fontSize: 13.5, fontWeight: "700", color: v === o ? "white" : ink }}>{label === "hidden stop" && o === 0 ? "none" : `${o}${unit}`}</Text>
+                      </Tap>
+                    ))}
+                  </View>
+                </View>
+              ))}
+            </Animated.View>
+          )}
+          <Tap onPress={() => setReadSign(!readSign)} innerStyle={{ paddingHorizontal: 4 }}>
+            <Text style={{ fontSize: 12, fontWeight: "600", color: faint }}>{readSign && copyRule ? `you sign: ${describeRule(copyRule, "MON")}` : "read what you sign ›"}</Text>
+          </Tap>
           <Tap onPress={busy ? undefined : startCopy} innerStyle={{ height: 56, borderRadius: 28, backgroundColor: ink, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, opacity: busy ? 0.5 : 1 }}>
             <Glyph name="lock" size={20} color="white" />
-            <Text style={{ fontSize: 16, fontWeight: "600", color: "white" }}>{busy ? "starting…" : "copy with fingerprint"}</Text>
+            <Text style={{ fontSize: 16, fontWeight: "600", color: "white" }}>{busy ? "starting…" : preset ? `copy ${preset} with fingerprint` : "copy with fingerprint"}</Text>
           </Tap>
         </View>
       </Tray>
