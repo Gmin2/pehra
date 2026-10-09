@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { View, ScrollView, useWindowDimensions } from "react-native";
 import { Stack, useFocusEffect } from "expo-router";
-import Animated, { FadeInDown, ReduceMotion, Easing, useSharedValue, useAnimatedStyle, withDelay, withTiming, withRepeat } from "react-native-reanimated";
+import Animated, { FadeIn, ReduceMotion, Easing, useSharedValue, useAnimatedStyle, withDelay, withTiming, withRepeat } from "react-native-reanimated";
 import Svg, { Rect } from "react-native-svg";
+import * as Haptics from "expo-haptics";
 import { Screen, Tap, IconButton } from "../src/ui/components";
 import { Text } from "../src/ui/Text";
 import { Segmented } from "../src/ui/Trade";
 import { Face } from "../src/ui/Face";
+import { Glyph } from "../src/ui/Glyph";
 import { useApp } from "../src/ui/store";
 import { readLeaders, type Leader } from "../src/rules";
 import { ink, muted, green, red, faint, well, violet } from "../src/ui/Position";
@@ -16,6 +18,7 @@ import { ink, muted, green, red, faint, well, violet } from "../src/ui/Position"
 const RANGES = ["24h", "7 days", "30 days"] as const;
 const DAYS: Record<(typeof RANGES)[number], number> = { "24h": 1, "7 days": 7, "30 days": 30 };
 const SORTS = ["most profit", "best win rate", "most trades", "never liquidated"] as const;
+const SORT_GLYPH: Record<(typeof SORTS)[number], string> = { "most profit": "award", "best win rate": "thumbs-up", "most trades": "bolt", "never liquidated": "shield" };
 type Sort = (typeof SORTS)[number];
 const line = "#EEEAF2", mist = "#EFE5FF", redTint = "#F6DCDE";
 const cut = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
@@ -100,11 +103,13 @@ export default function Leaders() {
     [range, setRange] = useState<(typeof RANGES)[number]>("7 days"),
     [by, setBy] = useState<Sort>("most profit"),
     [list, setList] = useState<Leader[] | null>(null),
+    [shownRange, setShownRange] = useState(range),
     [err, setErr] = useState<string | null>(null);
+  // a new range keeps the old board up, dimmed, until the new one lands
   const load = useCallback(() => {
-    setList(null);
-    readLeaders(DAYS[range]).then((l) => { setList(l); setErr(null); }).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
+    readLeaders(DAYS[range]).then((l) => { setList(l); setShownRange(range); setErr(null); }).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
   }, [range]);
+  const stale = list !== null && shownRange !== range;
   useFocusEffect(useCallback(() => { load(); }, [load]));
   const shown = useMemo(() => (list ? sorted(list, by).slice(0, 25) : []), [list, by]);
   const go = (l: Leader) => a.go(`/watch/${l.address}`);
@@ -126,15 +131,18 @@ export default function Leaders() {
         </View>
         <Segmented options={RANGES} value={range} onChange={setRange} />
         {err && <Text style={{ paddingHorizontal: 8, fontSize: 13, fontWeight: "600", color: red }}>couldn’t load the board: {err}</Text>}
-        <Podium top={shown.slice(0, 3)} width={width - 32} by={by} loading={list === null && !err} go={go} />
+        <View style={{ opacity: stale ? 0.55 : 1 }}>
+          <Podium top={shown.slice(0, 3)} width={width - 32} by={by} loading={list === null && !err} go={go} />
+        </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -16 }} contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}>
           {SORTS.map((s) => (
-            <Tap key={s} onPress={() => setBy(s)} innerStyle={{ height: 34, paddingHorizontal: 14, borderRadius: 17, backgroundColor: by === s ? ink : well, justifyContent: "center" }}>
-              <Text style={{ fontSize: 13, fontWeight: "700", color: by === s ? "white" : ink }}>{s}</Text>
+            <Tap key={s} onPress={() => { if (s !== by) Haptics.selectionAsync(); setBy(s); }} innerStyle={{ height: 38, paddingLeft: 10, paddingRight: 14, borderRadius: 19, backgroundColor: by === s ? mist : well, flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Glyph name={SORT_GLYPH[s]} size={20} color={by === s ? violet : ink} />
+              <Text style={{ fontSize: 13, fontWeight: "700", color: by === s ? violet : ink }}>{s}</Text>
             </Tap>
           ))}
         </ScrollView>
-        <View style={{ backgroundColor: "white", borderRadius: 24, borderWidth: 1, borderColor: line, paddingVertical: 4 }}>
+        <View style={{ backgroundColor: "white", borderRadius: 24, borderWidth: 1, borderColor: line, paddingVertical: 4, opacity: stale ? 0.55 : 1 }}>
           {list === null && !err
             ? [0, 1, 2, 3, 4].map((i) => (
                 <View key={i} style={{ flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 12 }}>
@@ -146,7 +154,7 @@ export default function Leaders() {
             : shown.length <= 3
               ? <Text style={{ padding: 16, fontSize: 14, fontWeight: "500", color: muted }}>{shown.length ? "that’s everyone in this window" : by === "best win rate" ? "no one has three closed trades in this window yet" : "no closed trades in this window yet"}</Text>
               : shown.slice(3).map((l, i) => (
-                  <Animated.View key={l.accountId} entering={FadeInDown.delay(30 * i).duration(220).reduceMotion(ReduceMotion.System)} style={i ? { borderTopWidth: 1, borderTopColor: line } : undefined}>
+                  <Animated.View key={`${by}-${shownRange}-${l.accountId}`} entering={FadeIn.delay(25 * i).duration(200).reduceMotion(ReduceMotion.System)} style={i ? { borderTopWidth: 1, borderTopColor: line } : undefined}>
                     <Tap onPress={() => go(l)} innerStyle={{ flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, paddingVertical: 11 }}>
                       <Text style={{ width: 20, fontFamily: "Manrope_700Bold", fontSize: 13, color: faint }}>{i + 4}</Text>
                       <Face address={l.address} size={34} />
