@@ -13,6 +13,7 @@ import { leaders, trader } from './leaders'
 import { startCopyFeed } from './copyFeed'
 import { copiersOf, topRecipes } from './social'
 import { copyReceipts } from './copyReceipts'
+import { saved } from './saved'
 import { watchRead, watch, unwatch, watchesOf, watchTick } from './watches'
 import { proof } from './proof'
 import { prefsOf, setPrefs, recentAlerts, KINDS } from './alerts'
@@ -187,6 +188,7 @@ const server = serve({
       if (!address || !owns(req, address)) return json({ error: 'sign in again', code: 'session' }, 401)
     }
     if (url.pathname === '/recipes/top' && req.method === 'GET') return json({ recipes: topRecipes() })
+    if (url.pathname === '/saved' && req.method === 'GET') return json(saved())
     // a copier's receipts, public like the proof: their trade, the copy, blocks apart. ?of= narrows to one trader
     const cr = url.pathname.match(/^\/copies\/(0x[0-9a-fA-F]{40})$/)
     if (cr && req.method === 'GET') {

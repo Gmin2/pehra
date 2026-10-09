@@ -13,7 +13,8 @@ import { Glyph } from "../src/ui/Glyph";
 import { Shield } from "../src/ui/Home";
 import { useApp } from "../src/ui/store";
 import { useMarkets } from "../src/live";
-import { readProof, verifyChain, week, type Proof, type Receipt } from "../src/proof";
+import { readProof, readSaved, verifyChain, week, type Proof, type Receipt, type Saved } from "../src/proof";
+import { Rough } from "../src/ui/Rough";
 import { log } from "../src/log";
 import { violet, ink, muted, green, red, faint, well } from "../src/ui/Position";
 
@@ -80,7 +81,8 @@ export default function ProofScreen() {
     if (!address) return;
     readProof(address).then((x) => { setP(x); setErr(null); }).catch((e) => { setErr(e instanceof Error ? e.message : String(e)); log(`proof load failed: ${e}`); });
   }, [address]);
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  const [saved, setSaved] = useState<Saved | null>(null);
+  useFocusEffect(useCallback(() => { load(); readSaved().then(setSaved).catch(() => {}); }, [load]));
 
   const check = async () => {
     setChecking(true);
@@ -112,6 +114,43 @@ export default function ProofScreen() {
           <Text style={heading}>on the record.</Text>
           <Text style={{ marginTop: 8, fontSize: 14, fontWeight: "500", color: muted }}>each run is hashed onto the one before it</Text>
         </View>
+
+        {saved && saved.rescues > 0 && (
+          <Animated.View entering={FadeIn.duration(260).reduceMotion(ReduceMotion.System)} style={{ marginTop: 22 }}>
+            <View style={{ paddingHorizontal: 8 }}>
+              <Text style={{ fontSize: 15, fontWeight: "600", color: muted, lineHeight: 21 }}>pehra added margin before perpl could liquidate someone</Text>
+              <View style={{ flexDirection: "row", alignItems: "baseline", gap: 10, marginTop: 6 }}>
+                <Rough type="circle" padding={4} paddingX={10} strokeWidth={2.2} delay={300} duration={700}>
+                  <Text style={{ fontFamily: "Manrope_800ExtraBold", fontSize: 60, lineHeight: 70, color: ink }}>{saved.rescues}</Text>
+                </Rough>
+                <Text style={{ fontFamily: "Manrope_700Bold", fontSize: 28, color: ink }}>time{saved.rescues === 1 ? "" : "s"}</Text>
+              </View>
+              <Text style={{ marginTop: 4, fontSize: 13, fontWeight: "600", color: muted }}>{saved.accounts} account{saved.accounts === 1 ? "" : "s"} · {saved.ausd.toFixed(2)} ausd added{saved.fastestMs ? ` · fastest ${(saved.fastestMs / 1000).toFixed(1)}s` : ""}</Text>
+            </View>
+            <View style={{ marginTop: 14, backgroundColor: "white", borderRadius: 24, borderWidth: 1, borderColor: line, paddingHorizontal: 16 }}>
+              {saved.recent.slice(0, 5).map((r, i) => (
+                <Tap key={r.tx} onPress={() => open(r.tx)} innerStyle={{ paddingVertical: 14, gap: 8, borderTopWidth: i ? 1 : 0, borderTopColor: line }}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={{ fontSize: 14, fontWeight: "700", color: ink }}>{r.before.toFixed(1)}% away → {r.after.toFixed(1)}%</Text>
+                    <Text style={{ fontSize: 14, fontWeight: "800", color: green }}>+{r.ausd.toFixed(2)} ausd</Text>
+                  </View>
+                  <View style={{ height: 8, borderRadius: 4, backgroundColor: well, overflow: "hidden" }}>
+                    <View style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${Math.min(100, (r.after / 60) * 100)}%`, borderRadius: 4, backgroundColor: upFill }} />
+                    <View style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${Math.min(100, (r.before / 60) * 100)}%`, borderRadius: 4, backgroundColor: red }} />
+                  </View>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                    <Text style={{ fontSize: 11.5, fontWeight: "600", color: faint }}>{when(r.at)}{r.ms ? ` · margin in ${(r.ms / 1000).toFixed(1)}s` : ""}</Text>
+                    <Text style={{ fontSize: 11.5, fontWeight: "700", color: violet }}>tx ↗</Text>
+                  </View>
+                </Tap>
+              ))}
+            </View>
+            <View style={{ marginTop: 12, flexDirection: "row", gap: 10, alignItems: "center", backgroundColor: mist, borderRadius: 20, padding: 14 }}>
+              <Shield size={24} color={violet} />
+              <Text style={{ flex: 1, fontSize: 13, fontWeight: "700", color: violet, lineHeight: 19 }}>every save is in the signed log, anchored on monad every hour. the key that adds margin cannot withdraw.</Text>
+            </View>
+          </Animated.View>
+        )}
 
         <Animated.View entering={FadeInDown.delay(60).duration(300).reduceMotion(ReduceMotion.System)} style={{ marginTop: 20, backgroundColor: "white", borderRadius: 24, borderWidth: 1, borderColor: line, padding: 16 }}>
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
