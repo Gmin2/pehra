@@ -5,6 +5,7 @@ import { encodeFunctionData, formatUnits, parseUnits, type Address } from 'viem'
 import { AGORA, NETWORKS, depositCalls, erc20Abi, fundCalls, getPerplAccount, pairState, publicClient, quote, sendBatch, withdrawCalls, type PairState } from '@pehra/perpl'
 import type { Session } from './account'
 import { API } from './trade'
+import * as SecureStore from 'expo-secure-store'
 
 export type Wallet = { usdc: number; ausd: number; perpl: number; mon: number }
 
@@ -87,4 +88,21 @@ export async function sendOut(s: Session, asset: Asset, to: Address, amount: num
         gas: TRANSFER_GAS,
       }]
   return run(s, calls, amount)
+}
+
+// what a send costs in mon. monad charges the whole gas limit, so it is the limit times the gas price now
+export async function sendFee(asset: Asset) {
+  const price = await publicClient('testnet').getGasPrice()
+  return Number(price * (asset === 'mon' ? NATIVE_GAS : TRANSFER_GAS)) / 1e18
+}
+
+// the addresses this phone sent to, newest first, kept on the phone only
+const SENT_KEY = 'pehra.sent'
+export type Sent = { to: string; amount: number; asset: Asset; at: number }
+export async function recentSends(): Promise<Sent[]> {
+  try { return JSON.parse((await SecureStore.getItemAsync(SENT_KEY)) ?? '[]') as Sent[] } catch { return [] }
+}
+export async function rememberSend(s: Sent) {
+  const list = (await recentSends()).filter((x) => x.to.toLowerCase() !== s.to.toLowerCase())
+  await SecureStore.setItemAsync(SENT_KEY, JSON.stringify([s, ...list].slice(0, 8)))
 }
