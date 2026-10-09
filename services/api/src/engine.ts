@@ -253,7 +253,8 @@ export class Engine {
       const out = onTrades(r.rule, r.mem, rows, { mark: ctx.mark, position: ctx.health, armedAt: r.created })
       if (JSON.stringify(out.mem) !== JSON.stringify(r.mem)) { r.mem = out.mem; q.saveMem.run(JSON.stringify(out.mem), Date.now(), r.id) }
       if (!out.intents.length) continue
-      writeRun({ owner: r.owner, rule: r.id, kind: 'note', body: { text: `copying ${target}`, intents: out.intents.map(i => i.kind) } })
+      const source = rows.filter(x => 'tx' in x).map(x => x as TradeRow & { tx: string; block?: number; seenMs?: number }).map(x => ({ kind: x.kind, tx: x.tx, block: x.block, at: x.timestamp, seenMs: x.seenMs }))
+      writeRun({ owner: r.owner, rule: r.id, kind: 'note', body: { text: `copying ${target}`, intents: out.intents.map(i => i.kind), ...(source.length ? { source } : {}) } })
       const mark = ctx.mark(r.rule.mkt) ?? 0
       this.fire(r, out.intents, { at: Date.now(), block: this.deps.market.head, mkt: r.rule.mkt, mark, last: mark })
     }
