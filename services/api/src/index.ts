@@ -12,6 +12,7 @@ import { share, shared, copied } from './shares'
 import { leaders, trader } from './leaders'
 import { startCopyFeed } from './copyFeed'
 import { copiersOf, topRecipes } from './social'
+import { copyReceipts } from './copyReceipts'
 import { watchRead, watch, unwatch, watchesOf, watchTick } from './watches'
 import { proof } from './proof'
 import { prefsOf, setPrefs, recentAlerts, KINDS } from './alerts'
@@ -186,6 +187,12 @@ const server = serve({
       if (!address || !owns(req, address)) return json({ error: 'sign in again', code: 'session' }, 401)
     }
     if (url.pathname === '/recipes/top' && req.method === 'GET') return json({ recipes: topRecipes() })
+    // a copier's receipts, public like the proof: their trade, the copy, blocks apart. ?of= narrows to one trader
+    const cr = url.pathname.match(/^\/copies\/(0x[0-9a-fA-F]{40})$/)
+    if (cr && req.method === 'GET') {
+      const of = url.searchParams.get('of') ?? undefined
+      return json({ receipts: await copyReceipts(pub, cr[1], of && /^0x[0-9a-fA-F]{40}$/.test(of) ? of : undefined) })
+    }
     if (url.pathname === '/leaderboard' && req.method === 'GET') {
       const days = Math.min(Math.max(Number(url.searchParams.get('days') ?? 7), 1), 30)
       try { return json({ days, leaders: (await leaders(INDEXER, days)).map(l => ({ ...l, onPehra: guard.has(l.address), copiers: copiersOf(l.address).now })) }) } catch (e) { return json({ error: e instanceof Error ? e.message : 'indexer unreachable' }, 502) }

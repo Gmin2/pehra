@@ -120,6 +120,13 @@ export async function readTrader(address: string, days = 7): Promise<Trader> {
 
 // the leaderboard: realized pnl per perpl account over the last days, from the indexer
 export type Leader = { address: string; accountId: string; pnl: number; trades: number; closed: number; wins: number; liquidations: number; lastAt: number; onPehra?: boolean; copiers?: number }
+// a copier's receipts: the trade they copied and their copy, both on monad, blocks apart
+export type CopyReceipt = { rule: string; target: string; kind: string; side?: string; size?: number; price?: number; theirTx: string; theirBlock: number; yourTx: string; yourBlock: number; blocks: number; at: number }
+export async function readCopyReceipts(owner: string, of?: string): Promise<CopyReceipt[]> {
+  const r = await fetch(`${API}/copies/${owner}${of ? `?of=${of}` : ''}`)
+  if (!r.ok) return []
+  return ((await r.json()) as { receipts: CopyReceipt[] }).receipts
+}
 // the shared recipes people armed most
 export async function readTopRecipes(): Promise<{ recipe: string; copies: number; links: number }[]> {
   const r = await fetch(`${API}/recipes/top`)
