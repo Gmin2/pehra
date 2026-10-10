@@ -119,8 +119,8 @@ export default function ProofScreen() {
           <Animated.View entering={FadeIn.duration(260).reduceMotion(ReduceMotion.System)} style={{ marginTop: 22 }}>
             <View style={{ paddingHorizontal: 8 }}>
               <Text style={{ fontSize: 15, fontWeight: "600", color: muted, lineHeight: 21 }}>pehra added margin before perpl could liquidate someone</Text>
-              <View style={{ flexDirection: "row", alignItems: "baseline", gap: 10, marginTop: 6 }}>
-                <Rough type="circle" padding={4} paddingX={10} strokeWidth={2.2} delay={300} duration={700}>
+              <View style={{ flexDirection: "row", alignItems: "baseline", gap: 18, marginTop: 6, paddingLeft: 10 }}>
+                <Rough type="circle" padding={6} paddingX={22} strokeWidth={2.2} delay={300} duration={700}>
                   <Text style={{ fontFamily: "Manrope_800ExtraBold", fontSize: 60, lineHeight: 70, color: ink }}>{saved.rescues}</Text>
                 </Rough>
                 <Text style={{ fontFamily: "Manrope_700Bold", fontSize: 28, color: ink }}>time{saved.rescues === 1 ? "" : "s"}</Text>

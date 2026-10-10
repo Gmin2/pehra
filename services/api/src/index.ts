@@ -233,7 +233,7 @@ const server = serve({
       const s = shared(sh[1])
       if (!s) return json({ error: 'no such recipe link' }, 404)
       const r = recipe(s.recipe)!
-      return json({ ...s, author: `${s.author.slice(0, 6)}…${s.author.slice(-4)}`, name: r.name, blurb: r.blurb, needs: r.needs })
+      return json({ ...s, name: r.name, blurb: r.blurb, needs: r.needs })
     }
     if (sh && sh[2] && req.method === 'POST') { copied(sh[1]); return json({ ok: true }) }
     const rules = await rulesRoute(req, url, guard)

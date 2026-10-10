@@ -175,7 +175,7 @@ export default function Leaders() {
                         </View>
                       </View>
                       <View style={{ alignItems: "flex-end", gap: 1 }}>
-                        <Text style={{ fontSize: 14, fontWeight: "700", color: l.pnl >= 0 ? green : red, fontVariant: ["tabular-nums"] }}>{money(l.pnl)}</Text>
+                        <Text style={{ fontSize: 14, fontWeight: "700", color: Math.abs(l.pnl) < 0.005 ? faint : l.pnl >= 0 ? green : red, fontVariant: ["tabular-nums"] }}>{Math.abs(l.pnl) < 0.005 ? "0.00" : money(l.pnl)}</Text>
                         <Text style={{ fontSize: 11, fontWeight: "500", color: muted }}>{l.closed} closed{l.liquidations ? ` · ${l.liquidations} liq` : ""}</Text>
                       </View>
                       {l.address.toLowerCase() !== me && (
