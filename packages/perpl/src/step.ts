@@ -24,7 +24,7 @@ export type Mem = {
   // a daily chain remembers the day it last ran, a price chain whether it was on the other side first
   day?: number
   // a copy: the newest trade of the target already seen (unix seconds), and the position each market's copy opened
-  seen?: number; copied?: Record<string, number>
+  seen?: number; copied?: Record<string, number>; copiedSize?: Record<string, number>
 }
 
 export type Intent =
