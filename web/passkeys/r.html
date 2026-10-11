@@ -33,7 +33,7 @@
 </main>
 <script>
   // the api that holds shared recipes, set when the server is hosted
-  const API = window.PEHRA_API || 'https://api.pehra.trade'
+  const API = window.PEHRA_API || 'https://40-80-86-31.sslip.io'
   const id = location.pathname.split('/').filter(Boolean).pop()
   document.getElementById('open').href = 'pehra://r/' + id
   fetch(API + '/recipes/' + id).then(r => r.ok ? r.json() : null).then(s => {

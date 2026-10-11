@@ -231,9 +231,11 @@ const server = serve({
     const sh = url.pathname.match(/^\/recipes\/([0-9a-f]{10})(\/copied)?$/)
     if (sh && req.method === 'GET') {
       const s = shared(sh[1])
-      if (!s) return json({ error: 'no such recipe link' }, 404)
+      // the link's web page reads this from the browser, only that site may
+      const web = { 'access-control-allow-origin': 'https://pehra-passkeys.vercel.app', vary: 'origin' }
+      if (!s) return new Response(JSON.stringify({ error: 'no such recipe link' }), { status: 404, headers: { 'content-type': 'application/json', ...web } })
       const r = recipe(s.recipe)!
-      return json({ ...s, name: r.name, blurb: r.blurb, needs: r.needs })
+      return new Response(JSON.stringify({ ...s, name: r.name, blurb: r.blurb, needs: r.needs }), { headers: { 'content-type': 'application/json', ...web } })
     }
     if (sh && sh[2] && req.method === 'POST') { copied(sh[1]); return json({ ok: true }) }
     const rules = await rulesRoute(req, url, guard)
