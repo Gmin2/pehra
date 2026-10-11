@@ -69,7 +69,7 @@ export async function readProfile(address: string): Promise<Profile> {
 }
 
 // several rules replayed together: from the open position they protect, or flat for an entry recipe
-export type ManyResult = ManyReport & { days: number; ms: number }
+export type ManyResult = ManyReport & { days: number; ms: number; series?: { t: number; c: number; h: number; l: number }[] }
 export async function replayMany(address: string, rules: Rule[], entry: { side: 'long' | 'short'; margin: number; leverage: number } | null, days = 30) {
   return post<ManyResult>('/replay', { address, rules, entry, days })
 }

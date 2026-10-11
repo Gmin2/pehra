@@ -108,7 +108,10 @@ export default function Recipes() {
   const best = [...shown].sort((x, y) => (gain(y.id) ?? -1e9) - (gain(x.id) ?? -1e9))[0];
   const cur = onlyRecipe ?? shown.find((r) => r.id === picked) ?? best;
   const rp = cur ? replays[cur.id] : undefined;
-  const points = useCandles(m?.market, "1m");
+  const candles = useCandles(m?.market, "1m");
+  // the replay sends the candles it judged on, the chart draws those so a short spike it saw is there too
+  const points = rp && rp !== "none" && rp.series?.length ? rp.series.map((x) => ({ t: x.t, p: x.c })) : candles;
+  const band = rp && rp !== "none" ? rp.series : undefined;
   const signed = (n: number) => `${n >= 0 ? "+" : "−"}${Math.abs(n).toFixed(2)}`;
   // one rule can carry its stop and take profits with it, so its sentence is cut where each part starts
   const steps = (r: Recipe) => (make(r) ?? []).flatMap((x) => describeRule(x, m?.symbol ?? "MON").split(/, then |, (?=take profit|the stop moves|trailing)/).map((t) => t.trim().replace(/^trailing (\S+)$/, "the stop trails $1 behind and never loosens")).filter(Boolean));
@@ -116,7 +119,7 @@ export default function Recipes() {
     const f = x.fires, moves = f.filter((y) => y.what === "move").length, steps = f.filter((y) => y.what === "step").length;
     if (!x.withRules.opened) return "never got in";
     if (x.withRules.liquidated) return "liquidated";
-    const bits = [moves ? `stop moved ${moves}x` : "", steps ? `took profit ${steps}x` : "", f.some((y) => ["stop", "backstop", "close"].includes(y.what)) ? "out early" : "still in"].filter(Boolean);
+    const bits = [moves > 20 ? "stop trailed the price" : moves ? `stop moved ${moves}x` : "", steps ? `took profit ${steps}x` : "", f.some((y) => ["stop", "backstop", "close"].includes(y.what)) ? "out early" : "still in"].filter(Boolean);
     return bits.join(", ");
   };
   const half = (width - 32 - 10) / 2;
@@ -185,7 +188,7 @@ export default function Recipes() {
                 <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: ink }}>{sym}, last 30 days</Text>
                 {points.length > 1 && <Text style={{ fontSize: 13.5, fontWeight: "700", color: points[points.length - 1].p >= points[0].p ? green : red }}>{signed(((points[points.length - 1].p / points[0].p) - 1) * 100)}%</Text>}
               </View>
-              <ReplayChart points={points} fires={rp && rp !== "none" ? rp.fires : []} from={rp && rp !== "none" ? rp.from : undefined} width={width - 32 - 34} entry={h && points.length ? points[0].p : undefined} liq={h && points.length ? points[0].p * (h.liq / h.entry) : undefined} />
+              <ReplayChart points={points} fires={rp && rp !== "none" ? rp.fires : []} from={rp && rp !== "none" ? rp.from : undefined} width={width - 32 - 34} band={band} entry={h && points.length ? points[0].p : undefined} liq={h && points.length ? points[0].p * (h.liq / h.entry) : undefined} />
             </View>
 
             <View style={{ flexDirection: "row", gap: 10 }}>

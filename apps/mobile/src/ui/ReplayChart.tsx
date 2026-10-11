@@ -11,7 +11,7 @@ const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "
 const day = (ms: number) => { const d = new Date(ms); return `${MONTHS[d.getMonth()]} ${d.getDate()}`; };
 const px = (n: number) => Number(n.toPrecision(4)).toString();
 
-export function ReplayChart({ points, fires, from, width, height = 170, entry, liq }: { points: { t: number; p: number }[]; fires: ManyFire[]; from?: number; width: number; height?: number; entry?: number; liq?: number }) {
+export function ReplayChart({ points, fires, from, width, height = 170, entry, liq, band }: { points: { t: number; p: number }[]; fires: ManyFire[]; from?: number; width: number; height?: number; entry?: number; liq?: number; band?: { t: number; h: number; l: number }[] }) {
   // the candles stream in newest first, the chart waits until they reach back to where the replay starts
   const first = points.length ? (points[0].t < 1e12 ? points[0].t * 1000 : points[0].t) : Infinity;
   if (points.length < 2 || (from !== undefined && first > from + 86_400_000)) return <View style={{ width, height, borderRadius: 16, backgroundColor: "#F0EDF3" }} />;
@@ -20,7 +20,7 @@ export function ReplayChart({ points, fires, from, width, height = 170, entry, l
   const t0 = pts[0].t, t1 = pts[pts.length - 1].t;
   const inWindow = fires.filter((f) => f.at >= t0 && f.at <= t1 + 4 * 3600_000);
   // a position's chart also holds its entry and its liquidation price
-  const prices = [...pts.map((p) => p.p), ...inWindow.map((f) => f.px), ...(entry ? [entry] : []), ...(liq ? [liq * 0.98] : [])];
+  const prices = [...pts.map((p) => p.p), ...inWindow.map((f) => f.px), ...(entry ? [entry] : []), ...(liq ? [liq * 0.98] : []), ...(band ?? []).flatMap((b) => [b.h, b.l])];
   const lo = Math.min(...prices), hi = Math.max(...prices), span = hi - lo || 1;
   const top = 30, bottom = 10;
   const X = (t: number) => ((Math.min(Math.max(t, t0), t1) - t0) / (t1 - t0 || 1)) * (width - 12) + 6;
@@ -50,6 +50,7 @@ export function ReplayChart({ points, fires, from, width, height = 170, entry, l
         {waitFrom !== null && waitFrom < width - 30 && <Rect x={waitFrom} y={top - 8} width={width - waitFrom} height={height - top + 8 - bottom} rx={10} fill={mist} opacity={0.55} />}
         {liq !== undefined && <Rect x={0} y={Y(liq)} width={width} height={Math.max(8, height - bottom - Y(liq))} fill="#FBE9EA" />}
         {entry !== undefined && <Line x1={0} x2={width} y1={Y(entry)} y2={Y(entry)} stroke={faint} strokeWidth={1.2} strokeDasharray="4 4" />}
+        {band && band.length > 1 && <Path d={`${band.map((b, i) => `${i ? "L" : "M"}${X(ms(b.t)).toFixed(1)} ${Y(b.h).toFixed(1)}`).join(" ")} ${band.slice().reverse().map((b) => `L${X(ms(b.t)).toFixed(1)} ${Y(b.l).toFixed(1)}`).join(" ")} Z`} fill="#28243E" opacity={0.08} />}
         <Path d={d} fill="none" stroke={ink} strokeWidth={2} strokeLinejoin="round" opacity={0.85} />
         {stopPath && <Path d={stopPath} fill="none" stroke={violet} strokeWidth={2} strokeDasharray="4 4" />}
         {exits.filter((f) => f.what === "step").map((f, i) => <Circle key={i} cx={X(f.at)} cy={Y(f.px)} r={4} fill={green} />)}
