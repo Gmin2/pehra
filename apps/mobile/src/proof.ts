@@ -45,3 +45,12 @@ export function week(p: Pick<Proof, 'since' | 'uptime'>, now = Date.now()) {
   const down = p.uptime.gaps.reduce((t, g) => t + Math.max(0, Math.min(g.to, now) - Math.max(g.from, start, p.since)), 0)
   return { days, pct: lived > 0 ? Math.max(0, (1 - down / lived) * 100) : 0 }
 }
+
+// every time pehra added margin before perpl could liquidate someone, one per transaction, public
+export type Rescue = { owner: string; at: number; ausd: number; before: number; after: number; tx: string; ms?: number }
+export type Saved = { rescues: number; ausd: number; accounts: number; closest: number | null; fastestMs: number | null; recent: Rescue[] }
+export async function readSaved(): Promise<Saved> {
+  const r = await fetch(`${API}/saved`)
+  if (!r.ok) throw new Error(`saved ${r.status}`)
+  return r.json() as Promise<Saved>
+}

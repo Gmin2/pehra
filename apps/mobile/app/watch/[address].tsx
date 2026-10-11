@@ -14,7 +14,7 @@ import { Text } from "../../src/ui/Text";
 import { Coin } from "../../src/ui/Coin";
 import { Glyph } from "../../src/ui/Glyph";
 import { useApp } from "../../src/ui/store";
-import { readWatch, readTrader, setWatch, myWatches, listRules, createRule, cancelRule, describeRule, type WatchRead, type RuleRow, type Trader } from "../../src/rules";
+import { readWatch, readTrader, readCopyReceipts, type CopyReceipt, setWatch, myWatches, listRules, createRule, cancelRule, describeRule, type WatchRead, type RuleRow, type Trader } from "../../src/rules";
 import { Tray, Segmented } from "../../src/ui/Trade";
 import { useMarkets, useAccount } from "../../src/live";
 import { Avatar } from "../../src/ui/Avatar";
@@ -65,6 +65,7 @@ export default function Watch() {
     [tr, setTr] = useState<Trader | null>(null),
     [scrub, setScrub] = useState<Pt | null>(null),
     [copied, setCopied] = useState(false),
+    [receipts, setReceipts] = useState<CopyReceipt[]>([]),
     markets = useMarkets(),
     { account } = useAccount(me),
     { width } = useWindowDimensions();
@@ -78,6 +79,7 @@ export default function Watch() {
   const load = useCallback(() => {
     if (!address) return;
     readWatch(address).then((x) => { setW(x); setErr(null); }).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
+    if (me) readCopyReceipts(me, address).then(setReceipts).catch(() => {});
     if (me) myWatches(me).then((l) => setStarred(l.some((x) => x.target === address.toLowerCase()))).catch(() => {});
     if (me) listRules(me).then((rs) => setCopies(rs.filter((r) => r.rule.kind === "copy" && r.rule.target.toLowerCase() === address.toLowerCase() && ["armed", "held", "firing", "working"].includes(r.state)))).catch(() => {});
   }, [address, me]);
@@ -167,6 +169,12 @@ export default function Watch() {
             </View>
             {w === null ? <View style={{ width: 160, height: 12, borderRadius: 6, backgroundColor: well }} />
               : <Text style={{ fontSize: 13, fontWeight: "500", color: muted }}>{w.accountId === null ? "no perpl account yet" : w.profile.labels.join(", ") || "new to perpl"}</Text>}
+            {w?.copiers && w.copiers.ever > 0 && (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 }}>
+                <Glyph name="users" size={16} />
+                <Text style={{ fontSize: 12.5, fontWeight: "700", color: violet }}>{w.copiers.now > 0 ? `${w.copiers.now} copy them on pehra now` : `${w.copiers.ever} copied them on pehra`}<Text style={{ fontWeight: "500", color: muted }}>{w.copiers.copied ? ` · ${w.copiers.copied} trade${w.copiers.copied === 1 ? "" : "s"} copied` : ""}</Text></Text>
+              </View>
+            )}
           </View>
         </Tap>
         <View style={{ paddingHorizontal: 6, marginTop: 6 }}>
@@ -197,6 +205,24 @@ export default function Watch() {
           <View style={{ flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#E4F3EC", borderRadius: 20, padding: 12 }}>
             <Glyph name="gauge" size={22} color={green} />
             <Text style={{ flex: 1, fontSize: 13.5, fontWeight: "700", color: green }}>you copy them · {copies[0].rule.kind === "copy" ? `${copies[0].rule.margin} ausd a trade` : ""}</Text>
+          </View>
+        )}
+
+        {receipts.length > 0 && <Text style={section}>your copies of them</Text>}
+        {receipts.length > 0 && (
+          <View style={{ ...card, paddingHorizontal: 14 }}>
+            {receipts.slice(0, 6).map((c, i) => (
+              <Tap key={c.yourTx} onPress={() => Linking.openURL(`${NETWORKS.testnet.explorer}/tx/${c.yourTx}`)} innerStyle={{ flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 11, borderTopWidth: i ? 1 : 0, borderTopColor: line }}>
+                <TradeMark kind={c.kind === "open" ? "open" : c.kind === "liquidated" ? "liquidated" : "close"} side={c.side ?? null} pnl={null} />
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={{ fontSize: 13.5, fontWeight: "600", color: ink }}>they {c.kind === "open" ? "opened" : "closed"}, you {c.kind === "open" ? "opened" : "closed"} too</Text>
+                  <Text style={{ fontSize: 12, fontWeight: "500", color: muted }}>{c.blocks} block{c.blocks === 1 ? "" : "s"} later · about {(c.blocks * 0.4).toFixed(1)}s{c.size ? ` · ${c.size} at ${c.price}` : ""}</Text>
+                </View>
+                <Tap onPress={() => Linking.openURL(`${NETWORKS.testnet.explorer}/tx/${c.theirTx}`)} innerStyle={{ paddingHorizontal: 8, paddingVertical: 4 }}>
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: violet }}>theirs ↗</Text>
+                </Tap>
+              </Tap>
+            ))}
           </View>
         )}
 

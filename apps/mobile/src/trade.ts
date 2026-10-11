@@ -7,7 +7,8 @@ export { loadApiKey } from './keys'
 import type { Session } from './account'
 
 // the dev machine over adb reverse, or a lan ip. the drip server pays for testnet gas and AUSD.
-export const API = 'http://localhost:8787'
+// a release build sets EXPO_PUBLIC_API to the hosted server
+export const API = process.env.EXPO_PUBLIC_API ?? 'http://localhost:8787'
 
 export type Step = (label: string) => void
 

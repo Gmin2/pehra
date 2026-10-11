@@ -11,6 +11,8 @@ import { Screen, Tap, IconButton } from "../src/ui/components";
 import { ReplayChart } from "../src/ui/ReplayChart";
 import { useCandles } from "../src/candles";
 import { Coin } from "../src/ui/Coin";
+import { Avatar } from "../src/ui/Avatar";
+import { AddressText } from "../src/ui/AddressText";
 import { Text } from "../src/ui/Text";
 import { Glyph } from "../src/ui/Glyph";
 import { useApp } from "../src/ui/store";
@@ -26,7 +28,7 @@ const GLYPH: Record<string, string> = { dip: "flame", breakout: "gauge", run: "c
 export default function Recipes() {
   const a = useApp(),
     // a shared link opens with only, from (the link), by (who shared it), margin and lev
-    { pid: pidParam, symbol: symParam, only, from, by, margin: marginParam, lev: levParam } = useLocalSearchParams<{ pid?: string; symbol?: string; only?: string; from?: string; by?: string; margin?: string; lev?: string }>(),
+    { pid: pidParam, symbol: symParam, only, from, by, copies, margin: marginParam, lev: levParam } = useLocalSearchParams<{ pid?: string; symbol?: string; only?: string; from?: string; by?: string; copies?: string; margin?: string; lev?: string }>(),
     address = a.stored?.address ?? a.session?.address ?? null,
     { account } = useAccount(address),
     markets = useMarkets();
@@ -106,7 +108,10 @@ export default function Recipes() {
   const best = [...shown].sort((x, y) => (gain(y.id) ?? -1e9) - (gain(x.id) ?? -1e9))[0];
   const cur = onlyRecipe ?? shown.find((r) => r.id === picked) ?? best;
   const rp = cur ? replays[cur.id] : undefined;
-  const points = useCandles(m?.market, "1m");
+  const candles = useCandles(m?.market, "1m");
+  // the replay sends the candles it judged on, the chart draws those so a short spike it saw is there too
+  const points = rp && rp !== "none" && rp.series?.length ? rp.series.map((x) => ({ t: x.t, p: x.c })) : candles;
+  const band = rp && rp !== "none" ? rp.series : undefined;
   const signed = (n: number) => `${n >= 0 ? "+" : "−"}${Math.abs(n).toFixed(2)}`;
   // one rule can carry its stop and take profits with it, so its sentence is cut where each part starts
   const steps = (r: Recipe) => (make(r) ?? []).flatMap((x) => describeRule(x, m?.symbol ?? "MON").split(/, then |, (?=take profit|the stop moves|trailing)/).map((t) => t.trim().replace(/^trailing (\S+)$/, "the stop trails $1 behind and never loosens")).filter(Boolean));
@@ -114,7 +119,7 @@ export default function Recipes() {
     const f = x.fires, moves = f.filter((y) => y.what === "move").length, steps = f.filter((y) => y.what === "step").length;
     if (!x.withRules.opened) return "never got in";
     if (x.withRules.liquidated) return "liquidated";
-    const bits = [moves ? `stop moved ${moves}x` : "", steps ? `took profit ${steps}x` : "", f.some((y) => ["stop", "backstop", "close"].includes(y.what)) ? "out early" : "still in"].filter(Boolean);
+    const bits = [moves > 20 ? "stop trailed the price" : moves ? `stop moved ${moves}x` : "", steps ? `took profit ${steps}x` : "", f.some((y) => ["stop", "backstop", "close"].includes(y.what)) ? "out early" : "still in"].filter(Boolean);
     return bits.join(", ");
   };
   const half = (width - 32 - 10) / 2;
@@ -124,10 +129,42 @@ export default function Recipes() {
       <Stack.Screen options={{ animation: "slide_from_right" }} />
       <View style={{ height: 60, flexDirection: "row", alignItems: "center", paddingHorizontal: 12 }}>
         <IconButton name="back" label="Back" onPress={a.back} color={ink} />
-        <Text style={{ flex: 1, textAlign: "center", fontSize: 16, fontWeight: "700", color: ink, marginRight: 44 }}>{pid ? `recipes for your ${sym} ${h?.side ?? ""}` : "recipes"}</Text>
+        <Text style={{ flex: 1, textAlign: "center", fontSize: 16, fontWeight: "700", color: ink, marginRight: 44 }}>{pid ? `protect ${sym} ${h?.side ?? ""}` : by ? "recipe for you" : "recipes"}</Text>
       </View>
       <ScrollView contentContainerStyle={{ paddingBottom: 120, gap: 14 }}>
-        {by && <Text style={{ paddingHorizontal: 22, fontSize: 13, fontWeight: "700", color: violet }}>shared by {by}</Text>}
+        {by && (
+          <View style={{ marginHorizontal: 16, backgroundColor: mist, borderRadius: 24, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 14 }}>
+            {/^0x[0-9a-fA-F]{40}$/.test(by) ? <Avatar address={by} size={42} /> : null}
+            <View style={{ flex: 1, gap: 2 }}>
+              {/^0x[0-9a-fA-F]{40}$/.test(by) ? <AddressText address={by} size={15} /> : <Text style={{ fontSize: 15, fontWeight: "700", color: ink }}>{by}</Text>}
+              <Text style={{ fontSize: 12.5, fontWeight: "600", color: violet }}>sent you this{Number(copies) > 0 ? ` · ${copies} ${Number(copies) === 1 ? "person" : "people"} copied it` : ""}</Text>
+            </View>
+          </View>
+        )}
+        {onlyRecipe && (
+          <View style={{ marginHorizontal: 16, backgroundColor: "white", borderRadius: 22, borderWidth: 1, borderColor: line, flexDirection: "row", alignItems: "center", gap: 12, padding: 12 }}>
+            <View style={{ width: 42, height: 42, borderRadius: 14, backgroundColor: mist, alignItems: "center", justifyContent: "center" }}>
+              <Glyph name={GLYPH[onlyRecipe.id] ?? "shield"} size={26} />
+            </View>
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={{ fontSize: 15.5, fontWeight: "700", color: ink }}>{onlyRecipe.name}</Text>
+              <Text style={{ fontSize: 12.5, fontWeight: "500", color: muted }} numberOfLines={2}>{onlyRecipe.blurb}</Text>
+            </View>
+          </View>
+        )}
+        {h && (
+          <View style={{ marginHorizontal: 16, backgroundColor: "white", borderRadius: 22, borderWidth: 1, borderColor: line, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 12 }}>
+            <Coin symbol={h.symbol} size={34} />
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 15, fontWeight: "700", color: ink }}>{sym} {h.side}{h.lv ? ` · ${Math.round(h.lv / 100)}x` : ""}</Text>
+              <Text style={{ fontSize: 12, fontWeight: "500", color: muted }}>{Number(h.size.toPrecision(5))} {sym} · entry {h.entry}</Text>
+            </View>
+            <View style={{ alignItems: "flex-end" }}>
+              <Text style={{ fontSize: 15, fontWeight: "700", color: (h.side === "short" ? h.entry - h.mark : h.mark - h.entry) >= 0 ? green : red, fontVariant: ["tabular-nums"] }}>{signed((h.side === "short" ? h.entry - h.mark : h.mark - h.entry) * h.size)}</Text>
+              <Text style={{ fontSize: 12, fontWeight: "600", color: muted }}>{(h.distance * 100).toFixed(1)}% from liq</Text>
+            </View>
+          </View>
+        )}
         {!onlyRecipe && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}>
             {shown.map((r) => {
@@ -151,7 +188,7 @@ export default function Recipes() {
                 <Text style={{ flex: 1, fontSize: 14, fontWeight: "700", color: ink }}>{sym}, last 30 days</Text>
                 {points.length > 1 && <Text style={{ fontSize: 13.5, fontWeight: "700", color: points[points.length - 1].p >= points[0].p ? green : red }}>{signed(((points[points.length - 1].p / points[0].p) - 1) * 100)}%</Text>}
               </View>
-              <ReplayChart points={points} fires={rp && rp !== "none" ? rp.fires : []} from={rp && rp !== "none" ? rp.from : undefined} width={width - 32 - 34} />
+              <ReplayChart points={points} fires={rp && rp !== "none" ? rp.fires : []} from={rp && rp !== "none" ? rp.from : undefined} width={width - 32 - 34} band={band} entry={h && points.length ? points[0].p : undefined} liq={h && points.length ? points[0].p * (h.liq / h.entry) : undefined} />
             </View>
 
             <View style={{ flexDirection: "row", gap: 10 }}>
@@ -162,7 +199,7 @@ export default function Recipes() {
                 <Text style={{ fontSize: 11.5, fontWeight: "500", color: muted }}>{rp && rp !== "none" ? (rp.without.liquidated ? "liquidated on the way" : "rode it to the end") : " "}</Text>
               </View>
               <View style={{ width: half, backgroundColor: mist, borderRadius: 24, padding: 14, gap: 4 }}>
-                <Text style={{ fontSize: 12.5, fontWeight: "600", color: violet }}>with the recipe</Text>
+                <Text style={{ fontSize: 12.5, fontWeight: "600", color: violet }} numberOfLines={1}>{pid ? `with ${cur.name}` : "with the recipe"}</Text>
                 {rp === undefined ? <View style={{ width: 90, height: 28, borderRadius: 10, backgroundColor: "#E3D6FB", marginVertical: 4 }} />
                   : <Text style={{ fontFamily: "Manrope_700Bold", fontSize: 26, color: rp === "none" ? faint : ink, fontVariant: ["tabular-nums"] }}>{rp === "none" ? "—" : signed(rp.withRules.pnl)}</Text>}
                 <Text style={{ fontSize: 11.5, fontWeight: "500", color: muted }}>{rp && rp !== "none" ? story(rp) : rp === "none" ? "no replay for this one" : " "}</Text>
@@ -199,7 +236,7 @@ export default function Recipes() {
           )}
           <Tap onPress={busy || !make(cur) || blocked ? undefined : () => void arm(cur)} style={{ flex: 2.3 }} innerStyle={{ height: 56, borderRadius: 28, backgroundColor: ink, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, opacity: blocked ? 0.4 : 1 }}>
             <Glyph name="lock" size={18} color="white" />
-            <Text style={{ fontSize: 15.5, fontWeight: "600", color: "white" }}>{busy === cur.id ? "arming…" : "arm with fingerprint"}</Text>
+            <Text style={{ fontSize: 15.5, fontWeight: "600", color: "white" }}>{busy === cur.id ? "arming…" : from ? "arm it with your fingerprint" : "arm with fingerprint"}</Text>
           </Tap>
         </View>
       )}

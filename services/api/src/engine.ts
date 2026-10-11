@@ -250,10 +250,12 @@ export class Engine {
     for (const r of [...this.rules.values()]) {
       if (r.rule.kind !== 'copy' || r.state !== 'armed' || r.rule.target.toLowerCase() !== target.toLowerCase()) continue
       const ctx = this.chainCtx(r.owner)
-      const out = onTrades(r.rule, r.mem, rows, { mark: ctx.mark, position: ctx.health, armedAt: r.created })
+      const ts = this.deps.session(r.owner)
+      const out = onTrades(r.rule, r.mem, rows, { mark: ctx.mark, position: ctx.health, armedAt: r.created, held: mkt => [...(ts?.positions.values() ?? [])].some(p => p.mkt === mkt && p.s > 0) })
       if (JSON.stringify(out.mem) !== JSON.stringify(r.mem)) { r.mem = out.mem; q.saveMem.run(JSON.stringify(out.mem), Date.now(), r.id) }
       if (!out.intents.length) continue
-      writeRun({ owner: r.owner, rule: r.id, kind: 'note', body: { text: `copying ${target}`, intents: out.intents.map(i => i.kind) } })
+      const source = rows.filter(x => 'tx' in x).map(x => x as TradeRow & { tx: string; block?: number; seenMs?: number }).map(x => ({ kind: x.kind, tx: x.tx, block: x.block, at: x.timestamp, seenMs: x.seenMs }))
+      writeRun({ owner: r.owner, rule: r.id, kind: 'note', body: { text: `copying ${target}`, intents: out.intents.map(i => i.kind), ...(source.length ? { source } : {}) } })
       const mark = ctx.mark(r.rule.mkt) ?? 0
       this.fire(r, out.intents, { at: Date.now(), block: this.deps.market.head, mkt: r.rule.mkt, mark, last: mark })
     }
@@ -756,7 +758,8 @@ export class Engine {
     if (r.rule.kind === 'copy') {
       // remember which position this market's copy opened, so closing with them closes this one
       const pos = this.deps.session(r.owner)?.positions.get(pid)
-      if (pos) { r.mem = { ...r.mem, copied: { ...(r.mem.copied ?? {}), [pos.mkt]: pid } }; q.saveMem.run(JSON.stringify(r.mem), Date.now(), r.id) }
+      const bought = this.chainCtx(r.owner).health(pid)?.size
+      if (pos) { r.mem = { ...r.mem, copied: { ...(r.mem.copied ?? {}), [pos.mkt]: pid }, copiedSize: { ...(r.mem.copiedSize ?? {}), ...(bought ? { [pos.mkt]: bought } : {}) } }; q.saveMem.run(JSON.stringify(r.mem), Date.now(), r.id) }
       if (r.rule.stopPct && fill && pos) {
         const long = pos.sd === 1, k = r.rule.stopPct / 100
         const at = (x: number) => Number((fill * (long ? 1 - x : 1 + x)).toPrecision(4))

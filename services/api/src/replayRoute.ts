@@ -70,7 +70,7 @@ export async function replayRoute(req: Request, deps: ReplayDeps): Promise<Respo
     : rule
   const report = replay({ bars, rule: shifted, start, maintenance: m.config.maintenance_margin, takerFeeBps: m.config.taker_fee / 100, book: levels })
   report.assumptions.unshift('price levels keep the distance from the price they have now')
-  return json({ ...report, days, ms: Date.now() - t0 })
+  return json({ ...report, days, ms: Date.now() - t0, series: series(bars) })
 }
 
 // a recipe or chain: several rules on one market. on a position it starts from that position, an entry
@@ -100,5 +100,17 @@ async function many(b: { address?: string; rules: unknown[]; entry?: { side: 'lo
   })
   const report = replayMany({ bars, rules: shifted, start, maintenance: m.config.maintenance_margin, takerFeeBps: m.config.taker_fee / 100 })
   report.assumptions.unshift('price levels keep the distance from the price they have now')
-  return json({ ...report, days, ms: Date.now() - t0 })
+  return json({ ...report, days, ms: Date.now() - t0, series: series(bars) })
+}
+
+// the candles the replay ran on, folded to about 240 points so the app draws the same prices it judged:
+// each keeps its close and the high and low inside it, a short spike still shows
+function series(bars: Bar[], n = 240) {
+  const size = Math.max(1, Math.ceil(bars.length / n))
+  const out: { t: number; c: number; h: number; l: number }[] = []
+  for (let i = 0; i < bars.length; i += size) {
+    const chunk = bars.slice(i, i + size)
+    out.push({ t: chunk[chunk.length - 1].t, c: chunk[chunk.length - 1].c, h: Math.max(...chunk.map(b => b.h)), l: Math.min(...chunk.map(b => b.l)) })
+  }
+  return out
 }

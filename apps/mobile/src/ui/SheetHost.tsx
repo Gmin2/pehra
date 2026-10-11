@@ -30,6 +30,7 @@ import { IconButton } from "./components";
 import { colors, space } from "./theme";
 import TrayContent from "./Trays";
 import { usePathname } from "expo-router";
+import { Notice } from "./Notice";
 export default function SheetHost() {
   const a = useApp(),
     sheet = a.sheets.at(-1),
@@ -204,25 +205,7 @@ export default function SheetHost() {
           </GestureHandlerRootView>
         </Modal>
       )}
-      {a.notice && (
-        <Animated.View
-          entering={FadeIn.duration(120)}
-          exiting={FadeOut.duration(120)}
-          pointerEvents="none"
-          style={{
-            position: "absolute",
-            top: insets.top + 8,
-            alignSelf: "center",
-            backgroundColor: "#191919",
-            borderRadius: 24,
-            paddingHorizontal: 22,
-            paddingVertical: 13,
-            boxShadow: "0 5px 20px #0002",
-          }}
-        >
-          <Text style={{ color: "white", fontWeight: "600" }}>{a.notice}</Text>
-        </Animated.View>
-      )}
+      {a.notice && <Notice key={a.notice} text={a.notice} top={insets.top + 8} />}
     </>
   );
 }

@@ -69,7 +69,7 @@ export async function readProfile(address: string): Promise<Profile> {
 }
 
 // several rules replayed together: from the open position they protect, or flat for an entry recipe
-export type ManyResult = ManyReport & { days: number; ms: number }
+export type ManyResult = ManyReport & { days: number; ms: number; series?: { t: number; c: number; h: number; l: number }[] }
 export async function replayMany(address: string, rules: Rule[], entry: { side: 'long' | 'short'; margin: number; leverage: number } | null, days = 30) {
   return post<ManyResult>('/replay', { address, rules, entry, days })
 }
@@ -92,7 +92,7 @@ export const markCopied = (id: string) => fetch(`${API}/recipes/${id}/copied`, {
 // any address: positions from the chain, recent trades from the indexer, how it trades, and whether it
 // runs pehra. the watch list lives on the server so a watched account can push
 export type WatchedPos = { pid: number; mkt: number; symbol: string; side: 'long' | 'short'; entry: number; mark: number; liq: number; distance: number; collateral: number; size: number; pnl: number }
-export type WatchRead = { address: string; accountId: number | null; balance: number; positions: WatchedPos[]; recent: { kind: string; perpId: string | null; side: string | null; timestamp: number; tx?: string }[]; profile: Profile; onPehra: boolean; receipts: number; stopsKnown: false }
+export type WatchRead = { address: string; accountId: number | null; balance: number; positions: WatchedPos[]; recent: { kind: string; perpId: string | null; side: string | null; timestamp: number; tx?: string }[]; profile: Profile; onPehra: boolean; receipts: number; stopsKnown: false; copiers?: { now: number; ever: number; copied: number } }
 export async function readWatch(address: string): Promise<WatchRead> {
   const r = await fetch(`${API}/watch/${address}`)
   const j = (await r.json()) as WatchRead & { error?: string }
@@ -119,7 +119,20 @@ export async function readTrader(address: string, days = 7): Promise<Trader> {
 }
 
 // the leaderboard: realized pnl per perpl account over the last days, from the indexer
-export type Leader = { address: string; accountId: string; pnl: number; trades: number; closed: number; wins: number; liquidations: number; lastAt: number }
+export type Leader = { address: string; accountId: string; pnl: number; trades: number; closed: number; wins: number; liquidations: number; lastAt: number; onPehra?: boolean; copiers?: number }
+// a copier's receipts: the trade they copied and their copy, both on monad, blocks apart
+export type CopyReceipt = { rule: string; target: string; kind: string; side?: string; size?: number; price?: number; theirTx: string; theirBlock: number; yourTx: string; yourBlock: number; blocks: number; at: number }
+export async function readCopyReceipts(owner: string, of?: string): Promise<CopyReceipt[]> {
+  const r = await fetch(`${API}/copies/${owner}${of ? `?of=${of}` : ''}`)
+  if (!r.ok) return []
+  return ((await r.json()) as { receipts: CopyReceipt[] }).receipts
+}
+// the shared recipes people armed most
+export async function readTopRecipes(): Promise<{ recipe: string; copies: number; links: number }[]> {
+  const r = await fetch(`${API}/recipes/top`)
+  if (!r.ok) return []
+  return ((await r.json()) as { recipes: { recipe: string; copies: number; links: number }[] }).recipes
+}
 export async function readLeaders(days = 7): Promise<Leader[]> {
   const r = await fetch(`${API}/leaderboard?days=${days}`)
   const j = (await r.json()) as { leaders?: Leader[]; error?: string }

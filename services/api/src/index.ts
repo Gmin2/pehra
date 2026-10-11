@@ -10,6 +10,10 @@ import { replayRoute } from './replayRoute'
 import { openSession, owns } from './sessions'
 import { share, shared, copied } from './shares'
 import { leaders, trader } from './leaders'
+import { startCopyFeed } from './copyFeed'
+import { copiersOf, topRecipes } from './social'
+import { copyReceipts } from './copyReceipts'
+import { saved } from './saved'
 import { watchRead, watch, unwatch, watchesOf, watchTick } from './watches'
 import { proof } from './proof'
 import { prefsOf, setPrefs, recentAlerts, KINDS } from './alerts'
@@ -183,9 +187,17 @@ const server = serve({
       const address = fromPath ?? fromBody
       if (!address || !owns(req, address)) return json({ error: 'sign in again', code: 'session' }, 401)
     }
+    if (url.pathname === '/recipes/top' && req.method === 'GET') return json({ recipes: topRecipes() })
+    if (url.pathname === '/saved' && req.method === 'GET') return json(saved())
+    // a copier's receipts, public like the proof: their trade, the copy, blocks apart. ?of= narrows to one trader
+    const cr = url.pathname.match(/^\/copies\/(0x[0-9a-fA-F]{40})$/)
+    if (cr && req.method === 'GET') {
+      const of = url.searchParams.get('of') ?? undefined
+      return json({ receipts: await copyReceipts(pub, cr[1], of && /^0x[0-9a-fA-F]{40}$/.test(of) ? of : undefined) })
+    }
     if (url.pathname === '/leaderboard' && req.method === 'GET') {
       const days = Math.min(Math.max(Number(url.searchParams.get('days') ?? 7), 1), 30)
-      try { return json({ days, leaders: await leaders(INDEXER, days) }) } catch (e) { return json({ error: e instanceof Error ? e.message : 'indexer unreachable' }, 502) }
+      try { return json({ days, leaders: (await leaders(INDEXER, days)).map(l => ({ ...l, onPehra: guard.has(l.address), copiers: copiersOf(l.address).now })) }) } catch (e) { return json({ error: e instanceof Error ? e.message : 'indexer unreachable' }, 502) }
     }
     const tr = url.pathname.match(/^\/trader\/(0x[0-9a-fA-F]{40})$/)
     if (tr && req.method === 'GET') {
@@ -196,7 +208,7 @@ const server = serve({
     const wa = url.pathname.match(/^\/watch\/(0x[0-9a-fA-F]{40})$/)
     if (wa && req.method === 'GET') {
       try {
-        return json(await watchRead(pub, wa[1], guard.openMarkets(), chainHistory, a => ({ onPehra: guard.has(a), receipts: guard.has(a) ? proof(a).receipts.length : 0 })))
+        return json(await watchRead(pub, wa[1], guard.openMarkets(), chainHistory, a => ({ onPehra: guard.has(a), receipts: guard.has(a) ? proof(a).receipts.length : 0, copiers: copiersOf(a) })))
       } catch (e) { return json({ error: e instanceof Error ? e.message : 'could not read that account' }, 502) }
     }
     if ((url.pathname === '/watch' || url.pathname === '/unwatch') && req.method === 'POST') {
@@ -221,7 +233,7 @@ const server = serve({
       const s = shared(sh[1])
       if (!s) return json({ error: 'no such recipe link' }, 404)
       const r = recipe(s.recipe)!
-      return json({ ...s, author: `${s.author.slice(0, 6)}…${s.author.slice(-4)}`, name: r.name, blurb: r.blurb, needs: r.needs })
+      return json({ ...s, name: r.name, blurb: r.blurb, needs: r.needs })
     }
     if (sh && sh[2] && req.method === 'POST') { copied(sh[1]); return json({ ok: true }) }
     const rules = await rulesRoute(req, url, guard)
@@ -444,7 +456,9 @@ setTimeout(() => void funding(), 15_000)
 setInterval(() => void depeg(), 5 * 60_000)
 setTimeout(() => void depeg(), 25_000)
 setInterval(() => guard.alerts.quietTick(), 60_000)
-// traders people copy: every 5s their newest activity from the indexer goes to the engine
+// traders people copy: their trades come straight from monad's blocks, and every 5s from the indexer as a
+// fallback for anything the block feed missed
+startCopyFeed(pub, { targets: () => guard.engine.copyTargets(), onTrades: (t, rows) => guard.engine.onCopy(t, rows), log })
 let copying = false
 setInterval(async () => {
   if (copying) return

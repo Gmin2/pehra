@@ -27,6 +27,15 @@ describe('copy', () => {
     expect(onTrades(copy(), mem, [row('open', 1200)], ctx({ position: () => pos })).intents[0].kind).toBe('notify')
   })
 
+  test('never opens on a market you already hold, closes only what it bought', () => {
+    const held = onTrades(copy(), { seen: 1100 }, [row('open', 1200)], ctx({ held: (m: number) => m === 64 }))
+    expect(held.intents).toEqual([{ kind: 'notify', text: '0x0000…00aa opened a long, you already hold that market, the copy left it alone' }])
+    const mem = { seen: 1100, copied: { '64': 9 }, copiedSize: { '64': 194 } }
+    const c = onTrades(copy(), mem, [row('close', 1200)], ctx({ position: () => ({ ...pos, size: 1371 }) }))
+    expect(c.intents[0]).toMatchObject({ kind: 'close', pid: 9, size: 194 })
+    expect(c.mem.copiedSize).toEqual({})
+  })
+
   test('checks: not yourself, margin it has, leverage the market allows, a stop before liquidation', () => {
     const live = { mark: 0.03, balance: 50, maxLeverage: 3, maintenance: 500, resting: 0 }
     expect(validateCopy(copy(), '0xbb', live)).toEqual({ ok: true })
