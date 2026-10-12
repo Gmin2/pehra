@@ -44,6 +44,9 @@ export default function Hero({ onWatch }: { onWatch: () => void }) {
           <a href="#how" className="hidden rounded-full px-3.5 py-2 text-[15px] font-semibold text-ink/80 hover:bg-black/5 md:block">
             how it works
           </a>
+          <a href="#copy" className="hidden rounded-full px-3.5 py-2 text-[15px] font-semibold text-ink/80 hover:bg-black/5 md:block">
+            copy trading
+          </a>
           <a href="#faq" className="hidden rounded-full px-3.5 py-2 text-[15px] font-semibold text-ink/80 hover:bg-black/5 md:block">
             faq
           </a>

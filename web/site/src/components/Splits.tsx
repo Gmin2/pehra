@@ -121,3 +121,73 @@ export default function Splits() {
     </>
   );
 }
+
+// social trading: copy a trader, watch anyone, share what works
+export function SocialSplits() {
+  return (
+    <>
+      <SplitFeature
+        id="copy"
+        eyebrow="copy trading"
+        color="#9E4DFD"
+        title={
+          <>
+            copy anyone on perpl,
+            <br />
+            <Mark type="circle" color="#9E4DFD" padding={[2, 8]} strokeWidth={2}>
+              six blocks
+            </Mark>{" "}
+            later.
+          </>
+        }
+        body="open a trader from the leaderboard, see their profit line, every trade they made and how many people copy them. pick how much to follow and sign once. pehra reads their opens and closes straight from monads blocks and places yours at your own size."
+        points={[
+          "careful, steady or bold, or fine tune it",
+          "never opens on a market you already hold",
+          "closes only what the copy bought",
+          "every copy shows how many blocks after them it landed",
+        ]}
+        visual={<PhonePanel video="copy" focus={0.6} />}
+        reverse
+      />
+
+      <SplitFeature
+        id="watch"
+        eyebrow="watch anyone"
+        color="#23765A"
+        title={
+          <>
+            know the moment
+            <br />
+            they{" "}
+            <Mark type="underline" color="#23765A" strokeWidth={3} padding={3}>
+              move.
+            </Mark>
+          </>
+        }
+        body="add any address to your watch list, a whale, a friend, your other wallet. pehra pushes when they open, close or get close to liquidation, and the list shows their open pnl live."
+        points={["a push when they trade", "a push when they get close to liquidation", "copy them from the same screen"]}
+        visual={<PhonePanel video="watch" focus={0.35} />}
+      />
+
+      <SplitFeature
+        id="share"
+        eyebrow="share what works"
+        color="#28243E"
+        title={
+          <>
+            send a recipe
+            <br />
+            as a{" "}
+            <Mark type="highlight" color="#EFE5FF">
+              link.
+            </Mark>
+          </>
+        }
+        body="found a recipe that worked last month? send it. the link opens in pehra with who sent it and the replay on the last 30 days, and your friend arms it with their own fingerprint. the most copied recipes show up on the leaderboard."
+        visual={<PhonePanel video="share" focus={0.4} />}
+        reverse
+      />
+    </>
+  );
+}
