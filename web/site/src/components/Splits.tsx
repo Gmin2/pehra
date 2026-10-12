@@ -33,7 +33,7 @@ export default function Splits() {
             </Mark>
           </>
         }
-        body="when a position runs out of margin, perpl closes it for you, and it rarely waits for you to wake up. the guard watches the distance to liquidation on every position and adds margin before it gets there."
+        body="when a position runs out of margin, perpl closes it for you, and it rarely waits for you to wake up. the guard watches the distance to liquidation on every position and adds margin before it gets there. it has done that three times on testnet, the closest at 13% from liquidation."
         extra={<IllustrationPreview kind="guard" />}
         visual={<PhonePanel video="guard" focus={0.72} />}
       />
@@ -62,21 +62,39 @@ export default function Splits() {
       />
 
       <SplitFeature
-        id="positions"
-        eyebrow="positions"
+        id="recipes"
+        eyebrow="recipes"
         color="#28243E"
         title={
           <>
-            your position,
+            see it work on last month
             <br />
-            in{" "}
+            before you{" "}
             <Mark type="highlight" color="#EFE5FF">
-              plain words.
+              arm it.
             </Mark>
           </>
         }
-        body="not a wall of numbers. how far you are from liquidation, what the guard did this morning, and what you made. add margin, set a stop, or hold to close."
-        visual={<PhonePanel video="position" focus={0.3} />}
+        body="a recipe is a few rules that work together, like catch the breakout or protect my long. pehra replays it on the last 30 days of perpl candles, marks where it got in and out, and shows it next to just holding. then one fingerprint arms it."
+        visual={<PhonePanel video="recipes" focus={0.35} />}
+      />
+
+      <SplitFeature
+        id="rules"
+        eyebrow="rules"
+        color="#9E4DFD"
+        title={
+          <>
+            when this happens,
+            <br />
+            <Mark type="underline" color="#9E4DFD" strokeWidth={3} padding={3}>
+              do that.
+            </Mark>
+          </>
+        }
+        body="a take profit fills, a stop sells, the price crosses a line, funding turns, every morning at nine. pick what happens next: move the stop, take some off, add margin, send ausd home. every rule says in plain words what it will do, and tells you when it did."
+        visual={<PhonePanel video="rules" focus={0.4} />}
+        reverse
       />
 
       <SplitFeature
@@ -93,12 +111,81 @@ export default function Splits() {
             </Mark>
           </>
         }
-        body="nobody can promise you will never be liquidated, and we wont. here is exactly where the guard stops, so you know what you are trusting."
+        body="nobody can promise you will never be liquidated, and we wont. if our server is down, the backstop stop already rests on perpl and fires without us. here is exactly where pehra stops, so you know what you are trusting."
         visual={
           <div className="mx-auto max-w-[460px]">
             <IllustrationPreview kind="trust" />
           </div>
         }
+      />
+    </>
+  );
+}
+
+// social trading: copy a trader, watch anyone, share what works
+export function SocialSplits() {
+  return (
+    <>
+      <SplitFeature
+        id="copy"
+        eyebrow="copy trading"
+        color="#9E4DFD"
+        title={
+          <>
+            copy anyone on perpl,
+            <br />
+            <Mark type="circle" color="#9E4DFD" padding={[2, 8]} strokeWidth={2}>
+              six blocks
+            </Mark>{" "}
+            later.
+          </>
+        }
+        body="open a trader from the leaderboard, see their profit line, every trade they made and how many people copy them. pick how much to follow and sign once. pehra reads their opens and closes straight from monads blocks and places yours at your own size."
+        points={[
+          "careful, steady or bold, or fine tune it",
+          "never opens on a market you already hold",
+          "closes only what the copy bought",
+          "every copy shows how many blocks after them it landed",
+        ]}
+        visual={<PhonePanel video="copy" focus={0.8} />}
+        reverse
+      />
+
+      <SplitFeature
+        id="watch"
+        eyebrow="watch anyone"
+        color="#23765A"
+        title={
+          <>
+            know the moment
+            <br />
+            they{" "}
+            <Mark type="underline" color="#23765A" strokeWidth={3} padding={3}>
+              move.
+            </Mark>
+          </>
+        }
+        body="add any address to your watch list, a whale, a friend, your other wallet. pehra pushes when they open, close or get close to liquidation, and the list shows their open pnl live."
+        points={["a push when they trade", "a push when they get close to liquidation", "copy them from the same screen"]}
+        visual={<PhonePanel video="watch" focus={0.35} />}
+      />
+
+      <SplitFeature
+        id="share"
+        eyebrow="share what works"
+        color="#28243E"
+        title={
+          <>
+            send a recipe
+            <br />
+            as a{" "}
+            <Mark type="highlight" color="#EFE5FF">
+              link.
+            </Mark>
+          </>
+        }
+        body="found a recipe that worked last month? send it. the link opens in pehra with who sent it and the replay on the last 30 days, and your friend arms it with their own fingerprint. the most copied recipes show up on the leaderboard."
+        visual={<PhonePanel video="share" focus={0.4} />}
         reverse
       />
     </>

@@ -29,17 +29,18 @@ export default function Pillars() {
         viewport={once}
         className="h-display mx-auto max-w-[640px] text-center text-[34px] leading-[1.08] md:text-[44px]"
       >
-        perps on monad, minus the{" "}
-        <Mark type="strike-through" color="#9E4DFD" strokeWidth={3}>
-          3am panic
+        set the rules once.
+        <br />
+        pehra does the{" "}
+        <Mark type="underline" color="#9E4DFD" strokeWidth={3} padding={2}>
+          rest.
         </Mark>
-        .
       </motion.h2>
 
       <motion.div variants={stagger} initial="hidden" whileInView="show" viewport={once} className="mt-12 grid grid-cols-1 gap-4 md:grid-cols-3 md:gap-6">
-        <Panel title="Easy" body="no seed phrase, no gas, no bridge. your passkey is the account." graphic={<EasyGraphic />} />
-        <Panel title="Guarded" body="the guard watches every position. margin goes in before perpl would liquidate." graphic={<GuardGraphic />} />
-        <Panel title="Fast" body="one tap, no wallet popup. a market order is final in about a second." graphic={<FastGraphic />} />
+        <Panel title="Automate" body="when this happens, do that. ten triggers, eight actions, armed with one fingerprint." graphic={<EasyGraphic />} />
+        <Panel title="Protect" body="the guard adds margin before perpl would liquidate. stops stay hidden off the book." graphic={<GuardGraphic />} />
+        <Panel title="Copy" body="copy anyone on perpl at your own size. read straight from monads blocks." graphic={<FastGraphic />} />
       </motion.div>
     </section>
   );
@@ -57,11 +58,11 @@ function Panel({ title, body, graphic }: { title: string; body: ReactNode; graph
   );
 }
 
-// easy: a dark menu that runs off the panel's right edge, one row lights up at a time
+// automate: a dark menu that runs off the panel's right edge, one rule lights up at a time
 const ROWS = [
-  { title: "create account", line: "a passkey made on this phone", color: "#9E4DFD", icon: <Fingerprint size={17} /> },
-  { title: "add dollars", line: "usdc in, 1:1 to ausd", color: "#34C759", icon: <Plus size={14} /> },
-  { title: "trade", line: "long or short, one tap", color: "#018DFF", icon: <Bolt /> },
+  { title: "a take profit fills", line: "move the stop to breakeven", color: "#9E4DFD", icon: <Fingerprint size={17} /> },
+  { title: "mon breaks 2% up", line: "open a long, trailing stop on", color: "#34C759", icon: <Plus size={14} /> },
+  { title: "funding turns", line: "close it and tell me", color: "#018DFF", icon: <Bolt /> },
 ];
 
 function Bolt() {
@@ -193,11 +194,11 @@ function GuardGraphic() {
   );
 }
 
-// fast: family's status list. sent, agreed, final, each ticks in with its time
+// copy: family's status list. they trade, pehra sees it, your copy fills, each ticks in with its block
 const STAGES = [
-  { label: "sent", at: "0.2s" },
-  { label: "agreed", at: "0.6s" },
-  { label: "final on monad", at: "0.9s" },
+  { label: "they open a long", at: "block 0" },
+  { label: "pehra sees it", at: "+1" },
+  { label: "your copy fills", at: "+6" },
 ];
 
 function FastGraphic() {

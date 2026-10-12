@@ -11,10 +11,10 @@ const start: RowItem[] = [
   { label: "trade", color: "#28243E", icon: <Bolt size={11} />, video: "trade", focus: 0.8 },
 ];
 
-const honest: RowItem[] = [
-  { label: "read the terms", color: "#8A601B", icon: <Check size={10} />, video: "checklist", focus: 0.3 },
-  { label: "meet the guard", color: "#9E4DFD", icon: <Shield size={11} />, video: "funded", focus: 0.4 },
-  { label: "what it does", color: "#23765A", icon: <Check size={10} />, video: "guard", focus: 0.76 },
+const social: RowItem[] = [
+  { label: "top traders", color: "#9E4DFD", icon: <Check size={10} />, video: "leaders", focus: 0.35 },
+  { label: "their profit", color: "#23765A", icon: <Bolt size={11} />, video: "trader", focus: 0.35 },
+  { label: "copy them", color: "#28243E", icon: <Shield size={11} />, video: "copy", focus: 0.75 },
 ];
 
 export function StartRow() {
@@ -40,18 +40,18 @@ export function StartRow() {
   );
 }
 
-export function HonestRow() {
+export function SocialRow() {
   return (
     <section className="mx-auto max-w-[1200px] px-5 py-20 md:px-6">
       <Heading>
-        honest from the first tap.
+        every perpl trader, ranked.
         <br />
-        leverage explained,{" "}
+        copy the ones{" "}
         <Mark type="highlight" color="#EFE5FF" delay={600}>
-          not hidden.
+          that win.
         </Mark>
       </Heading>
-      <PhoneRow items={honest} />
+      <PhoneRow items={social} />
     </section>
   );
 }

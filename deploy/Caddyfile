@@ -1,5 +1,11 @@
 # https for the api. API_DOMAIN can be a real domain or <ip with dashes>.sslip.io, caddy gets the cert
 {$API_DOMAIN} {
 	encode gzip
+	# the release apk, the site's download button points here
+	handle /pehra.apk {
+		root * /srv/files
+		header Content-Type application/vnd.android.package-archive
+		file_server
+	}
 	reverse_proxy api:8787
 }

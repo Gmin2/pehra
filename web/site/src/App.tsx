@@ -1,8 +1,8 @@
 import { useState } from "react";
 import Hero from "./components/Hero";
 import Pillars from "./components/Pillars";
-import { HonestRow, StartRow } from "./components/Rows";
-import Splits from "./components/Splits";
+import { SocialRow, StartRow } from "./components/Rows";
+import Splits, { SocialSplits } from "./components/Splits";
 import Proof from "./components/Proof";
 import FAQ from "./components/FAQ";
 import { CTA, Footer } from "./components/Closing";
@@ -25,10 +25,11 @@ export default function App() {
       <main>
         <Hero onWatch={watch} />
         <Pillars />
-        <StartRow />
+        <SocialRow />
+        <SocialSplits />
         <Splits />
         <Proof />
-        <HonestRow />
+        <StartRow />
         <Divider />
         <FAQ />
         <CTA onWatch={watch} />

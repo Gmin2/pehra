@@ -12,8 +12,8 @@ const DOT = "#9E4DFD";
 // the board is laid out in a 1000 x 700 space; phones are 220 wide, 475 tall
 const PHONES = [
   { x: 180, name: "fund", label: "add dollars", note: "usdc in, 1:1 to ausd" },
-  { x: 500, name: "trade", label: "trade", note: "filled on perpl in ~1s" },
-  { x: 820, name: "position", label: "the guard steps in", note: "13% to 30% from liquidation" },
+  { x: 500, name: "arm", label: "arm a rule or copy a trader", note: "one fingerprint" },
+  { x: 820, name: "acted", label: "pehra trades for you", note: "on perpl, guarded, with a receipt" },
 ];
 const TOP = 110;
 const H = 475;
@@ -44,7 +44,7 @@ export default function MoneyPath() {
           </Mark>{" "}
           goes
         </h3>
-        <p className="mt-3 text-[15px] leading-[22px]">follow a dollar from your passkey to a filled order. the guard can top it up, it can never take it out.</p>
+        <p className="mt-3 text-[15px] leading-[22px]">follow a dollar from your passkey to a trade pehra made for you. the server can trade it and top it up, it can never take it out.</p>
       </div>
 
       {/* the payment board: three real screens on one rail */}
@@ -98,35 +98,39 @@ export default function MoneyPath() {
 type Node = { id: string; x: number; y: number; w: number; label: string; hl?: boolean; ghost?: boolean };
 const NODES: Node[] = [
   { id: "passkey", x: 70, y: 150, w: 104, label: "Passkey", hl: true },
-  { id: "account", x: 215, y: 150, w: 104, label: "Account" },
-  { id: "add", x: 385, y: 60, w: 126, label: "Add dollars" },
-  { id: "trade", x: 385, y: 150, w: 90, label: "Trade", hl: true },
-  { id: "withdraw", x: 385, y: 240, w: 112, label: "Withdraw" },
-  { id: "agora", x: 565, y: 60, w: 136, label: "Agora · 1:1" },
-  { id: "perpl", x: 565, y: 150, w: 126, label: "Perpl order" },
-  { id: "wallet", x: 565, y: 240, w: 124, label: "Your wallet" },
-  { id: "position", x: 745, y: 150, w: 110, label: "Position", hl: true },
-  { id: "envio", x: 918, y: 150, w: 122, label: "Envio receipt" },
-  { id: "guard", x: 745, y: 262, w: 100, label: "The guard", hl: true },
-  { id: "nope", x: 918, y: 262, w: 136, label: "✕ cant withdraw", ghost: true },
+  { id: "account", x: 210, y: 150, w: 104, label: "Account" },
+  { id: "add", x: 365, y: 60, w: 126, label: "Add dollars" },
+  { id: "arm", x: 365, y: 150, w: 126, label: "Arm or copy", hl: true },
+  { id: "withdraw", x: 365, y: 240, w: 112, label: "Withdraw" },
+  { id: "agora", x: 535, y: 60, w: 136, label: "Agora · 1:1" },
+  { id: "server", x: 535, y: 150, w: 126, label: "Pehra rules", hl: true },
+  { id: "wallet", x: 535, y: 240, w: 124, label: "Your wallet" },
+  { id: "perpl", x: 710, y: 150, w: 126, label: "Perpl order", hl: true },
+  { id: "log", x: 890, y: 150, w: 136, label: "Log on monad" },
+  { id: "blocks", x: 710, y: 60, w: 136, label: "Trader on monad" },
+  { id: "guard", x: 710, y: 262, w: 100, label: "The guard", hl: true },
+  { id: "nope", x: 890, y: 262, w: 136, label: "✕ cant withdraw", ghost: true },
 ];
-const EDGES: [string, string, "h" | "up"][] = [
+const EDGES: [string, string, "h" | "up" | "down"][] = [
   ["passkey", "account", "h"],
   ["account", "add", "h"],
-  ["account", "trade", "h"],
+  ["account", "arm", "h"],
   ["account", "withdraw", "h"],
   ["add", "agora", "h"],
-  ["trade", "perpl", "h"],
+  ["arm", "server", "h"],
   ["withdraw", "wallet", "h"],
-  ["perpl", "position", "h"],
-  ["position", "envio", "h"],
-  ["guard", "position", "up"],
+  ["server", "perpl", "h"],
+  ["perpl", "log", "h"],
+  ["blocks", "server", "down"],
+  ["guard", "perpl", "up"],
   ["guard", "nope", "h"],
 ];
-const MAIN = ["passkey", "account", "trade", "perpl", "position"];
+const MAIN = ["passkey", "account", "arm", "server", "perpl", "log"];
 
-function edgePath(a: Node, b: Node, kind: "h" | "up") {
+function edgePath(a: Node, b: Node, kind: "h" | "up" | "down") {
   if (kind === "up") return `M${a.x},${a.y - 17} L${b.x},${b.y + 17}`;
+  // the copy feed: from the trader's block back down into the rules
+  if (kind === "down") return `M${a.x - 30},${a.y + 17} C${a.x - 30},${a.y + 55} ${b.x + 40},${b.y - 55} ${b.x + 40},${b.y - 17}`;
   const x1 = a.x + a.w / 2;
   const x2 = b.x - b.w / 2;
   const mx = (x1 + x2) / 2;
@@ -166,8 +170,11 @@ function FlowMap() {
             />
           );
         })}
-        <text x={760} y={214} fill={DOT} fontSize={11} fontWeight={600} fontFamily="Manrope, sans-serif">
+        <text x={725} y={214} fill={DOT} fontSize={11} fontWeight={600} fontFamily="Manrope, sans-serif">
           + margin
+        </text>
+        <text x={652} y={118} fill={DOT} fontSize={11} fontWeight={600} fontFamily="Manrope, sans-serif">
+          copy, 6 blocks
         </text>
         {NODES.map((n, i) => {
           const on = lit.has(n.id);
