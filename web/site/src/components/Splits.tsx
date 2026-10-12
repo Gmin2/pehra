@@ -147,7 +147,7 @@ export function SocialSplits() {
           "closes only what the copy bought",
           "every copy shows how many blocks after them it landed",
         ]}
-        visual={<PhonePanel video="copy" focus={0.6} />}
+        visual={<PhonePanel video="copy" focus={0.8} />}
         reverse
       />
 
