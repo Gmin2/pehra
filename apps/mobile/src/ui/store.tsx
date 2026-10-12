@@ -10,6 +10,7 @@ import React, {
 import { router, type Href } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
+import { Platform } from "react-native";
 import { initialWallets, tokens, type Wallet, type Token } from "./data";
 import { loadStored, signIn, type Session, type StoredAccount } from "../account";
 import { setSigner, quietToken, token as sessionToken, openSession as openDeviceSession } from "../session";
@@ -91,6 +92,7 @@ export function Provider({ children }: { children: React.ReactNode }) {
     loadStored().then(setStored).catch(() => {});
   }, []);
   // a write that needs a device session and has none asks for the passkey here, once, and keeps it
+  const demoAt = useRef(0);
   const live = useRef<{ session: Session | null; stored: StoredAccount | null }>({ session: null, stored: null });
   live.current = { session, stored };
   useEffect(() => {
@@ -112,7 +114,7 @@ export function Provider({ children }: { children: React.ReactNode }) {
   // a signed in phone with no device session (a new install, or a week gone) unlocks once on open, so
   // activity, settings and alerts are there without waiting for the first trade
   useEffect(() => {
-    if (!stored) return;
+    if (!stored || Platform.OS === "web") return;
     quietToken(stored.address).then((t) => (t ? null : sessionToken(stored.address))).catch(() => {});
   }, [stored?.address]);
   useEffect(() => {
@@ -154,6 +156,10 @@ export function Provider({ children }: { children: React.ReactNode }) {
       else router.replace("/");
     },
     toast = (s: string, ms = 2400) => {
+      // on the web try page a screen's own failure line would land on top of the demo notice
+      const demo = /^this is the demo/i.test(s);
+      if (!demo && Date.now() - demoAt.current < 3000) return;
+      if (demo) demoAt.current = Date.now();
       setNotice(s);
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => setNotice(""), ms);

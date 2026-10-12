@@ -94,6 +94,7 @@ export default function Fund() {
       const msg = e instanceof Error ? e.message : String(e);
       log(`fund ${k} ${amount} failed: ${msg}`);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      if (/^this is the demo/i.test(msg)) { setKind(null); setLanding(null); return; }
       if (/cancel|NotAllowed/i.test(msg)) { setFailed("the passkey sheet was closed, nothing moved"); return; }
       // a fund is a few transactions in a row, not one. say what actually landed, read from the chain
       const after = address ? await walletBalances(address as `0x${string}`).catch(() => null) : null;

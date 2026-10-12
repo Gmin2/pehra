@@ -1,7 +1,7 @@
 // the web try page: a read only look at a real pehra account on testnet. there is no passkey on the web
-// page, so anything that would sign says what the app does there instead
+// page, so anything that would sign shows a drawn fingerprint and says what the app does there instead
 import type { PasskeyCredentialMetadata } from '@category-labs/mera'
-import { DEMO, DemoError } from './web/demo'
+import { DEMO, fingerprint } from './web/demo'
 
 export const RP = { id: 'pehra-passkeys.vercel.app', name: 'pehra' }
 
@@ -18,11 +18,11 @@ export const timings: Record<string, number> = {}
 export const testAccount = false
 
 export async function createAccount(): Promise<Session & { credentialId: string }> {
-  throw new DemoError('in the app, a passkey on your phone makes the account')
+  return fingerprint('in the app that fingerprint makes your account from a passkey, no seed phrase')
 }
 
 export async function signIn(_credential?: PasskeyCredentialMetadata): Promise<Session & { credentialId: string }> {
-  throw new DemoError()
+  return fingerprint()
 }
 
 export async function loadStored(): Promise<StoredAccount | null> {
