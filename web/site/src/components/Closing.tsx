@@ -2,7 +2,7 @@ import { motion } from "framer-motion";
 import Bird from "./Bird";
 import { Android, Play, XLogo } from "./Icons";
 import { EXPO, once, reveal, stagger } from "./motion";
-import { EARLY_ACCESS_URL, X_URL } from "../links";
+import { APK_URL, X_URL } from "../links";
 import Mark from "./Mark";
 
 export function CTA({ onWatch }: { onWatch: () => void }) {
@@ -25,13 +25,13 @@ export function CTA({ onWatch }: { onWatch: () => void }) {
           <Bird state="watching" size={132} body="#FAF8F2" face="#9E4DFD" blink />
         </motion.div>
         <motion.h2 variants={reveal} className="relative mt-4 text-[48px] leading-none font-[650] tracking-[-0.04em] md:text-[72px]">
-          keep{" "}
+          set it,{" "}
           <Mark type="circle" color="#FAF8F2" padding={[0, 10]} strokeWidth={2.5}>
-            watch.
+            sleep.
           </Mark>
         </motion.h2>
         <motion.p variants={reveal} className="relative mt-5 max-w-[420px] text-[17px] leading-[26px] text-white/80">
-          trade before bed. pehra keeps watch until morning, acts if it has to, and tells you what it did when you wake.
+          arm your rules before bed. pehra trades on them until morning, guards what you hold, and tells you what it did when you wake.
         </motion.p>
         <motion.div variants={reveal} className="relative mt-8 flex flex-wrap justify-center gap-2">
           <button
@@ -43,13 +43,11 @@ export function CTA({ onWatch }: { onWatch: () => void }) {
             watch it work
           </button>
           <a
-            href={EARLY_ACCESS_URL}
-            target="_blank"
-            rel="noreferrer"
+            href={APK_URL}
             className="flex items-center gap-2 rounded-full bg-white/12 px-5 py-3 text-[15px] font-semibold text-white transition-colors hover:bg-white/20"
           >
             <Android size={17} />
-            get early access
+            download for android
           </a>
         </motion.div>
       </motion.div>
@@ -63,15 +61,15 @@ export function Footer() {
       <div className="flex items-center gap-3">
         <Bird state="dozing" size={28} />
         <span>
-          <span className="font-[650] text-ink">pehra</span> · built on monad with perpl, agora and envio
+          <span className="font-[650] text-ink">pehra</span> · built on monad with perpl, agora, mera and envio
         </span>
       </div>
       <div className="flex items-center gap-5 font-semibold text-ink">
         <a href={X_URL} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 hover:opacity-60">
           <XLogo size={13} /> x
         </a>
-        <a href={EARLY_ACCESS_URL} target="_blank" rel="noreferrer" className="hover:opacity-60">
-          early access
+        <a href={APK_URL} className="hover:opacity-60">
+          android apk
         </a>
         <span className="font-normal text-muted">testnet only, not financial advice</span>
       </div>

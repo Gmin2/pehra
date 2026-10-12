@@ -10,24 +10,28 @@ const qa = [
     a: "not yet. pehra runs on monad testnet with test dollars on perpl testnet. the app gives you test usdc when you sign up so you can try every screen.",
   },
   {
-    q: "what does the guard actually do?",
-    a: "it watches your open positions against the mark price. when one gets close to the line you set, it moves spare ausd from your perpl account into that position as margin, then sends you a push saying what it did.",
+    q: "how does copying work?",
+    a: "pick a trader from the leaderboard, choose careful, steady or bold, and sign once. pehra reads their opens and closes straight from monads blocks and places yours at your own size, about six blocks later. their money and yours never mix.",
+  },
+  {
+    q: "can a copy touch my own position?",
+    a: "no. perpl keeps one position per market, so pehra never opens a copy on a market you already hold, and when the trader closes it closes only what the copy bought.",
+  },
+  {
+    q: "what is a recipe?",
+    a: "a few rules that work together, like catch the breakout: open when mon breaks 2% up, trail the stop, keep the guard on. you see it replayed on the last 30 days before you arm it.",
   },
   {
     q: "can pehra take my money?",
-    a: "no. the key the guard holds is a perpl api key, and perpl api keys can never withdraw at any scope. moving money out of your account always needs your passkey, on your phone.",
+    a: "no. the server trades through a perpl api key your passkey enrolled, and perpl api keys can never withdraw at any scope. moving money out always needs your passkey, on your phone.",
   },
   {
     q: "what if your server goes down?",
-    a: "then the guard cant step in, and perpl liquidates like it always would. your funds stay where they are. we say this plainly because a guard you trust blindly is worse than none.",
-  },
-  {
-    q: "what if i lose my phone?",
-    a: "your account is your passkey. if it syncs through your password manager, sign in on the new phone and you get the same address back.",
+    a: "your stops still have a backstop resting on perpl, and it fires without us. we tested it by killing the server with a stop armed. the guard cant add margin while it is down, so we say that plainly too.",
   },
   {
     q: "which phones?",
-    a: "android today, on monad testnet. ios comes after.",
+    a: "android today, on monad testnet. your account is your passkey, so a new phone signs in to the same address. ios comes after.",
   },
 ];
 

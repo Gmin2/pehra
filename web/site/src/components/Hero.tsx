@@ -6,16 +6,16 @@ import Mark from "./Mark";
 import Arrow from "./Arrow";
 import { Play, XLogo } from "./Icons";
 import { EXPO } from "./motion";
-import { EARLY_ACCESS_URL, X_URL } from "../links";
+import { APK_URL, X_URL } from "../links";
 import { MoonIcon, PrintIcon, TapIcon } from "./ChipIcons";
 
-// the phone lies on the table like youl.ai: the pehra logo screen, then the markets screen, looping
-const story = ["logo", "markets"];
+// the phone lies on the table like youl.ai: the pehra logo screen, then top traders, looping
+const story = ["logo", "leaders"];
 
 const chips = [
-  { icon: <TapIcon />, label: "one tap trades" },
+  { icon: <TapIcon />, label: "copy any trader" },
+  { icon: <MoonIcon />, label: "rules that run while you sleep" },
   { icon: <PrintIcon />, label: "no seed phrase" },
-  { icon: <MoonIcon />, label: "sleep through 3am wicks" },
 ];
 
 export default function Hero({ onWatch }: { onWatch: () => void }) {
@@ -133,11 +133,11 @@ export default function Hero({ onWatch }: { onWatch: () => void }) {
             <span className="text-[32px] font-extrabold tracking-[-2.1px] text-ink md:text-[42px] lg:text-[52.7px]">pehra</span>
           </div>
           <p className="mt-4 text-[15px] leading-[1.5] font-medium tracking-[-0.4px] text-ink md:mt-5 md:text-[17px] lg:text-[20px]">
-            perps on monad, with a guard that{" "}
+            the{" "}
             <span className="bg-[linear-gradient(270deg,#FF7AD9_0%,#C45BFF_40%,#9E4DFD_75%,#6D3BFF_100%)] bg-clip-text font-semibold text-transparent">
-              keeps watch
+              automation layer
             </span>{" "}
-            while you are{" "}
+            of monad, through perpl. rules that trade for you while you are{" "}
             <Mark type="circle" color="#9E4DFD" padding={[1, 5]} strokeWidth={1.8} delay={1600}>
               away
             </Mark>
@@ -159,12 +159,10 @@ export default function Hero({ onWatch }: { onWatch: () => void }) {
           </div>
           <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-[#DCE5FB] pt-5 md:mt-6 md:pt-6">
             <a
-              href={EARLY_ACCESS_URL}
-              target="_blank"
-              rel="noreferrer"
+              href={APK_URL}
               className="flex items-center gap-2 rounded-full bg-dusk px-4 py-2.5 text-[14px] font-semibold text-white shadow-[0_8px_20px_-8px_rgba(158,77,253,0.7)] transition-colors hover:bg-accent md:px-5 md:py-3 md:text-[15px]"
             >
-              get early access
+              download for android
               <span aria-hidden>→</span>
             </a>
             <button
