@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#9E4DFD" />
+    <meta name="description" content="pehra running in your browser, on a read only demo account on monad testnet." />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>pehra</title>
+    <style id="expo-reset">
+      html, body { height: 100%; }
+      body { overflow: hidden; margin: 0; background: #9E4DFD; overscroll-behavior: none; }
+      #root { display: flex; height: 100%; flex: 1; position: relative; z-index: 1; }
+      /* the bird on dusk, the same as the android splash, while the bundle loads */
+      #boot { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: #9E4DFD; }
+      #boot svg { width: 132px; height: 132px; margin-top: -40px; }
+    </style>
+  </head>
+  <body>
+    <noscript>pehra needs javascript to run in the browser.</noscript>
+    <div id="boot">
+      <svg viewBox="0 0 256 256" aria-hidden="true">
+        <path d="M120,30 C166,30 184,65 190,109 C195,151 211,182 231,207 C235,212 234,216 226,214 L207,210 C181,230 141,239 101,235 C54,232 23,215 24,178 C25,152 43,120 49,96 C60,53 85,30 120,30 Z" fill="#F7F1F6" />
+        <path d="M78,110H104 M138,110H164" stroke="#9E4DFD" stroke-width="5" stroke-linecap="round" />
+        <path d="M113,130Q111,126 116,126H126Q131,126 129,130L123,141Q121,145 119,141Z" fill="#9E4DFD" />
+      </svg>
+    </div>
+    <div id="root"></div>
+    <script>
+      // once the app has drawn, the boot splash underneath goes
+      new MutationObserver(function (_, o) {
+        if (!document.getElementById('root').childElementCount) return
+        o.disconnect()
+        setTimeout(function () { var b = document.getElementById('boot'); b && b.remove(); document.body.style.background = '#FAF8F2' }, 1500)
+      }).observe(document.getElementById('root'), { childList: true })
+    </script>
+  </body>
+</html>

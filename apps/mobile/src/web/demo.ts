@@ -6,8 +6,20 @@ let say: ((s: string) => void) | null = null
 export const onDemo = (fn: (s: string) => void) => { say = fn }
 
 export class DemoError extends Error {
-  constructor(what = 'in the app, your fingerprint signs this and it runs on perpl') {
+  constructor(what = 'in the app that fingerprint signs it and it goes to perpl, here nothing was sent') {
     super(`this is the demo. ${what}`)
     say?.(this.message)
   }
+}
+
+// the fingerprint sheet (DemoHost.web) answers true once the drawn sensor is read, false on cancel
+let ask: (() => Promise<boolean>) | null = null
+let open: Promise<boolean> | null = null
+export const onAsk = (fn: () => Promise<boolean>) => { ask = fn }
+
+// stands in for the passkey sheet: the fingerprint is drawn and read, the signing never happens
+export async function fingerprint(what?: string): Promise<never> {
+  open ??= (ask ? ask() : Promise.resolve(true)).finally(() => { open = null })
+  if (!(await open)) throw new Error('NotAllowedError: the passkey sheet was closed')
+  throw new DemoError(what)
 }

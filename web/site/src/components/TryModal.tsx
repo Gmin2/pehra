@@ -48,14 +48,18 @@ export default function TryModal({ open, onClose, url }: { open: boolean; onClos
               style={{ width: W + 28, height: H + 28, transform: `scale(${scale})`, transformOrigin: "top left" }}
               className="rounded-[56px] bg-[linear-gradient(145deg,#FBFBFC_0%,#C7C7CE_22%,#EEEEF1_48%,#A9A9B2_74%,#E6E6EA_100%)] p-[6px] shadow-[0_50px_90px_-35px_rgba(0,0,0,0.6)]"
             >
-              <div className="h-full w-full rounded-[50px] bg-[#0b0b0f] p-[8px]">
+              <div className="relative h-full w-full rounded-[50px] bg-[#0b0b0f] p-[8px]">
                 <iframe
                   src={url}
                   title="pehra, running in your browser"
+                  allow="clipboard-write"
                   style={{ width: W, height: H }}
-                  className="block rounded-[42px] bg-paper"
+                  className="block overflow-hidden rounded-[42px] bg-[#9E4DFD]"
                 />
+                <div className="pointer-events-none absolute top-[17px] left-1/2 h-[12px] w-[12px] -translate-x-1/2 rounded-full bg-[#0b0b0f] ring-[1.5px] ring-[#1d1d26]" />
               </div>
+              <div className="absolute top-[150px] -right-[3px] h-[64px] w-[4px] rounded-r-[3px] bg-[#B9B9C1]" />
+              <div className="absolute top-[236px] -right-[3px] h-[104px] w-[4px] rounded-r-[3px] bg-[#B9B9C1]" />
             </div>
           </motion.div>
 
@@ -69,8 +73,8 @@ export default function TryModal({ open, onClose, url }: { open: boolean; onClos
             <div className="text-[15px] font-bold text-[#C9A2FF]">running in your browser</div>
             <h3 className="mt-2 text-[30px] leading-[1.1] font-[650] tracking-[-0.03em]">the real app, on a real account.</h3>
             <p className="mt-4 text-[15px] leading-[23px] text-white/75">
-              the same code as the android app, reading a live pehra account on monad testnet. open the leaderboard, a trader, a recipe, the activity. anything that would sign shows what the
-              app does there instead, so nothing here can trade.
+              the same code as the android app, reading a live pehra account on monad testnet. open the leaderboard, a trader, a recipe, the activity. anything that would sign asks for your
+              fingerprint like the app does, then stops there, so nothing here can trade.
             </p>
             <a href={APK_URL} className="mt-6 inline-flex items-center gap-2 rounded-full bg-paper px-5 py-3 text-[15px] font-semibold text-ink hover:bg-white">
               get the android app

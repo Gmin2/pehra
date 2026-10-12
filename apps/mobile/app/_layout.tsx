@@ -15,6 +15,7 @@ SplashScreen.setOptions({ duration: 250, fade: true });
 import { Provider } from "../src/ui/store";
 import { useFonts, Manrope_400Regular, Manrope_500Medium, Manrope_600SemiBold, Manrope_700Bold, Manrope_800ExtraBold } from "@expo-google-fonts/manrope";
 import SheetHost from "../src/ui/SheetHost";
+import DemoHost from "../src/ui/DemoHost";
 import { PushBridge } from "../src/ui/PushBridge";
 import { AppState } from "react-native";
 import { log } from "../src/log";
@@ -57,6 +58,7 @@ export default function Layout() {
               }}
             />
             <SheetHost />
+            <DemoHost />
             <PushBridge />
           </Provider>
         </KeyboardProvider>
