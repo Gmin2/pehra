@@ -18,7 +18,7 @@ const chips = [
   { icon: <PrintIcon />, label: "no seed phrase" },
 ];
 
-export default function Hero({ onWatch }: { onWatch: () => void }) {
+export default function Hero({ onWatch, onTry }: { onWatch: () => void; onTry: () => void }) {
   const [clip, setClip] = useState(0);
   const reduced = useReducedMotion();
   // intro goes 0 to 1 on load and lays the phone down onto the table, then it holds still
@@ -47,6 +47,9 @@ export default function Hero({ onWatch }: { onWatch: () => void }) {
           <a href="#copy" className="hidden rounded-full px-3.5 py-2 text-[15px] font-semibold text-ink/80 hover:bg-black/5 md:block">
             copy trading
           </a>
+          <button type="button" onClick={onTry} className="hidden rounded-full px-3.5 py-2 text-[15px] font-semibold text-dusk hover:bg-black/5 md:block">
+            try it
+          </button>
           <a href="#faq" className="hidden rounded-full px-3.5 py-2 text-[15px] font-semibold text-ink/80 hover:bg-black/5 md:block">
             faq
           </a>
@@ -168,6 +171,13 @@ export default function Hero({ onWatch }: { onWatch: () => void }) {
               download for android
               <span aria-hidden>→</span>
             </a>
+            <button
+              type="button"
+              onClick={onTry}
+              className="flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-[14px] font-semibold text-ink shadow-[0_0_0_1px_#DCE5FB] transition-colors hover:bg-white/70 md:px-5 md:py-3 md:text-[15px]"
+            >
+              try it in your browser
+            </button>
             <button
               type="button"
               onClick={onWatch}

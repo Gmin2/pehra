@@ -54,7 +54,10 @@ export function publicClient(net: Network = 'testnet'): PublicClient {
   const hit = clients.get(net)
   if (hit) return hit
   const c = monadChain(net)
-  const client = createPublicClient({ chain: c, transport: fallback([webSocket(c.rpcUrls.default.webSocket?.[0], { reconnect: true }), http()]), pollingInterval: POLL_MS })
+  // a browser (the web try page) can not load viem's websocket chunk, it reads over http
+  const browser = typeof document !== 'undefined'
+  const transport = browser ? http() : fallback([webSocket(c.rpcUrls.default.webSocket?.[0], { reconnect: true }), http()])
+  const client = createPublicClient({ chain: c, transport, pollingInterval: POLL_MS })
   clients.set(net, client)
   return client
 }

@@ -157,6 +157,7 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 const server = serve({
   hostname: '0.0.0.0',
   port: Number(process.env.PORT ?? 8787),
+  origins: ['https://pehra.io', 'https://www.pehra.io', 'https://pehra-eight.vercel.app', 'https://pehra-passkeys.vercel.app', 'https://pehra-try.vercel.app', ...(process.env.WEB_ORIGINS?.split(',') ?? [])],
   async fetch(req) {
     const url = new URL(req.url)
     if (url.pathname === '/health') return json({ ok: true, payer: payer.address })
