@@ -1,6 +1,7 @@
 import "../src/polyfills";
 import "react-native-gesture-handler";
-import { Stack } from "expo-router";
+import { Stack, usePathname } from "expo-router";
+import { useEffect } from "react";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
@@ -32,6 +33,15 @@ AppState.addEventListener("change", (st) => log(`app ${st}`));
 export default function Layout() {
   const reduced = useReducedMotion();
   const [loaded] = useFonts({ Manrope_400Regular, Manrope_500Medium, Manrope_600SemiBold, Manrope_700Bold, Manrope_800ExtraBold });
+  const path = usePathname();
+  // the intro hides the splash on a normal start. a link opens straight on another screen and the intro
+  // never runs, so the splash would stay up forever over it
+  useEffect(() => {
+    if (!loaded) return;
+    if (path !== "/") SplashScreen.hideAsync().catch(() => {});
+    const t = setTimeout(() => SplashScreen.hideAsync().catch(() => {}), 3000);
+    return () => clearTimeout(t);
+  }, [loaded, path]);
   if (!loaded) return null;
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
