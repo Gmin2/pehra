@@ -35,4 +35,9 @@ export function sessionOwner(req: Request, now = Date.now()): string | null {
   return row && row.exp > now ? row.owner : null
 }
 
-export const owns = (req: Request, address: string) => sessionOwner(req) === address.toLowerCase()
+// DEMO_READ: accounts anyone may read like their owner, for the web try page. only reads, every write is a
+// POST and still needs the passkey's session
+const demo = new Set((process.env.DEMO_READ ?? '').toLowerCase().split(',').filter(Boolean))
+
+export const owns = (req: Request, address: string) =>
+  sessionOwner(req) === address.toLowerCase() || (req.method === 'GET' && demo.has(address.toLowerCase()))

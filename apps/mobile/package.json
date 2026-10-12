@@ -13,6 +13,7 @@
   "dependencies": {
     "@category-labs/mera": "^0.2.0",
     "@expo-google-fonts/manrope": "^0.4.2",
+    "@expo/metro-runtime": "~57.0.16",
     "@pehra/perpl": "workspace:*",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@scure/base": "^2.4.0",
@@ -36,6 +37,7 @@
     "expo-status-bar": "~57.0.1",
     "qrcode": "1.5.4",
     "react": "19.2.3",
+    "react-dom": "19.2.3",
     "react-native": "0.86.3",
     "react-native-gesture-handler": "~2.32.0",
     "react-native-keyboard-controller": "1.21.9",
@@ -48,6 +50,7 @@
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.2",
     "react-native-svg": "15.15.4",
+    "react-native-web": "^0.21.4",
     "react-native-worklets": "0.10.1",
     "roughjs": "^4.6.6",
     "viem": "^2.56.8"

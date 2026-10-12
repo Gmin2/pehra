@@ -1,0 +1,4 @@
+{
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
+  "headers": [{ "source": "/(.*)", "headers": [{ "key": "Content-Security-Policy", "value": "frame-ancestors 'self' https://pehra.io https://www.pehra.io https://pehra-eight.vercel.app http://localhost:4317" }] }]
+}

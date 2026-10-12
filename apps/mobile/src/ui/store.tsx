@@ -13,6 +13,7 @@ import * as Haptics from "expo-haptics";
 import { initialWallets, tokens, type Wallet, type Token } from "./data";
 import { loadStored, signIn, type Session, type StoredAccount } from "../account";
 import { setSigner, quietToken, token as sessionToken, openSession as openDeviceSession } from "../session";
+import { onDemo } from "../web/demo";
 import {
   flowScene,
   initialTransaction,
@@ -157,6 +158,7 @@ export function Provider({ children }: { children: React.ReactNode }) {
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => setNotice(""), ms);
     };
+  useEffect(() => onDemo((s) => toast(s, 4200)), []);
   const launch = (scene: string) => {
     if (pendingTimer.current) clearTimeout(pendingTimer.current);
     const f = flowScene(scene);

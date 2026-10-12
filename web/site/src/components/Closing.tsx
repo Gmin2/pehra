@@ -5,7 +5,7 @@ import { EXPO, once, reveal, stagger } from "./motion";
 import { APK_URL, X_URL } from "../links";
 import Mark from "./Mark";
 
-export function CTA({ onWatch }: { onWatch: () => void }) {
+export function CTA({ onWatch, onTry }: { onWatch: () => void; onTry: () => void }) {
   return (
     <section className="px-5 pb-10 md:px-6">
       <motion.div
@@ -36,8 +36,15 @@ export function CTA({ onWatch }: { onWatch: () => void }) {
         <motion.div variants={reveal} className="relative mt-8 flex flex-wrap justify-center gap-2">
           <button
             type="button"
-            onClick={onWatch}
+            onClick={onTry}
             className="flex items-center gap-2 rounded-full bg-paper px-5 py-3 text-[15px] font-semibold text-ink transition-colors hover:bg-white"
+          >
+            try it in your browser
+          </button>
+          <button
+            type="button"
+            onClick={onWatch}
+            className="flex items-center gap-2 rounded-full bg-white/12 px-5 py-3 text-[15px] font-semibold text-white transition-colors hover:bg-white/20"
           >
             <Play />
             watch it work

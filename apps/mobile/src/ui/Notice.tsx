@@ -5,7 +5,7 @@ import Animated, { FadeInUp, FadeOutUp, ReduceMotion } from "react-native-reanim
 import Svg, { Path, Circle } from "react-native-svg";
 import { Text } from "./Text";
 
-const ink = "#28243E", muted = "#706A7D", line = "#EEEAF2", green = "#23765A", red = "#B4474D";
+const ink = "#28243E", muted = "#706A7D", line = "#EEEAF2", green = "#23765A", red = "#B4474D", violet = "#9E4DFD";
 const BAD = /^(couldn|failed|it didn|that is not|that link|nothing|no |only |the faucet is busy|sign in)|failed|cancelled/i;
 
 export function split(s: string) {
@@ -14,7 +14,8 @@ export function split(s: string) {
 }
 
 export function Notice({ text, top }: { text: string; top: number }) {
-  const bad = BAD.test(text);
+  const demo = /^this is the demo/i.test(text);
+  const bad = !demo && BAD.test(text);
   const { title, sub } = split(text);
   return (
     <Animated.View
@@ -23,9 +24,11 @@ export function Notice({ text, top }: { text: string; top: number }) {
       pointerEvents="none"
       style={{ position: "absolute", top, left: 16, right: 16, flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "white", borderRadius: 20, borderWidth: 1, borderColor: line, paddingHorizontal: 14, paddingVertical: sub ? 12 : 14, boxShadow: "0 6px 18px #28243E1f" }}
     >
-      <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: bad ? "#FBE9EA" : "#E4F3EC", alignItems: "center", justifyContent: "center" }}>
+      <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: demo ? "#EFE5FF" : bad ? "#FBE9EA" : "#E4F3EC", alignItems: "center", justifyContent: "center" }}>
         <Svg width={16} height={16} viewBox="0 0 16 16">
-          {bad
+          {demo
+            ? <><Circle cx={8} cy={3.8} r={1.4} fill={violet} /><Path d="M8 7v5.5" stroke={violet} strokeWidth={2.4} strokeLinecap="round" /></>
+            : bad
             ? <><Path d="M8 3.5v5.5" stroke={red} strokeWidth={2.4} strokeLinecap="round" /><Circle cx={8} cy={12.4} r={1.4} fill={red} /></>
             : <Path d="M3.5 8.4l3 3 6-6.8" stroke={green} strokeWidth={2.4} fill="none" strokeLinecap="round" strokeLinejoin="round" />}
         </Svg>

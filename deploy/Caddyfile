@@ -7,5 +7,26 @@
 		header Content-Type application/vnd.android.package-archive
 		file_server
 	}
+	# perpl's public market data for the web try page. perpl refuses browser origins it has not listed,
+	# so the page reads it through here with the origin dropped, the same way the server's own client does
+	@perplpub {
+		method GET
+		path_regexp pub ^/perpl(/v1/pub/.*)$
+	}
+	handle @perplpub {
+		rewrite * /api{re.pub.1}?{query}
+		header Access-Control-Allow-Origin *
+		reverse_proxy https://testnet.perpl.xyz {
+			header_up Host testnet.perpl.xyz
+			header_up -Origin
+		}
+	}
+	handle /perplws/ws/v1/market-data {
+		uri strip_prefix /perplws
+		reverse_proxy https://testnet.perpl.xyz {
+			header_up Host testnet.perpl.xyz
+			header_up -Origin
+		}
+	}
 	reverse_proxy api:8787
 }
