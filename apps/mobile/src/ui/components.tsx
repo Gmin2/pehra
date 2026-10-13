@@ -573,14 +573,15 @@ export function Tabs({ active }: { active: string }) {
   return (
     <View style={s.tabs}>
       {[
-        ["activity", "history"],
-        ["portfolio", "wallet"],
-      ].map(([path, icon]) => {
+        ["activity", "history", "activity"],
+        ["leaders", "group", "traders"],
+        ["portfolio", "wallet", "home"],
+      ].map(([path, icon, label]) => {
         const on = active === path;
         return (
-          <Tap key={path} onPress={() => a.go("/" + path)} accessibilityLabel={path === "portfolio" ? "home" : path} innerStyle={{ alignItems: "center", gap: 3, paddingHorizontal: 18, paddingTop: 6 }}>
+          <Tap key={path} onPress={() => a.go("/" + path)} accessibilityLabel={label} innerStyle={{ alignItems: "center", gap: 3, paddingHorizontal: 18, paddingTop: 6 }}>
             <TwoTone name={glyphFor[icon]} size={24} back={on ? "#C9A6FF" : "#E4E0EA"} front={on ? "#9E4DFD" : "#C9C4D1"} />
-            <Text style={{ fontSize: 11, fontWeight: on ? "700" : "600", color: on ? "#9E4DFD" : "#C9C4D1" }}>{path === "portfolio" ? "home" : path}</Text>
+            <Text style={{ fontSize: 11, fontWeight: on ? "700" : "600", color: on ? "#9E4DFD" : "#C9C4D1" }}>{label}</Text>
           </Tap>
         );
       })}

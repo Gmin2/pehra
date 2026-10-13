@@ -6,14 +6,14 @@ import { Stack, useFocusEffect } from "expo-router";
 import Animated, { FadeIn, ReduceMotion, Easing, useSharedValue, useAnimatedStyle, withDelay, withTiming, withRepeat } from "react-native-reanimated";
 import Svg, { Rect } from "react-native-svg";
 import * as Haptics from "expo-haptics";
-import { Screen, Tap, IconButton } from "../src/ui/components";
+import { Screen, Tap, Tabs } from "../src/ui/components";
 import { Text } from "../src/ui/Text";
 import { Segmented } from "../src/ui/Trade";
 import { Avatar } from "../src/ui/Avatar";
 import { AddressText } from "../src/ui/AddressText";
 import { Glyph } from "../src/ui/Glyph";
 import { useApp } from "../src/ui/store";
-import { readLeaders, readTopRecipes, type Leader } from "../src/rules";
+import { readLeaders, readTopRecipes, listRules, myWatches, type Leader, type RuleRow } from "../src/rules";
 import { RECIPES } from "@pehra/perpl";
 import { ink, muted, green, red, faint, well, violet } from "../src/ui/Position";
 
@@ -107,8 +107,16 @@ export default function Leaders() {
     [list, setList] = useState<Leader[] | null>(null),
     [shownRange, setShownRange] = useState(range),
     [err, setErr] = useState<string | null>(null),
-    [top, setTop] = useState<{ recipe: string; copies: number; links: number }[]>([]);
+    [top, setTop] = useState<{ recipe: string; copies: number; links: number }[]>([]),
+    [copies, setCopies] = useState<RuleRow[]>([]),
+    [watching, setWatching] = useState(0);
   useEffect(() => { readTopRecipes().then(setTop).catch(() => {}); }, []);
+  // who you already copy and watch, so the tab is where your social side lives too
+  useFocusEffect(useCallback(() => {
+    if (!me) return;
+    listRules(me).then((rs) => setCopies(rs.filter((r) => r.rule.kind === "copy" && ["armed", "held", "firing", "working"].includes(r.state)))).catch(() => {});
+    myWatches(me).then((w) => setWatching(w.length)).catch(() => {});
+  }, [me]));
   // a new range keeps the old board up, dimmed, until the new one lands
   const load = useCallback(() => {
     readLeaders(DAYS[range]).then((l) => { setList(l); setShownRange(range); setErr(null); }).catch((e) => setErr(e instanceof Error ? e.message : String(e)));
@@ -120,9 +128,12 @@ export default function Leaders() {
   const heading = { fontFamily: "Manrope_700Bold", fontSize: 26, lineHeight: 34, color: ink, letterSpacing: -0.5 };
   return (
     <Screen>
-      <Stack.Screen options={{ animation: "slide_from_right" }} />
-      <View style={{ height: 60, flexDirection: "row", alignItems: "center", paddingHorizontal: 12 }}>
-        <IconButton name="back" label="Back" onPress={a.back} color={ink} />
+      <Stack.Screen options={{ animation: "none" }} />
+      <View style={{ height: 60, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16 }}>
+        <Tap onPress={() => a.go("/watch")} innerStyle={{ height: 36, paddingLeft: 8, paddingRight: 14, borderRadius: 18, backgroundColor: well, flexDirection: "row", alignItems: "center", gap: 6 }}>
+          <Glyph name="eye" size={20} color={ink} />
+          <Text style={{ fontSize: 13, fontWeight: "700", color: ink }}>{watching ? `watching ${watching}` : "watch list"}</Text>
+        </Tap>
         <View style={{ flex: 1 }} />
         <Tap onPress={() => a.go("/watch")} innerStyle={{ height: 36, paddingHorizontal: 14, borderRadius: 18, backgroundColor: mist, justifyContent: "center" }}>
           <Text style={{ fontSize: 13, fontWeight: "700", color: violet }}>find an address</Text>
@@ -133,6 +144,20 @@ export default function Leaders() {
           <Text style={heading}>top traders on perpl</Text>
           <Text style={{ marginTop: 4, fontSize: 14, fontWeight: "500", color: muted }}>closed trades, read from monad. copy anyone at your own size.</Text>
         </View>
+        {copies.length > 0 && (
+          <View style={{ backgroundColor: "white", borderRadius: 24, borderWidth: 1, borderColor: line, paddingHorizontal: 14 }}>
+            {copies.map((r, i) => r.rule.kind === "copy" && (
+              <Tap key={r.id} onPress={() => a.go(`/watch/${r.rule.kind === "copy" ? r.rule.target : ""}`)} innerStyle={{ flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 12, borderTopWidth: i ? 1 : 0, borderTopColor: line }}>
+                <Avatar address={r.rule.target} size={36} />
+                <View style={{ flex: 1, gap: 2 }}>
+                  <Text style={{ fontSize: 14.5, fontWeight: "700", color: ink }}>you copy {cut(r.rule.target)}</Text>
+                  <Text style={{ fontSize: 12.5, fontWeight: "500", color: muted }}>{r.rule.margin} ausd a trade · {r.fires ? `copied ${r.fires} ${r.fires === 1 ? "trade" : "trades"}` : "waiting for their next trade"}</Text>
+                </View>
+                <Text style={{ fontSize: 12, fontWeight: "700", color: r.state === "held" ? muted : green }}>{r.state === "held" ? "paused" : "on"}</Text>
+              </Tap>
+            ))}
+          </View>
+        )}
         <Segmented options={RANGES} value={range} onChange={setRange} />
         {err && <Text style={{ paddingHorizontal: 8, fontSize: 13, fontWeight: "600", color: red }}>couldn’t load the board: {err}</Text>}
         <View style={{ opacity: stale ? 0.55 : 1 }}>
@@ -206,6 +231,7 @@ export default function Leaders() {
           </>
         )}
       </ScrollView>
+      <Tabs active="leaders" />
     </Screen>
   );
 }
