@@ -14,7 +14,6 @@ import { Platform } from "react-native";
 import { initialWallets, tokens, type Wallet, type Token } from "./data";
 import { loadStored, signIn, type Session, type StoredAccount } from "../account";
 import { setSigner, quietToken, token as sessionToken, openSession as openDeviceSession } from "../session";
-import { onDemo } from "../web/demo";
 import {
   flowScene,
   initialTransaction,
@@ -92,7 +91,6 @@ export function Provider({ children }: { children: React.ReactNode }) {
     loadStored().then(setStored).catch(() => {});
   }, []);
   // a write that needs a device session and has none asks for the passkey here, once, and keeps it
-  const demoAt = useRef(0);
   const live = useRef<{ session: Session | null; stored: StoredAccount | null }>({ session: null, stored: null });
   live.current = { session, stored };
   useEffect(() => {
@@ -156,15 +154,10 @@ export function Provider({ children }: { children: React.ReactNode }) {
       else router.replace("/");
     },
     toast = (s: string, ms = 2400) => {
-      // on the web try page a screen's own failure line would land on top of the demo notice
-      const demo = /^this is the demo/i.test(s);
-      if (!demo && Date.now() - demoAt.current < 3000) return;
-      if (demo) demoAt.current = Date.now();
       setNotice(s);
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => setNotice(""), ms);
     };
-  useEffect(() => onDemo((s) => toast(s, 4200)), []);
   const launch = (scene: string) => {
     if (pendingTimer.current) clearTimeout(pendingTimer.current);
     const f = flowScene(scene);

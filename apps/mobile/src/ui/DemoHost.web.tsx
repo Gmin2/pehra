@@ -94,7 +94,7 @@ function Sheet({ onDone, onRead }: { onDone: (ok: boolean) => void; onRead: () =
         )}
       </Pressable>
       <Text style={{ textAlign: "center", marginTop: 14, fontSize: 15, fontWeight: "700", color: step === "done" ? green : ink }}>{label}</Text>
-      <Text style={{ textAlign: "center", marginTop: 4, fontSize: 12.5, fontWeight: "500", color: muted }}>in the demo a tap stands in for your finger</Text>
+      <Text style={{ textAlign: "center", marginTop: 4, fontSize: 12.5, fontWeight: "500", color: muted }}>a tap stands in for your finger. it all plays out on your{"\n"}own copy of the account, nothing reaches perpl</Text>
 
       <Pressable onPress={() => step === "idle" && onDone(false)} style={{ marginTop: 22, height: 48, borderRadius: 24, backgroundColor: "#F2F0F5", alignItems: "center", justifyContent: "center", opacity: step === "idle" ? 1 : 0.4 }}>
         <Text style={{ fontSize: 15, fontWeight: "700", color: ink }}>cancel</Text>

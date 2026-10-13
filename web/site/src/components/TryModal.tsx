@@ -73,8 +73,8 @@ export default function TryModal({ open, onClose, url }: { open: boolean; onClos
             <div className="text-[15px] font-bold text-[#C9A2FF]">running in your browser</div>
             <h3 className="mt-2 text-[30px] leading-[1.1] font-[650] tracking-[-0.03em]">the real app, on a real account.</h3>
             <p className="mt-4 text-[15px] leading-[23px] text-white/75">
-              the same code as the android app, reading a live pehra account on monad testnet. open the leaderboard, a trader, a recipe, the activity. anything that would sign asks for your
-              fingerprint like the app does, then stops there, so nothing here can trade.
+              the same code as the android app, reading a live pehra account on monad testnet. trade, copy a trader, arm a recipe, add money. it all plays out on your own copy of the account,
+              with live prices, so nothing here reaches perpl.
             </p>
             <a href={APK_URL} className="mt-6 inline-flex items-center gap-2 rounded-full bg-paper px-5 py-3 text-[15px] font-semibold text-ink hover:bg-white">
               get the android app

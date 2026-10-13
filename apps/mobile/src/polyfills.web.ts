@@ -1,11 +1,13 @@
 // browsers have webcrypto already. perpl only lets listed sites read it from a browser, so the web try
 // page reads perpl's public market data through the server (deploy/Caddyfile)
 import { NETWORKS } from '@pehra/perpl'
+import { installSim } from './web/sim'
 
 const api = process.env.EXPO_PUBLIC_API ?? 'http://localhost:8787'
 const testnet = NETWORKS.testnet as { rest: string; ws: string }
 testnet.rest = `${api}/perpl`
 testnet.ws = `${api.replace(/^http/, 'ws')}/perplws`
+installSim()
 
 // inside the phone on pehra.io the page gets a drawn status bar and home bar (DemoHost.web), so the
 // safe area insets the app already lays out by are faked to their height. the safe area library reads
