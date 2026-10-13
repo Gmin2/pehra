@@ -12,6 +12,12 @@ const resolve = config.resolver.resolveRequest
 config.resolver.resolveRequest = (ctx, name, platform) => {
   if (platform === 'web' && name === 'expo-secure-store') return { type: 'sourceFile', filePath: path.resolve(projectRoot, 'src/web/secure-store.ts') }
   if (platform === 'web' && name === 'isows') return { type: 'sourceFile', filePath: path.resolve(projectRoot, 'src/web/isows.ts') }
-  return (resolve ?? ctx.resolveRequest)(ctx, name, platform)
+  const found = (resolve ?? ctx.resolveRequest)(ctx, name, platform)
+  // the money moves and the watch key play out in the browser, src/web/sim.ts
+  if (platform === 'web' && found.type === 'sourceFile' && !ctx.originModulePath.includes(`${path.sep}src${path.sep}web${path.sep}`)) {
+    const swap = { 'src/fund.ts': 'src/web/fund.ts', 'src/guard.ts': 'src/web/guard.ts' }[path.relative(projectRoot, found.filePath)]
+    if (swap) return { type: 'sourceFile', filePath: path.resolve(projectRoot, swap) }
+  }
+  return found
 }
 module.exports = config

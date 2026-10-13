@@ -16,6 +16,7 @@ import { useApp } from "../src/ui/store";
 import { useMarkets, useAccount, pct, money } from "../src/live";
 import { useCandles, type Range } from "../src/candles";
 import { relayOrder } from "../src/guard";
+import { token } from "../src/session";
 import { log } from "../src/log";
 import { PositionCard } from "../src/ui/Home";
 import { PriceChart, Segmented, LeverageSlider, TradeButton, FlightLayer, Tray, SkeletonRow, useFlight, flight, violet, ink, muted, green, red, amber, line, type Phase } from "../src/ui/Trade";
@@ -29,7 +30,6 @@ const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // perpl's reasons in plain words for the button
 function plain(msg: string) {
-  if (/^this is the demo/i.test(msg)) return "the demo sends nothing";
   if (/cancel|NotAllowed/i.test(msg)) return "cancelled, nothing sent";
   if (/AmountExceedsAvailableBalance|insufficient/i.test(msg)) return "not enough ausd free";
   if (/no live session/i.test(msg)) return "the guard is reconnecting, try again";
@@ -190,6 +190,8 @@ export default function Trade() {
 
   const place = async () => {
     if (!ok || !m || !address) return;
+    // a passkey prompt, when the device session needs one, comes before the clock starts
+    try { await token(address); } catch { return; }
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const t0 = Date.now();
     flight.press(f);
@@ -209,8 +211,6 @@ export default function Trade() {
       });
     } catch (e) {
       log(`trade ${m.symbol} ${side} ${size} at ${lev}x failed: ${e instanceof Error ? e.message : e}`);
-      // the web try page stops here on purpose, its notice already says so
-      if (/^this is the demo/i.test(e instanceof Error ? e.message : "")) { flight.reset(f); setPhase("idle"); return; }
       flight.fizzle(f);
       setError(plain(e instanceof Error ? e.message : String(e)));
       setPhase("failed");
